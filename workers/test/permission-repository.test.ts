@@ -91,18 +91,17 @@ describe('PermissionRepository.checkPermission', () => {
     expect(queries).toHaveLength(0)
   })
 
-  it('fails closed by returning false instead of throwing on D1 error', async () => {
+  it('throws database operation error on D1 failure', async () => {
     const { db } = makeMockDb([{ throws: new Error('D1 connection failure') }])
-    const result = await new PermissionRepository(db).checkPermission(VALID_USER_ID, VALID_ALBUM_ID, NOW)
-    expect(result).toBe(false)
-  })
-
-  it('does not expose D1 error details when failing closed', async () => {
-    const sensitiveError = new Error('contains sensitive_table_name info')
-    const { db } = makeMockDb([{ throws: sensitiveError }])
-    // The error is swallowed so authorization fails closed.
     await expect(
       new PermissionRepository(db).checkPermission(VALID_USER_ID, VALID_ALBUM_ID, NOW),
-    ).resolves.toBe(false)
+    ).rejects.toThrow('database operation failed')
+  })
+
+  it('does not expose D1 error details in thrown error', async () => {
+    const { db } = makeMockDb([{ throws: new Error('sensitive_table_name info') }])
+    await expect(
+      new PermissionRepository(db).checkPermission(VALID_USER_ID, VALID_ALBUM_ID, NOW),
+    ).rejects.toThrow('database operation failed')
   })
 })

@@ -4,6 +4,7 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 
 > **WARNING: This is a Phase 2/3 foundation. Do not deploy this as a real photo-sharing service.**
 > Login routes, D1 bindings, R2 bindings, and real photo data are not connected.
+> Authentication and authorization middleware is implemented but not wired to any active route.
 > All visible content is synthetic fixture data.
 
 ## Architecture
@@ -11,15 +12,15 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 - **Runtime**: Cloudflare Workers (TypeScript, Hono + JSX SSR)
 - **Static assets**: `public/` served via Workers Assets (`/styles.css`)
 - **UI**: Server-side rendered HTML via Hono + JSX, with no client-side JavaScript
-- **Phase 3 foundation**: D1 schema, crypto primitives, session model, and repositories are implemented but not yet wired to live routes.
+- **Phase 3 foundation**: D1 schema, crypto primitives, session model, repositories, and auth middleware are implemented but not yet wired to live routes.
 
 ### Phase boundary
 
 | | Phase 2 (active routes) | Phase 3 (this foundation) | Phase 4 |
 |---|---|---|---|
 | Data source | In-code fixtures | Not wired | D1 + R2 |
-| Viewer login | Not implemented | Primitives ready | Full login route |
-| Album authorization | Not implemented | Repository ready | Per-user D1 checks |
+| Viewer login | Not implemented | Middleware ready | Full login route |
+| Album authorization | Not implemented | Middleware ready | Per-user D1 checks |
 | Image delivery | 401 | Not wired | R2 via Workers |
 
 ## Install
@@ -86,6 +87,63 @@ Two migrations are defined under `migrations/`. They are **not applied** in this
 
 Foreign keys are enabled with `PRAGMA foreign_keys = ON`. Deleting a user deletes their sessions and permissions. Deleting an album deletes its permissions.
 
+## Authentication and Authorization Middleware (Phase 3, not wired)
+
+Two reusable middleware factories and generic failure-response helpers are defined under `src/middleware/`. They are **not attached to any active route** and require no D1 binding, secrets, or deployment to test.
+
+### `requireSession(fetcher, clock)`
+
+Validates the session cookie and loads the authenticated user:
+
+1. Parses `photo_gate_session` cookie via the strict parser (rejects missing, duplicate, malformed, wrong-length tokens)
+2. Digests the raw token to a SHA-256 hex string (the raw token is never passed to the repository or downstream handler)
+3. Calls `fetcher.fetchValidSession(digest, now)`; `now` is read from `clock()` exactly once when a valid cookie requires lookup
+4. Sets `userId` in Hono context variables; calls `next()` on success
+
+**Failure behavior:**
+
+| Condition | Status |
+|---|---|
+| Missing, duplicate, malformed cookie | `401 Unauthorized` |
+| Unknown, expired, or disabled-user session | `401 Unauthorized` |
+| Repository / crypto failure | `503 Service Unavailable` |
+
+All failure responses use `Cache-Control: no-store`. Responses never include user IDs, tokens, digests, SQL, or exception text.
+
+### `requireAlbumPermission(permChecker, albumIdResolver, clock)`
+
+Authorizes access to a specific album (intended to run after `requireSession`):
+
+1. Reads `userId` from Hono context variables (set by session middleware)
+2. Resolves `albumId` from the caller-supplied resolver function
+3. Validates the `albumId` format
+4. Calls `permChecker.checkPermission(userId, albumId, now)`; `now` is read from `clock()` exactly once when a valid request requires a permission check
+
+**Failure behavior:**
+
+| Condition | Status |
+|---|---|
+| `userId` not in context | `401 Unauthorized` |
+| Invalid or absent album ID | `403 Forbidden` |
+| Permission denied, disabled album, expired album | `403 Forbidden` |
+| Repository failure | `503 Service Unavailable` |
+
+Fails closed on repository errors: a DB outage never accidentally grants permission. All failure responses use `Cache-Control: no-store`.
+
+### Request context
+
+Downstream handlers receive only:
+
+```typescript
+{ userId: string }
+```
+
+Raw tokens, token digests, password hashes, session rows, and permission rows are never stored in context.
+
+### Dependency injection
+
+Both factories accept interface values (`SessionFetcher`, `PermissionChecker`) rather than concrete repository classes. Pass the concrete `SessionRepository` / `PermissionRepository` instances when wiring to routes in Phase 4.
+
 ## Password Hash Encoding
 
 ```text
@@ -141,6 +199,7 @@ Cache headers:
 
 - D1 database: no `[d1_databases]` binding in `wrangler.toml`; migrations are not applied
 - R2 bucket: no manifests, thumbs, or previews
-- Authentication: no login, logout, or session cookies in active routes
+- Authentication middleware: implemented, not wired to any route; no login, logout, or session cookies in active routes
+- Authorization middleware: implemented, not wired to any route
 - PhotoPrism: no API calls
 - Admin UI: `/admin/*` returns 401

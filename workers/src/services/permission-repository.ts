@@ -1,4 +1,4 @@
-import { isCanonicalUtcTimestamp, isValidId } from './repository-validation.js'
+import { databaseOperationError, isCanonicalUtcTimestamp, isValidId } from './repository-validation.js'
 
 export class PermissionRepository {
   constructor(private readonly db: D1Database) {}
@@ -21,7 +21,7 @@ export class PermissionRepository {
         .first<{ has_permission: number }>()
       return row !== null && row.has_permission === 1
     } catch {
-      return false
+      throw databaseOperationError()
     }
   }
 }
