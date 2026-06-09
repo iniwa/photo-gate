@@ -5,7 +5,7 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 > **WARNING: This is a Phase 2/3 foundation. Do not deploy this as a real photo-sharing service.**
 > Login routes, D1 bindings, R2 bindings, and real photo data are not connected.
 > Authentication and authorization middleware is implemented but not wired to any active route.
-> R2 key builders and manifest validator are implemented but no R2 reads or object responses are connected.
+> R2 key builders, manifest validator, private-object loaders, and image response helpers are implemented but no R2 reads or object responses are active.
 > All visible content is synthetic fixture data.
 
 ## Architecture
@@ -13,7 +13,7 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 - **Runtime**: Cloudflare Workers (TypeScript, Hono + JSX SSR)
 - **Static assets**: `public/` served via Workers Assets (`/styles.css`)
 - **UI**: Server-side rendered HTML via Hono + JSX, with no client-side JavaScript
-- **Phase 3 foundation**: D1 schema, crypto primitives, session model, repositories, auth middleware, R2-key builders, and manifest validator are implemented but not yet wired to live routes.
+- **Phase 3 foundation**: D1 schema, crypto primitives, session model, repositories, auth middleware, R2-key builders, manifest validator, private-object loaders, and image response helpers are implemented but not yet wired to live routes.
 
 ### Phase boundary
 
@@ -25,6 +25,8 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 | Image delivery | 401 | Not wired | R2 via Workers |
 | R2 key construction | — | Key builders ready | Active routes |
 | Manifest validation | — | Validator ready | Active R2 reads |
+| Private-object loaders | — | Loaders ready | Active R2 reads |
+| Image responses | — | Response helpers ready | Active object routes |
 
 ## Install
 
@@ -263,12 +265,117 @@ All identifier validation — repositories, authorization middleware, R2 key bui
 - May contain alphanumerics, underscores, and hyphens after the first character
 - Minimum length: 1; maximum length: 128
 
+## Private Object Reader Contract (Phase 3, not wired)
+
+The injected `PrivateObjectReader` interface in `src/types/private-object.ts` defines the minimum required operation for reading private R2 objects. It is not connected to a real R2 binding.
+
+```typescript
+interface PrivateObjectReader {
+  get(key: string): Promise<PrivateObjectBody | null>
+}
+```
+
+`PrivateObjectBody` exposes only:
+
+| Property | Description |
+|---|---|
+| `body: ReadableStream \| null` | Response-compatible body; image loaders require a non-null readable stream |
+| `text(): Promise<string>` | Full object content as UTF-8 (manifest parsing only) |
+
+All other stored object properties — `Content-Type`, `ETag`, checksums, `size`, upload timestamp, HTTP metadata, custom metadata, and bucket name — are **intentionally excluded** from the contract. Route-independent services must not trust or forward stored metadata.
+
+The R2 binding name is not yet decided. The reader stays injected and decoupled from `wrangler.toml`.
+
+## Private Album Object Loaders (Phase 3, not wired)
+
+Four explicit loaders are defined in `src/services/private-album-object-service.ts`. They are not connected to any active route or R2 binding.
+
+| Loader | Object fetched | Key used |
+|---|---|---|
+| `loadAlbumManifest(reader, albumId)` | Album manifest JSON | `albumManifestKey(albumId)` |
+| `loadAlbumCover(reader, albumId)` | Cover image body | `albumCoverKey(albumId)` |
+| `loadPhotoThumb(reader, albumId, photoId)` | Thumbnail image body | `photoThumbKey(albumId, photoId)` |
+| `loadPhotoPreview(reader, albumId, photoId)` | Preview image body | `photoPreviewKey(albumId, photoId)` |
+
+Each loader:
+
+- accepts only structured identifiers; no caller-supplied key, path, or arbitrary string is accepted
+- delegates key construction to the existing explicit R2 key builders (which enforce the safe-ID contract)
+- calls the injected reader exactly once
+- returns `{ status: 'not_found' }` for absent objects without throwing
+- throws `ObjectServiceError` (not the raw reader error) for unexpected failures
+
+### Mandatory manifest validation
+
+`loadAlbumManifest` performs mandatory validation after a successful read:
+
+1. Calls `obj.text()` to read the raw JSON string
+2. Passes it to `parseManifest(text, expectedAlbumId)` for strict schemaVersion 1 validation
+3. Returns only the validated `Manifest` object; the raw JSON string is never returned
+
+`text()` is never called if the reader returns `null` (object absent).
+
+### Sanitized service errors
+
+`ObjectServiceError` has a stable `code` property for route mapping:
+
+| Code | Meaning |
+|---|---|
+| `reader_failure` | Reader rejected, `text()` rejected, or invalid identifier supplied |
+| `manifest_invalid` | JSON is malformed, fails schema validation, or has a mismatched `albumId` |
+
+Error messages are generic (`'object read failed'` / `'manifest invalid'`). No album IDs, photo IDs, R2 keys, bucket names, underlying exception text, or manifest content are included in errors.
+
+Image object loaders (`loadAlbumCover`, `loadPhotoThumb`, `loadPhotoPreview`) return only a validated non-null `ReadableStream` from `PrivateObjectBody.body`. Missing or invalid bodies fail closed as sanitized reader failures. All other stored metadata is discarded, even if a test double supplies it. Bodies are never buffered, converted to strings, or inspected.
+
+### Authorization boundary
+
+These loaders are intended to run only after `requireSession` and `requireAlbumPermission`. They contain no authorization logic. The responsibility boundary is:
+
+1. route authentication (`requireSession`)
+2. album authorization (`requireAlbumPermission`)
+3. explicit object loader
+4. safe response helper
+
+## Private Object Response Helpers (Phase 3, not wired)
+
+Three helpers are defined in `src/middleware/private-object-response.ts`. They are not connected to any active route.
+
+### Successful image responses
+
+```typescript
+privateImageResponse(body: ReadableStream | null, kind: ImageKind): Response
+```
+
+`ImageKind` is an explicit allowlist: `'cover' | 'thumb' | 'preview'`. Content-Type is fixed by kind:
+
+| Kind | Content-Type |
+|---|---|
+| `cover` | `image/webp` |
+| `thumb` | `image/webp` |
+| `preview` | `image/jpeg` |
+
+All successful object responses use `Cache-Control: private, no-store` and `X-Content-Type-Options: nosniff`. The body is passed through without buffering or inspection.
+
+The following headers are **never** set or forwarded: `ETag`, `Last-Modified`, `Content-Length`, `Content-Disposition`, `Content-Range`, stored `Cache-Control`, or any other R2 object metadata.
+
+### Failure responses
+
+| Helper | Status | Cache-Control | Body |
+|---|---|---|---|
+| `objectNotFoundResponse()` | 404 | `no-store` | Generic; no IDs, keys, or storage details |
+| `objectInternalErrorResponse()` | 500 | `no-store` | Generic; no IDs, keys, or storage details |
+
+Both failure helpers set `X-Content-Type-Options: nosniff`. Cache-Control is `no-store` (not `private, no-store`), matching the existing auth failure policy.
+
 ## What is not connected
 
 - D1 database: no `[d1_databases]` binding in `wrangler.toml`; migrations are not applied
 - R2 bucket: no `[r2_buckets]` binding in `wrangler.toml`; no manifests, thumbs, previews, or covers
 - R2 key builders: implemented, not wired to any route; no R2 reads or object responses
 - Manifest validator: implemented, not wired to any route; no real manifests parsed
+- Private-object loaders: implemented, not wired to any route; no real R2 reads
+- Image response helpers: implemented, not wired to any route; no real object responses
 - Authentication middleware: implemented, not wired to any route; no login, logout, or session cookies in active routes
 - Authorization middleware: implemented, not wired to any route
 - PhotoPrism: no API calls
