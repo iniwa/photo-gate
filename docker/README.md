@@ -30,7 +30,8 @@ python -m compileall src
 - `photo_gate.photoprism_client` — async httpx client for PhotoPrism API
 - `photo_gate.image_processor` — pyvips re-encoding and metadata validation
 - `photo_gate.manifest` — deterministic manifest.json builder
-- `photo_gate.object_store` — ObjectStore Protocol (no real R2 access yet)
+- `photo_gate.object_store` — ObjectStore Protocol and ObjectStoreError
+- `photo_gate.r2_store` — R2Config and R2ObjectStore (boto3 S3-compatible, SigV4, asyncio.to_thread)
 - `photo_gate.sync` — sync orchestration: list → download → re-encode → validate → upload → manifest
 - `photo_gate.models` — typed dataclasses shared across modules
 
