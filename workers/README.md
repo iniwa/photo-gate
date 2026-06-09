@@ -6,6 +6,7 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 > Login routes, D1 bindings, R2 bindings, and real photo data are not connected.
 > Authentication and authorization middleware is implemented but not wired to any active route.
 > R2 key builders, manifest validator, private-object loaders, and image response helpers are implemented but no R2 reads or object responses are active.
+> A private R2 reader adapter is implemented but no R2 binding or active route uses it.
 > Authorized-album catalog repository is implemented but not wired to any active route.
 > All visible content is synthetic fixture data.
 
@@ -28,6 +29,7 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 | Manifest validation | — | Validator ready | Active R2 reads |
 | Private-object loaders | — | Loaders ready | Active R2 reads |
 | Image responses | — | Response helpers ready | Active object routes |
+| Private R2 reader | — | Injected adapter ready | Active R2 reads |
 | Authorized-album catalog | — | Repository ready | Active album routes |
 
 ## Install
@@ -370,6 +372,23 @@ The following headers are **never** set or forwarded: `ETag`, `Last-Modified`, `
 
 Both failure helpers set `X-Content-Type-Options: nosniff`. Cache-Control is `no-store` (not `private, no-store`), matching the existing auth failure policy.
 
+## Private R2 Reader Adapter (Phase 3, not wired)
+
+`PrivateR2Reader` adapts an injected `R2Bucket` to the minimal `PrivateObjectReader` contract. It permits only the four standard private album object layouts:
+
+```text
+albums/{albumId}/manifest.json
+albums/{albumId}/cover.webp
+albums/{albumId}/thumbs/{photoId}.webp
+albums/{albumId}/previews/{photoId}.jpg
+```
+
+Keys are validated before R2 access. Arbitrary prefixes, unsafe IDs, traversal forms, wrong extensions, query strings, fragments, encoded alternatives, and additional path segments are rejected. Expected object absence returns `null`; invalid keys, R2 failures, malformed objects, and text-read failures produce only a sanitized adapter error.
+
+Found R2 objects are reconstructed as the existing minimal `{ body, text }` contract. R2 metadata, HTTP metadata, custom metadata, ETag, checksums, size, upload time, bucket identity, and all write/list/delete operations are intentionally unavailable.
+
+Authentication and album authorization remain required before an explicit object loader calls this adapter. No R2 binding name, active route, or real R2 read is connected.
+
 ## Authorized Album Catalog Repository (Phase 3, not wired)
 
 `AuthorizedAlbumRepository` in `src/services/authorized-album-repository.ts` provides two operations for discovering only the albums an authenticated shared user is currently authorized to view. It is not connected to any active route or D1 binding.
@@ -426,6 +445,7 @@ All D1 failures and malformed rows throw the existing sanitized `'database opera
 - Manifest validator: implemented, not wired to any route; no real manifests parsed
 - Private-object loaders: implemented, not wired to any route; no real R2 reads
 - Image response helpers: implemented, not wired to any route; no real object responses
+- Private R2 reader adapter: implemented, not wired to any route or binding; no real object reads
 - Authentication middleware: implemented, not wired to any route; no login, logout, or session cookies in active routes
 - Authorization middleware: implemented, not wired to any route
 - Authorized-album catalog repository: implemented, not wired to any route; no real D1 binding, no active album list or album detail routes
