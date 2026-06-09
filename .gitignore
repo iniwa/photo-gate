@@ -1,0 +1,81 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.secret
+*.secrets
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+credentials.*.json
+service-account*.json
+secrets/
+
+# Local AI/tool state
+.serena/
+.claude/
+.codex/
+
+# Node.js / Cloudflare Workers
+node_modules/
+workers/.wrangler/
+workers/.dev.vars
+workers/.dev.vars.*
+workers/dist/
+workers/coverage/
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+docker/dist/
+docker/build/
+
+# Local databases and state
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+
+# Docker sync service runtime data and real media
+docker/cache/
+docker/logs/
+docker/data/
+docker/media/
+docker/photos/
+docker/uploads/
+docker/r2-dump/
+
+# Logs and temporary files
+*.log
+*.log.*
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Editor and OS files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Local backups
+*.bak
+*.backup
+*.orig

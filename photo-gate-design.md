@@ -10,7 +10,7 @@
 
 - PhotoPrism / NAS は原本管理・アルバム管理に徹する
 - PhotoPrismはCloudflare Access配下に置き、一般共有ユーザーには直接アクセスさせない
-- Raspberry Pi上のDockerサービスが、共有対象アルバムの派生画像を事前生成する
+- Raspberry Pi上のDockerサービスが、PhotoPrismの生成済みpreviewを優先的に取得し、共有対象アルバムの派生画像を事前生成する
 - Cloudflare R2には、共有用の低解像度サムネイル・高解像度プレビュー・manifestのみを置く
 - Cloudflare Workersは、ページ/API/管理画面を提供し、R2上の生成済みデータを返す
 - RAW / RW2 / 原本はR2に置かない
@@ -89,10 +89,12 @@ photo-gate/
 
 - PhotoPrism APIからアルバム一覧を取得
 - PhotoPrism APIからアルバム内の写真一覧を取得
-- NASまたはPhotoPrismから生成元画像を取得
+- PhotoPrism Thumbnail APIから生成済みpreviewを取得
+- 必要な場合のみ、明示的なfallbackとしてNASまたはPhotoPrismから生成元画像を取得
 - 低解像度サムネイルを生成
 - 高解像度プレビューを生成
-- EXIF削除
+- 取得画像を必ず再エンコードし、EXIF/GPS等のメタデータを削除
+- R2アップロード前にメタデータ除去を検証
 - R2へアップロード
 - `manifest.json` 生成
 - R2上の不要データ削除
@@ -291,6 +293,37 @@ albums/family-trip-2026/
 ---
 
 ## 7. 画像生成方針
+
+### 7.0 生成元画像
+
+Pi Docker Serviceは、原則としてPhotoPrismのThumbnail Image APIが返す生成済み画像を同期元に使う。
+
+```text
+GET /api/v1/photos?s={albumUid}&primary=true&count={count}&offset={offset}
+GET /api/v1/t/{hash}/{previewToken}/fit_720
+GET /api/v1/t/{hash}/{previewToken}/fit_3840
+```
+
+- アルバム内写真一覧は `GET /api/v1/photos` の `s={albumUid}` で取得する。
+- 各写真のprimary fileのSHA1 `Hash` と、レスポンスヘッダーの `X-Preview-Token` を使ってThumbnail Image APIへアクセスする。
+- thumb生成元には `fit_720`、preview生成元には `fit_3840` を基本とする。
+- `fit_3840` がPhotoPrismの設定上利用できない場合は、利用可能な最大 `fit_*` サイズへfallbackするか、ジョブを明示的に失敗させる。原本へ暗黙にfallbackしない。
+- PhotoPrismはRAW等をindex/import時にJPEG/PNG sidecarへ変換し、その画像を元にthumbnailを生成するため、Pi側でのRAW現像を通常経路から除外できる。
+- PhotoPrism APIには公式のdeprecation policyがないため、利用バージョンとAPI契約を統合テストで確認する。
+
+PhotoPrism生成画像をR2へそのままコピーしてはならない。PhotoPrism公式デモの `fit_1920` 出力にはEXIF metadata blockが残ることを2026-06-09に実測した。内容が無害に見える場合でも、将来のPhotoPrism設定・バージョン・入力画像によってGPS等が残らない保証はない。
+
+```text
+PhotoPrism preview取得
+  ↓
+Pi Docker Serviceで再エンコード
+  ↓
+EXIF / XMP / IPTC / GPS等が残っていないことを検証
+  ↓
+R2へアップロード
+```
+
+RAWまたはXMPを変更しても、PhotoPrismは関連JPEG sidecarを自動再生成しない。RAW現像結果を更新した場合は、PhotoPrism側でsidecarを更新・再変換してからphoto-gate同期を実行する。
 
 ### 7.1 thumb
 
@@ -568,14 +601,13 @@ GET  /jobs/:jobId
 3. R2上のmanifest.jsonを取得
 4. 差分計算
 5. 生成が必要な写真を抽出
-6. NAS/PhotoPrismから元画像を取得
-7. thumb生成
-8. preview生成
-9. EXIF削除
-10. R2へアップロード
-11. 不要ファイル削除
-12. manifest.json更新
-13. ジョブ完了通知
+6. PhotoPrism Thumbnail APIから生成済みpreviewを取得
+7. thumb / previewを再エンコード
+8. EXIF / XMP / IPTC / GPS等のメタデータ削除を検証
+9. R2へアップロード
+10. 不要ファイル削除
+11. manifest.json更新
+12. ジョブ完了通知
 ```
 
 ### 推奨画像処理ライブラリ
@@ -1176,8 +1208,8 @@ Workers:
 
 Docker:
   Raspberry Pi上で動作
-  PhotoPrism/NASから画像取得
-  thumb/previewを全件生成
+  PhotoPrism Thumbnail APIから生成済みpreviewを優先取得
+  thumb/previewを再エンコードしてメタデータ除去
   R2へ同期
 
 R2:
@@ -1213,13 +1245,10 @@ GitHub Actions:
   - friends
   - event_xxx
 - PhotoPrism APIの実際の取得項目確認
-- Pi側で原本を読む方法
-  - PhotoPrism API経由
-  - NASマウント経由
-- 画像処理ライブラリ
-  - pyvips
-  - Pillow
-  - ImageMagick
+- PhotoPrism Thumbnail APIの最大サイズ不足時の方針
+  - 利用可能な最大サイズへfallback
+  - ジョブを失敗させる
+- PhotoPrism / NAS原本取得fallbackを提供するか
 - R2削除の安全設計
   - 即削除
   - dry-run

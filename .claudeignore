@@ -1,0 +1,63 @@
+# Version control and local AI/tool state
+.git/
+.serena/
+.claude/
+.codex/
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+credentials.*.json
+service-account*.json
+secrets/
+workers/.dev.vars
+workers/.dev.vars.*
+
+# Dependencies, build output, and caches
+node_modules/
+workers/.wrangler/
+workers/dist/
+workers/coverage/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+docker/dist/
+docker/build/
+docker/cache/
+docker/logs/
+docker/data/
+docker/media/
+docker/photos/
+docker/uploads/
+docker/r2-dump/
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+
+# Generated and temporary files
+*.log
+*.log.*
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini
