@@ -5,6 +5,8 @@ export interface CapturedQuery {
 
 export interface StmtConfig {
   first?: unknown
+  allRows?: unknown[]
+  allResult?: unknown
   throws?: Error
 }
 
@@ -36,7 +38,10 @@ class MockStatement {
 
   async all<T = unknown>(): Promise<D1Result<T>> {
     this.capture.push({ sql: this.sql, params: this.boundParams })
-    return { success: true } as unknown as D1Result<T>
+    if (this.config.throws) throw this.config.throws
+    if (this.config.allResult !== undefined) return this.config.allResult as D1Result<T>
+    const results = (this.config.allRows ?? []) as T[]
+    return { results, success: true } as unknown as D1Result<T>
   }
 
   raw<T extends unknown[] = unknown[]>(): Promise<T[]> {

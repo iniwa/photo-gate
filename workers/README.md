@@ -6,6 +6,7 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 > Login routes, D1 bindings, R2 bindings, and real photo data are not connected.
 > Authentication and authorization middleware is implemented but not wired to any active route.
 > R2 key builders, manifest validator, private-object loaders, and image response helpers are implemented but no R2 reads or object responses are active.
+> Authorized-album catalog repository is implemented but not wired to any active route.
 > All visible content is synthetic fixture data.
 
 ## Architecture
@@ -27,6 +28,7 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 | Manifest validation | — | Validator ready | Active R2 reads |
 | Private-object loaders | — | Loaders ready | Active R2 reads |
 | Image responses | — | Response helpers ready | Active object routes |
+| Authorized-album catalog | — | Repository ready | Active album routes |
 
 ## Install
 
@@ -368,6 +370,54 @@ The following headers are **never** set or forwarded: `ETag`, `Last-Modified`, `
 
 Both failure helpers set `X-Content-Type-Options: nosniff`. Cache-Control is `no-store` (not `private, no-store`), matching the existing auth failure policy.
 
+## Authorized Album Catalog Repository (Phase 3, not wired)
+
+`AuthorizedAlbumRepository` in `src/services/authorized-album-repository.ts` provides two operations for discovering only the albums an authenticated shared user is currently authorized to view. It is not connected to any active route or D1 binding.
+
+### Viewer-facing album shape
+
+```typescript
+interface AuthorizedAlbumSummary {
+  id: string
+  title: string
+}
+```
+
+Fields intentionally **not returned**: `photoprism_album_uid`, image-generation settings (`thumb_long_edge`, `thumb_format`, `thumb_quality`, `preview_*`), `strip_exif`, `download_enabled`, permission rows, user IDs, session data, R2 keys, and timestamps. R2 manifests remain the source for photo lists and generated image details.
+
+### Repository methods
+
+| Method | Returns |
+|---|---|
+| `listAuthorizedAlbums(userId, now, limit, afterAlbumId?)` | `AuthorizedAlbumSummary[]` |
+| `getAuthorizedAlbum(userId, albumId, now)` | `AuthorizedAlbumSummary \| null` |
+
+### Authorization conditions (enforced by every query)
+
+Every query enforces all of the following within a single parameterized SQL statement:
+
+- an explicit `album_permissions` row for the supplied `userId` and `albumId`
+- `users.enabled = 1` (the viewer account is active)
+- `albums.enabled = 1` (the album is published)
+- `albums.expires_at IS NULL OR albums.expires_at > now` (the album has not expired)
+
+These conditions are redundant with middleware authorization by design — the repository cannot become an accidental data-enumeration boundary if middleware is bypassed or misconfigured.
+
+### Keyset pagination
+
+`listAuthorizedAlbums` uses deterministic ascending `ORDER BY a.id ASC` with an explicit `LIMIT`. The `limit` parameter must be an integer between `1` and `100` inclusive. When `afterAlbumId` is supplied, the query adds `AND a.id > ?` and binds the cursor as a parameter; no offset pagination is used. Callers use the last returned album ID as the next cursor.
+
+### Input and row validation
+
+- Invalid `userId` returns `[]` (list) or `null` (get) without querying D1.
+- Invalid `albumId` returns `null` (get) without querying D1.
+- Invalid `limit` (0, >100, non-integer, NaN, Infinity), non-canonical `now`, or invalid `afterAlbumId` throw generic validation errors before D1 access.
+- D1-returned rows are validated: only safe IDs and string titles up to 1,024 Unicode code points are accepted. Unexpected fields are discarded. Duplicate IDs and malformed rows throw `'database operation failed'`.
+
+### Failure behavior
+
+All D1 failures and malformed rows throw the existing sanitized `'database operation failed'` error — no user IDs, album IDs, cursor values, titles, SQL, or internal exception details are included in thrown errors.
+
 ## What is not connected
 
 - D1 database: no `[d1_databases]` binding in `wrangler.toml`; migrations are not applied
@@ -378,5 +428,6 @@ Both failure helpers set `X-Content-Type-Options: nosniff`. Cache-Control is `no
 - Image response helpers: implemented, not wired to any route; no real object responses
 - Authentication middleware: implemented, not wired to any route; no login, logout, or session cookies in active routes
 - Authorization middleware: implemented, not wired to any route
+- Authorized-album catalog repository: implemented, not wired to any route; no real D1 binding, no active album list or album detail routes
 - PhotoPrism: no API calls
 - Admin UI: `/admin/*` returns 401
