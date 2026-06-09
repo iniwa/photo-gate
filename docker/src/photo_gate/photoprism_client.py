@@ -1,0 +1,184 @@
+import re
+from datetime import datetime
+
+import httpx
+
+from .models import PhotoPrismPhoto
+
+_SAFE_HASH = re.compile(r"^[0-9a-f]{40}$", re.ASCII)
+_SAFE_UID = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$", re.ASCII)
+_ALLOWED_SIZES = frozenset(["fit_720", "fit_3840"])
+
+
+class PhotoPrismError(Exception):
+    pass
+
+
+class PhotoPrismClient:
+    def __init__(
+        self,
+        base_url: str,
+        token: str,
+        cf_client_id: str | None = None,
+        cf_client_secret: str | None = None,
+        page_size: int = 500,
+        _transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
+        if page_size < 1:
+            raise ValueError("page_size must be positive")
+        self._page_size = page_size
+        headers: dict[str, str] = {"Authorization": f"Bearer {token}"}
+        if cf_client_id:
+            headers["CF-Access-Client-Id"] = cf_client_id
+        if cf_client_secret:
+            headers["CF-Access-Client-Secret"] = cf_client_secret
+        self._client = httpx.AsyncClient(
+            base_url=base_url.rstrip("/"),
+            headers=headers,
+            timeout=httpx.Timeout(connect=10.0, read=60.0, write=30.0, pool=10.0),
+            transport=_transport,
+        )
+
+    async def __aenter__(self) -> "PhotoPrismClient":
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        await self._client.aclose()
+
+    async def list_album_photos(
+        self, album_uid: str
+    ) -> tuple[list[PhotoPrismPhoto], str]:
+        """
+        Returns (photos, preview_token).
+        Paginates until X-Count < X-Limit.
+        Raises PhotoPrismError for HTTP errors, missing token, or missing identifiers.
+        """
+        photos: list[PhotoPrismPhoto] = []
+        preview_token: str | None = None
+        offset = 0
+
+        while True:
+            try:
+                response = await self._client.get(
+                    "/api/v1/photos",
+                    params={
+                        "s": album_uid,
+                        "primary": "true",
+                        "count": self._page_size,
+                        "offset": offset,
+                    },
+                )
+            except httpx.HTTPError as exc:
+                raise PhotoPrismError("PhotoPrism photo list request failed") from exc
+
+            if response.status_code != 200:
+                raise PhotoPrismError(
+                    f"PhotoPrism photo list returned HTTP {response.status_code}"
+                )
+
+            if preview_token is None:
+                token_value = response.headers.get("X-Preview-Token")
+                if not token_value:
+                    raise PhotoPrismError(
+                        "X-Preview-Token header missing from PhotoPrism response"
+                    )
+                preview_token = token_value
+
+            try:
+                results = response.json()
+                x_count = int(response.headers.get("X-Count", len(results)))
+                x_limit = int(response.headers.get("X-Limit", self._page_size))
+            except (ValueError, TypeError) as exc:
+                raise PhotoPrismError("PhotoPrism photo list response is malformed") from exc
+            if not isinstance(results, list) or x_count < 0 or x_limit < 1:
+                raise PhotoPrismError("PhotoPrism photo list response is malformed")
+
+            for item in results:
+                if not isinstance(item, dict):
+                    raise PhotoPrismError("PhotoPrism photo entry is malformed")
+                uid = item.get("UID") or item.get("Uid") or ""
+                hash_val = item.get("Hash") or ""
+
+                if not uid:
+                    raise PhotoPrismError("Photo entry missing UID")
+                if not _SAFE_UID.match(uid):
+                    raise PhotoPrismError(f"Photo UID contains unsafe characters")
+                if not hash_val:
+                    raise PhotoPrismError(f"Photo uid={uid!r} missing Hash")
+                if not _SAFE_HASH.match(hash_val):
+                    raise PhotoPrismError(
+                        f"Photo uid={uid!r} has non-hex Hash (len={len(hash_val)})"
+                    )
+
+                taken_at_str: str = item.get("TakenAt") or item.get("TakenAtLocal") or ""
+                try:
+                    taken_at = datetime.fromisoformat(
+                        taken_at_str.replace("Z", "+00:00")
+                    )
+                except (ValueError, AttributeError) as exc:
+                    raise PhotoPrismError(
+                        f"Photo uid={uid!r} has invalid TakenAt"
+                    ) from exc
+
+                try:
+                    photo = PhotoPrismPhoto(
+                        uid=uid,
+                        hash=hash_val,
+                        title=item.get("Title") or "",
+                        taken_at=taken_at,
+                        width=int(item.get("Width", 0)),
+                        height=int(item.get("Height", 0)),
+                    )
+                except (TypeError, ValueError) as exc:
+                    raise PhotoPrismError(
+                        f"Photo uid={uid!r} has malformed fields"
+                    ) from exc
+                photos.append(photo)
+
+            if x_count < x_limit:
+                break
+            offset += x_limit
+
+        assert preview_token is not None
+        return photos, preview_token
+
+    async def download_preview(
+        self, hash_val: str, preview_token: str, size: str
+    ) -> bytes:
+        """
+        Downloads a PhotoPrism-generated preview.
+        Raises ValueError for disallowed sizes or malformed hash.
+        Raises PhotoPrismError for HTTP errors or non-image responses.
+        Credentials and preview token are never included in error messages.
+        """
+        if size not in _ALLOWED_SIZES:
+            raise ValueError(
+                f"Preview size {size!r} not in allowlist {sorted(_ALLOWED_SIZES)}"
+            )
+        if not _SAFE_HASH.match(hash_val):
+            raise ValueError(f"Hash is not a 40-char hex string")
+
+        try:
+            response = await self._client.get(
+                f"/api/v1/t/{hash_val}/{preview_token}/{size}"
+            )
+        except httpx.HTTPError as exc:
+            raise PhotoPrismError(
+                f"Preview download request failed "
+                f"(hash_prefix={hash_val[:8]!r}, size={size!r})"
+            ) from exc
+
+        if response.status_code != 200:
+            raise PhotoPrismError(
+                f"Preview download returned HTTP {response.status_code} "
+                f"(hash_prefix={hash_val[:8]!r}, size={size!r})"
+            )
+
+        content_type = response.headers.get("content-type", "")
+        if not content_type.startswith("image/"):
+            raise PhotoPrismError(
+                f"Preview response has non-image content-type {content_type!r} "
+                f"(hash_prefix={hash_val[:8]!r})"
+            )
+
+        return response.content
