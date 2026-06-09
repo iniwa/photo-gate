@@ -12,6 +12,9 @@ dependencies = [
     "pyvips>=2.2",
 ]
 
+[project.scripts]
+photo-gate-sync = "photo_gate.main:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8",
