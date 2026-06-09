@@ -1,6 +1,6 @@
 import type { Context, MiddlewareHandler } from 'hono'
 import type { AuthVariables } from '../types/auth-context.js'
-import { isValidId } from '../services/repository-validation.js'
+import { isValidId } from '../services/safe-id.js'
 import { forbiddenResponse, serviceUnavailableResponse, unauthorizedResponse } from './auth-response.js'
 
 export interface PermissionChecker {

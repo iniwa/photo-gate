@@ -1,15 +1,22 @@
 /** Compile-time contract matching docker/src/photo_gate/manifest.py schemaVersion 1. */
 
-export interface ManifestImageSpec {
+export interface ManifestThumbSpec {
   longEdge: number
-  format: string
+  format: 'webp'
+  quality: number
+}
+
+export interface ManifestPreviewSpec {
+  longEdge: number
+  format: 'jpg'
   quality: number
 }
 
 export interface ManifestImages {
-  thumb: ManifestImageSpec
-  preview: ManifestImageSpec
-  stripExif: boolean
+  thumb: ManifestThumbSpec
+  preview: ManifestPreviewSpec
+  /** Always true; EXIF must be stripped before R2 upload. */
+  stripExif: true
 }
 
 export interface ManifestSource {
@@ -20,11 +27,11 @@ export interface ManifestSource {
 export interface ManifestPhoto {
   id: string
   title: string
-  /** Relative path within the album prefix, e.g. "thumbs/pp_abc001.webp" */
+  /** "thumbs/{id}.webp", relative to album prefix */
   thumb: string
-  /** Relative path within the album prefix, e.g. "previews/pp_abc001.jpg" */
+  /** "previews/{id}.jpg", relative to album prefix */
   preview: string
-  /** ISO 8601 datetime string */
+  /** Timezone-aware ISO 8601 datetime string */
   takenAt: string
   width: number
   height: number
@@ -35,7 +42,7 @@ export interface Manifest {
   albumId: string
   title: string
   source: ManifestSource
-  /** ISO 8601 datetime string */
+  /** Timezone-aware ISO 8601 datetime string */
   generatedAt: string
   images: ManifestImages
   photos: ManifestPhoto[]

@@ -5,6 +5,7 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 > **WARNING: This is a Phase 2/3 foundation. Do not deploy this as a real photo-sharing service.**
 > Login routes, D1 bindings, R2 bindings, and real photo data are not connected.
 > Authentication and authorization middleware is implemented but not wired to any active route.
+> R2 key builders and manifest validator are implemented but no R2 reads or object responses are connected.
 > All visible content is synthetic fixture data.
 
 ## Architecture
@@ -12,7 +13,7 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 - **Runtime**: Cloudflare Workers (TypeScript, Hono + JSX SSR)
 - **Static assets**: `public/` served via Workers Assets (`/styles.css`)
 - **UI**: Server-side rendered HTML via Hono + JSX, with no client-side JavaScript
-- **Phase 3 foundation**: D1 schema, crypto primitives, session model, repositories, and auth middleware are implemented but not yet wired to live routes.
+- **Phase 3 foundation**: D1 schema, crypto primitives, session model, repositories, auth middleware, R2-key builders, and manifest validator are implemented but not yet wired to live routes.
 
 ### Phase boundary
 
@@ -22,6 +23,8 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 | Viewer login | Not implemented | Middleware ready | Full login route |
 | Album authorization | Not implemented | Middleware ready | Per-user D1 checks |
 | Image delivery | 401 | Not wired | R2 via Workers |
+| R2 key construction | — | Key builders ready | Active routes |
+| Manifest validation | — | Validator ready | Active R2 reads |
 
 ## Install
 
@@ -195,10 +198,77 @@ Cache headers:
 - 401 and error responses: `Cache-Control: no-store`
 - `public/styles.css` (via `_headers`): `Cache-Control: public, max-age=31536000, immutable`
 
+## R2 Object Key Builders (Phase 3, not wired)
+
+Four explicit builder functions are defined in `src/services/r2-object-key.ts`. They produce the standard R2 paths used by the Docker sync service and are not connected to any active route or R2 binding.
+
+| Builder | Path produced |
+|---|---|
+| `albumManifestKey(albumId)` | `albums/{albumId}/manifest.json` |
+| `albumCoverKey(albumId)` | `albums/{albumId}/cover.webp` |
+| `photoThumbKey(albumId, photoId)` | `albums/{albumId}/thumbs/{photoId}.webp` |
+| `photoPreviewKey(albumId, photoId)` | `albums/{albumId}/previews/{photoId}.jpg` |
+
+Each builder validates the supplied ID against the safe-ID contract (`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$`) and throws before returning a key if the ID is invalid. Error messages identify the invalid field category but never echo the rejected value.
+
+Arbitrary caller-supplied paths, relative segments, path traversal, backslashes, URL encoding, extensions, or prefixes are intentionally unsupported. There is no generic `buildKey(parts)` or `getObject(key)` helper.
+
+## Manifest Runtime Validator (Phase 3, not wired)
+
+`parseManifest(json, expectedAlbumId)` in `src/services/manifest-validator.ts` accepts a raw JSON string read from R2 and validates it against the `schemaVersion: 1` contract produced by `docker/src/photo_gate/manifest.py`. It is not connected to any active route or R2 binding.
+
+### Validation behavior
+
+- Rejects invalid JSON, over-size input, non-object roots, unsupported `schemaVersion`, and any missing or unexpected properties at every schema level.
+- Requires `manifest.albumId` to exactly match the caller-supplied `expectedAlbumId` — prevents serving one album's manifest in response to another album's request.
+- Validates all IDs with the shared safe-ID contract; validates timestamps as timezone-aware ISO 8601.
+- Requires `images.stripExif === true`, `thumb.format === "webp"`, `preview.format === "jpg"`.
+- Requires each photo's `thumb` and `preview` paths to exactly equal `thumbs/{id}.webp` and `previews/{id}.jpg` — rejects absolute paths, path traversal, backslashes, URL-like values, query strings, fragments, wrong extensions, and cross-photo path references.
+- Rejects duplicate photo IDs.
+- Returns a freshly constructed `Manifest` object; the raw parsed input is never returned or mutated.
+
+All validation errors throw `Error('invalid manifest')`. No album IDs, photo IDs, titles, paths, JSON snippets, or parser exception text are included in errors.
+
+### Defensive parser limits
+
+These limits apply at parse time and are intentionally conservative. They are not product limits or synchronization targets.
+
+| Limit | Value |
+|---|---|
+| Input JSON UTF-8 byte length | 8 MiB |
+| Photo count | 20,000 |
+| Title length (album and per-photo) | 1,024 Unicode code points |
+| Image dimensions (width, height, long edges) | 100,000 |
+
+Limits are exported as `MANIFEST_LIMITS` for tests.
+
+### Docker schema contract
+
+The validator mirrors the current Docker implementation:
+
+- `docker/src/photo_gate/manifest.py` — `build_manifest` output format
+- `docker/src/photo_gate/models.py` — `AlbumIdentity`, `ImageSettings`, `PhotoPrismPhoto` field constraints
+
+The validator does not accept schema fields beyond what Docker currently emits. Schema changes require an explicit versioned update to both the Docker and Workers implementations.
+
+## Centralized Safe-ID Contract
+
+All identifier validation — repositories, authorization middleware, R2 key builders, and manifest validator — uses a single helper in `src/services/safe-id.ts`:
+
+```
+^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$
+```
+
+- Must begin with an alphanumeric character
+- May contain alphanumerics, underscores, and hyphens after the first character
+- Minimum length: 1; maximum length: 128
+
 ## What is not connected
 
 - D1 database: no `[d1_databases]` binding in `wrangler.toml`; migrations are not applied
-- R2 bucket: no manifests, thumbs, or previews
+- R2 bucket: no `[r2_buckets]` binding in `wrangler.toml`; no manifests, thumbs, previews, or covers
+- R2 key builders: implemented, not wired to any route; no R2 reads or object responses
+- Manifest validator: implemented, not wired to any route; no real manifests parsed
 - Authentication middleware: implemented, not wired to any route; no login, logout, or session cookies in active routes
 - Authorization middleware: implemented, not wired to any route
 - PhotoPrism: no API calls

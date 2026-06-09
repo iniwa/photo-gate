@@ -1,9 +1,6 @@
-const SAFE_ID = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/
-const SHA256_HEX = /^[0-9a-f]{64}$/
+export { isValidId } from './safe-id.js'
 
-export function isValidId(id: string): boolean {
-  return SAFE_ID.test(id)
-}
+const SHA256_HEX = /^[0-9a-f]{64}$/
 
 export function isValidDigest(digest: string): boolean {
   return SHA256_HEX.test(digest)
