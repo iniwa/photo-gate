@@ -87,6 +87,13 @@ docker build -t photo-gate-sync:local .
 - secretsや実環境設定へのアクセスが必要。
 - 破壊的なR2削除、migration、deploy、pushが必要。
 
+## Handoff Lifecycle
+
+- Read active handoffs from `docs/handoffs/`.
+- Do not move or archive the handoff during implementation.
+- Codex moves a handoff to `docs/handoffs/archive/` only after review, acceptance, and commit.
+- Treat archived handoffs as historical context, not active instructions.
+
 ## Expected Report
 
 作業完了時は簡潔に以下を報告する。

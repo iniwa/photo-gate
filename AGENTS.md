@@ -177,6 +177,13 @@ Claude Codeは、handoff外の編集、設計変更、依存追加、デプロ�
 - 実装handoffは `docs/handoffs/` に残す。
 - `photo-gate-design.md` と実装がずれる場合、黙ってコードだけを変更せず、関連ドキュメントも更新する。
 
+## Handoff Lifecycle
+
+- Active handoffs live directly under `docs/handoffs/`.
+- After a handoff implementation is reviewed, accepted, and committed, move its handoff file to `docs/handoffs/archive/`.
+- Do not archive incomplete, blocked, or unreviewed handoffs.
+- Archived handoffs remain tracked as implementation history.
+
 ## Open Design Decisions
 
 以下は未決定であり、関連実装前に確認が必要。
