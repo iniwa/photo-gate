@@ -72,6 +72,56 @@ Or via the shell wrapper:
 
 `--confirm-upload` is required and must be explicit to prevent accidental uploads.
 
+## Docker
+
+### Build
+
+```sh
+docker build -t photo-gate-sync:local docker
+```
+
+### Smoke Test
+
+```sh
+# CLI help — default startup must show help and exit cleanly
+docker run --rm photo-gate-sync:local --help
+docker run --rm photo-gate-sync:local sync-once --help
+
+# Confirm libvips loads and print its version
+docker run --rm --entrypoint python photo-gate-sync:local \
+  -c "import pyvips; print(pyvips.version(0))"
+
+# Confirm the container runs as non-root
+docker run --rm --entrypoint python photo-gate-sync:local \
+  -c "import os; assert os.getuid() != 0, 'running as root'"
+```
+
+### One-shot Sync
+
+Secrets must be injected at runtime. Never commit, bake into the image, or pass as
+`--build-arg`. Use a local `.env` file (never copied into the image):
+
+```sh
+docker run --rm \
+  --env-file .env \
+  photo-gate-sync:local \
+  sync-once \
+  --album-id ALBUM_ID \
+  --album-title "Album Title" \
+  --photoprism-album-uid UID \
+  --confirm-upload
+```
+
+No port is exposed. This image is a one-shot CLI, not an HTTP service.
+
+### Multi-platform Build
+
+Verify both `linux/amd64` and `linux/arm64` build without pushing:
+
+```sh
+docker buildx build --platform linux/amd64,linux/arm64 --output type=cacheonly docker
+```
+
 ## Architecture
 
 - `photo_gate.config` — AppConfig and load_config (environment variable loader)

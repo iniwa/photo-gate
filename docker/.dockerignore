@@ -1,0 +1,66 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.secret
+*.secrets
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+credentials.*.json
+service-account*.json
+secrets/
+
+# Git and AI/tool state
+.git
+.github
+.serena
+.claude
+.codex
+
+# Python caches and build artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+dist/
+build/
+
+# Tests
+tests/
+
+# Runtime media and data directories
+cache/
+logs/
+data/
+media/
+photos/
+uploads/
+r2-dump/
+
+# Logs and temporary files
+*.log
+*.log.*
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Editor and OS files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini
