@@ -7,10 +7,10 @@ This is a priority-ordered plan. Update status as implementation progresses.
 ### 1. Complete Route-Independent Viewer Security
 
 - [x] Complete and archive the active manifest-authorized photo loading handoff.
-- [ ] Decide and implement any remaining route-independent login policy helpers
+- [x] Decide and implement any remaining route-independent login policy helpers
       using the approved defaults.
-- [ ] Add tests proving every real photo read requires exact current-manifest
-      membership.
+- [x] Add tests proving every real photo read requires exact current-manifest
+      membership (service-level; route-level proof repeats in item 2).
 
 ### 2. Connect Workers To Real D1 And Private R2
 

@@ -50,11 +50,14 @@ Last audited: 2026-06-11.
 - Authorized album catalog repository with keyset pagination.
 - Manifest-authorized thumb/preview loading with exact photo-ID membership,
   manifest-first read order, and no probing of unlisted/stale objects.
+- Login/session policy helpers: fixed seven-day session expiry, five-failure /
+  fifteen-minute atomic lockout, fail-closed locked_until handling, PBKDF2
+  production iterations fixed at 100,000 (ADR 2026-06-11).
 
 ## Workers Missing
 
-- Approved production policy wiring: fixed seven-day sessions, five failures
-  causing a fifteen-minute lockout, daily expired-session cleanup.
+- Daily expired-session cleanup scheduling (helpers and repository exist; no
+  Cron trigger is configured).
 - Real login/logout/me routes.
 - Real authenticated album list/detail routes.
 - Real image routes with session, album permission, manifest membership, and
@@ -73,12 +76,12 @@ Last audited: 2026-06-11.
 
 ## Current Verification Baseline
 
-The latest recorded Workers verification (2026-06-11, after the
-manifest-authorized photo loading service):
+The latest recorded Workers verification (2026-06-11, after the login/session
+policy helpers):
 
 - lint: passed;
 - typecheck: passed;
-- tests: 769 passed;
+- tests: 789 passed;
 - build dry-run: passed;
 - npm audit: zero vulnerabilities.
 

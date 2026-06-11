@@ -8,31 +8,33 @@ Working toward Level 1: Securely Usable.
 
 ## Current Task
 
-Roadmap Level 1, item 1 remainder: route-independent login/session policy
-helpers using the approved defaults.
+Roadmap Level 1, item 2: connect Workers to real D1 and private R2.
 
-Acceptance criteria:
+Acceptance criteria (incremental, in order):
 
-- fixed seven-day session lifetime policy helper;
-- five-failure / fifteen-minute lockout decision helpers;
-- PBKDF2 iteration count decided and recorded as an ADR;
-- helpers stay route-independent (no bindings, no active routes);
-- focused tests; full Workers verification passes; committed and pushed.
+- `DB` and `PHOTO_BUCKET` bindings and environment types;
+- login/logout/me routes using the approved policy helpers;
+- authenticated album list/detail routes;
+- private image routes enforcing session, album permission, exact manifest
+  membership, standard keys, and safe responses;
+- fixture viewer routes replaced only after real routes are fully protected;
+- daily expired-session cleanup (Cron);
+- operator bootstrap instructions/tooling;
+- full Workers verification passes at every step; committed and pushed.
 
 ## Last Completed Work
 
-- Implemented `manifest-authorized-photo-service.ts`: thumb/preview loading
-  gated on exact photo-ID membership in the current validated manifest,
-  manifest-first read order, fixed reader call counts, sanitized failures,
-  and no probing of unlisted/stale objects (commit `6333f8d`).
-- Added 89 focused tests; updated `workers/README.md`.
-- Archived the completed handoff
-  `docs/handoffs/archive/2026-06-09-phase-3-manifest-authorized-photo-loading.md`.
+- Manifest-authorized thumb/preview loading service with exact-membership
+  enforcement; handoff archived (commits `6333f8d`, `ba76829`).
+- Login/session policy helpers (`login-policy.ts`), atomic lockout-aware
+  `recordLoginFailure`, and ADR fixing PBKDF2 at 100,000 iterations
+  (commit `d5c030d`). Roadmap Level 1 item 1 is complete.
+- Subagent delegation and auto-push rules added to `FABLE.md` (`f8dc674`).
 
 ## Latest Known Verification
 
 - Workers (2026-06-11): lint, typecheck, build dry-run, and audit passed;
-  769 tests passed.
+  789 tests passed.
 - Docker baseline must be rechecked before the next Docker change.
 
 ## Human Setup Expected Later
@@ -48,6 +50,6 @@ None.
 
 ## Next Priority
 
-After login/session policy helpers: begin wiring Workers to `DB` and
-`PHOTO_BUCKET` per roadmap item 2 (bindings, login/logout/me routes,
-authenticated album routes, protected image routes).
+Roadmap Level 1 item 2 sub-steps in order: bindings/env types first, then
+login routes, album routes, image routes, fixture replacement, Cron cleanup,
+operator bootstrap. Then item 3 (deploy and validate Level 1).
