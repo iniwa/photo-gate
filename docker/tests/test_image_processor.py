@@ -42,17 +42,20 @@ if _PYVIPS_AVAILABLE:
 def _make_jpeg_with_exif_and_gps(width: int = 1000, height: int = 800) -> bytes:
     """Create a JPEG with EXIF Make/Model and GPS coordinates using Pillow."""
     from PIL import Image
+    from PIL.TiffImagePlugin import IFDRational
 
     img = Image.new("RGB", (width, height), color=(80, 120, 160))
     exif = img.getexif()
     exif[0x010F] = "TestMake"
     exif[0x0110] = "TestModel"
 
+    # Newer Pillow rejects bare (num, den) tuples for rational EXIF values;
+    # IFDRational works on both old and new Pillow.
     gps_ifd = exif.get_ifd(0x8825)
     gps_ifd[1] = "N"
-    gps_ifd[2] = ((35, 1), (41, 1), (0, 1))
+    gps_ifd[2] = (IFDRational(35, 1), IFDRational(41, 1), IFDRational(0, 1))
     gps_ifd[3] = "E"
-    gps_ifd[4] = ((139, 1), (41, 1), (0, 1))
+    gps_ifd[4] = (IFDRational(139, 1), IFDRational(41, 1), IFDRational(0, 1))
 
     buf = io.BytesIO()
     img.save(buf, format="JPEG", exif=exif.tobytes(), quality=90)

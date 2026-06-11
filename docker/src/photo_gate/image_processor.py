@@ -50,7 +50,8 @@ class ImageProcessor:
 
     def validate_no_forbidden_metadata(self, data: bytes) -> None:
         """
-        Fails closed: only core image fields and an ICC profile are allowed.
+        Fails closed: only core image fields, informational encoder fields,
+        and an ICC profile are allowed.
         """
         img: pyvips.Image = pyvips.Image.new_from_buffer(data, "")
         allowed = {
@@ -67,6 +68,13 @@ class ImageProcessor:
             "filename",
             "vips-loader",
             "icc-profile-data",
+            # Informational fields set by the libvips JPEG loader (8.16+):
+            # chroma subsampling mode and the progressive-scan flag. These
+            # describe the encoding itself, carry no EXIF/XMP/IPTC/GPS or
+            # other privacy-relevant data, and cannot be stripped because the
+            # loader derives them from the mandatory JPEG structure.
+            "jpeg-chroma-subsample",
+            "jpeg-multiscan",
         }
         forbidden = sorted(field for field in img.get_fields() if field not in allowed)
         if forbidden:
