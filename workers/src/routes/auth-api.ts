@@ -165,7 +165,14 @@ export function createAuthApi(
           return serviceUnavailableResponse(c)
         }
       }
-      return unauthorizedResponse(c)
+      // Credential failure (unknown user / wrong password / locked / corrupt
+      // lock) redirects the SSR login form back to `/?error=1` instead of the
+      // raw 401 text. The cause is never distinguished (uniform redirect), and
+      // no Set-Cookie is issued. Request-shape failures above still return 401.
+      // See ADR 2026-06-11-viewer-pages §2.3.
+      c.header('Cache-Control', 'no-store')
+      c.header('Location', '/?error=1')
+      return c.body(null, 303)
     }
 
     // 9. Success path.

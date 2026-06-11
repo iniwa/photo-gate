@@ -203,14 +203,14 @@ describe('POST /api/auth/login success', () => {
 })
 
 describe('POST /api/auth/login failures', () => {
-  it('wrong password returns generic 401 and records a failure', async () => {
+  it('wrong password returns the uniform 303 to /?error=1 and records a failure', async () => {
     const row = await makeRow()
     const { deps, state } = makeDeps({ row })
     const app = makeApp(deps)
     const res = await loginRequest(app, { userId: 'viewer-1', password: 'wrong' })
 
-    expect(res.status).toBe(401)
-    expect(await res.text()).toBe('Unauthorized')
+    expect(res.status).toBe(303)
+    expect(res.headers.get('location')).toBe('/?error=1')
     expect(res.headers.get('cache-control')).toBe('no-store')
     expect(cookieFromResponse(res)).toBeNull()
 
@@ -221,13 +221,13 @@ describe('POST /api/auth/login failures', () => {
     expect(state.resets).toHaveLength(0)
   })
 
-  it('unknown user runs verify, records a failure with the supplied ID, returns identical 401', async () => {
+  it('unknown user runs verify, records a failure with the supplied ID, returns the identical 303', async () => {
     const { deps, state } = makeDeps({ row: null })
     const app = makeApp(deps)
     const res = await loginRequest(app, { userId: 'ghost-user', password: PASSWORD })
 
-    expect(res.status).toBe(401)
-    expect(await res.text()).toBe('Unauthorized')
+    expect(res.status).toBe(303)
+    expect(res.headers.get('location')).toBe('/?error=1')
     expect(res.headers.get('cache-control')).toBe('no-store')
     expect(cookieFromResponse(res)).toBeNull()
 
@@ -240,26 +240,27 @@ describe('POST /api/auth/login failures', () => {
     expect(state.inserts).toHaveLength(0)
   })
 
-  it('invalid-format userId: no fetch, no recordLoginFailure, identical 401', async () => {
+  it('invalid-format userId: no fetch, no recordLoginFailure, identical 303', async () => {
     const { deps, state } = makeDeps({ row: null })
     const app = makeApp(deps)
     const res = await loginRequest(app, { userId: '!bad id!', password: PASSWORD })
 
-    expect(res.status).toBe(401)
-    expect(await res.text()).toBe('Unauthorized')
+    expect(res.status).toBe(303)
+    expect(res.headers.get('location')).toBe('/?error=1')
     expect(res.headers.get('cache-control')).toBe('no-store')
     expect(state.fetchCalls).toHaveLength(0)
     expect(state.failures).toHaveLength(0)
     expect(state.inserts).toHaveLength(0)
   })
 
-  it('locked account with correct password: 401, records failure, no session', async () => {
+  it('locked account with correct password: 303 to /?error=1, records failure, no session', async () => {
     const row = await makeRow({ locked_until: '2030-01-01T00:00:00.000Z' })
     const { deps, state } = makeDeps({ row })
     const app = makeApp(deps)
     const res = await loginRequest(app, { userId: 'viewer-1', password: PASSWORD })
 
-    expect(res.status).toBe(401)
+    expect(res.status).toBe(303)
+    expect(res.headers.get('location')).toBe('/?error=1')
     expect(state.failures).toHaveLength(1)
     expect(state.inserts).toHaveLength(0)
     expect(state.resets).toHaveLength(0)
@@ -276,13 +277,14 @@ describe('POST /api/auth/login failures', () => {
     expect(state.failures).toHaveLength(0)
   })
 
-  it('malformed locked_until is treated as locked: 401', async () => {
+  it('malformed locked_until is treated as locked: 303 to /?error=1', async () => {
     const row = await makeRow({ locked_until: 'not-a-timestamp' })
     const { deps, state } = makeDeps({ row })
     const app = makeApp(deps)
     const res = await loginRequest(app, { userId: 'viewer-1', password: PASSWORD })
 
-    expect(res.status).toBe(401)
+    expect(res.status).toBe(303)
+    expect(res.headers.get('location')).toBe('/?error=1')
     expect(state.inserts).toHaveLength(0)
     expect(state.failures).toHaveLength(1)
   })
@@ -605,20 +607,22 @@ describe('routing precedence against real src/index.tsx', () => {
     expect(res.status).toBe(200)
   })
 
-  it('/albums fixture page unchanged 200', async () => {
+  it('/albums without a session redirects to the login page', async () => {
     const res = await realApp.request(`${APP_ORIGIN}/albums`, {}, fakeEnv)
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(303)
+    expect(res.headers.get('location')).toBe('/')
   })
 })
 
 describe('dummy hash sanity (timing decoy is well-formed and never verifies)', () => {
-  it('verifyPassword against unknown user still returns a 401 (decoy path, no crash)', async () => {
+  it('verifyPassword against unknown user still returns the uniform 303 (decoy path, no crash)', async () => {
     // unknown user -> dummy hash verify; even if verify somehow returned true,
     // row === null forces failure. This asserts the well-formed decoy hash does
-    // not crash (no 503) for a normal password and still produces a 401.
+    // not crash (no 503) for a normal password and still redirects to /?error=1.
     const { deps } = makeDeps({ row: null })
     const app = makeApp(deps)
     const res = await loginRequest(app, { userId: 'viewer-1', password: PASSWORD })
-    expect(res.status).toBe(401)
+    expect(res.status).toBe(303)
+    expect(res.headers.get('location')).toBe('/?error=1')
   })
 })

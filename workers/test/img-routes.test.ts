@@ -573,11 +573,12 @@ describe('routing precedence (real app, fake env)', () => {
     expect(adminRes.status).toBe(401)
   })
 
-  it('fixture pages / and /albums still 200', async () => {
+  it('login page / is 200 and unauthenticated /albums redirects to /', async () => {
     const rootRes = await realApp.request('/', { method: 'GET' }, fakeEnv)
     const albumsRes = await realApp.request('/albums', { method: 'GET' }, fakeEnv)
     expect(rootRes.status).toBe(200)
-    expect(albumsRes.status).toBe(200)
+    expect(albumsRes.status).toBe(303)
+    expect(albumsRes.headers.get('location')).toBe('/')
   })
 })
 

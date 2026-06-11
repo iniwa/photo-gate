@@ -2,47 +2,31 @@
 
 Cloudflare Workers application for photo-gate. It serves the shared photo viewing UI.
 
-> **WARNING: This is a Phase 2/3 foundation. Do not deploy this as a real photo-sharing service.**
-> The viewer auth routes `/api/auth/login`, `/api/auth/logout`, and `/api/auth/me` are now ACTIVE,
-> but they require a real `DB` (D1) binding to function. The binding is declared with a placeholder
-> ID in `wrangler.toml`; no real D1 database exists yet, so against the current configuration these
-> routes fail closed with `503 Service Unavailable`.
-> R2 bindings and real photo data are still not connected.
-> Authorization middleware (album-level) is implemented but not wired to any active route.
-> R2 key builders, manifest validator, private-object loaders, and image response helpers are implemented but no R2 reads or object responses are active.
-> A private R2 reader adapter is implemented but no R2 binding or active route uses it.
-> Authorized-album catalog repository is implemented but not wired to any active route.
-> The private image routes `/img/:albumId/cover`, `/img/:albumId/thumb/:photoId`, and
-> `/img/:albumId/preview/:photoId` are now ACTIVE, but they require both a real `DB` (D1)
-> binding (session + album permission) and a real `PHOTO_BUCKET` (R2) binding (image reads).
-> Against the current placeholder config they fail closed: no cookie -> 401, no permission ->
-> 403, missing/failing bindings -> 503/500/404. No real images are served.
-> All visible page content is synthetic fixture data.
+> **WARNING: Not yet provisioned for production. Do not deploy without real resources.**
+> The viewer UI (`/`, `/albums`, `/albums/:albumId`), auth routes (`/api/auth/*`), and
+> private image routes (`/img/*`) are all ACTIVE and fully real — no fixture data remains.
+> They require a real `DB` (D1) database and a real `PHOTO_BUCKET` (R2) bucket. The
+> bindings are declared in `wrangler.toml` with a placeholder D1 ID; no real resources
+> exist yet, so against the current configuration every authenticated path fails closed
+> (login 503, pages 303-to-login/503, images 401/403/503/500) and no real data is served.
+> Migrations are not applied; no users, albums, sessions, or images exist.
 
 ## Architecture
 
 - **Runtime**: Cloudflare Workers (TypeScript, Hono + JSX SSR)
 - **Static assets**: `public/` served via Workers Assets (`/styles.css`)
 - **UI**: Server-side rendered HTML via Hono + JSX, with no client-side JavaScript
-- **Phase 3 foundation**: D1 schema, crypto primitives, session model, repositories, auth middleware, R2-key builders, manifest validator, private-object loaders, and image response helpers are implemented but not yet wired to live routes.
+- **Status**: the full viewer surface (login UI, album pages, auth API, image delivery) is implemented and wired. Real D1/R2 provisioning, migrations, and operator bootstrap are the remaining steps before deployment.
 
-### Phase boundary
+### Active surface
 
-| | Phase 2 (active routes) | Phase 3 (this foundation) | Phase 4 |
-|---|---|---|---|
-| Data source | In-code fixtures | Not wired | D1 + R2 |
-| Viewer login | Not implemented | Active `/api/auth/*` (needs real DB) | Full UI + redirects |
-| Album authorization | Not implemented | Middleware ready | Per-user D1 checks |
-| Image delivery | 401 | Active `/img/*` (needs real DB + R2) | Full UI integration |
-| Cover delivery | 401 | Active `/img/:albumId/cover` (album-scoped, not manifest-gated) | Full UI integration |
-| Thumb / preview delivery | 401 | Active `/img/:albumId/{thumb,preview}/:photoId` (manifest-gated) | Full UI integration |
-| R2 key construction | — | Key builders wired via image routes | Active routes |
-| Manifest validation | — | Validator ready | Active R2 reads |
-| Private-object loaders | — | Loaders ready | Active R2 reads |
-| Image responses | — | Response helpers ready | Active object routes |
-| Private R2 reader | — | Injected adapter ready | Active R2 reads |
-| Authorized-album catalog | — | Repository ready | Active album routes |
-| Manifest-authorized photo loading | — | Service ready | Active image routes |
+| Surface | Routes | Backing |
+|---|---|---|
+| Login UI | `GET /` | D1 (session probe; fail-safe to form) |
+| Album pages | `GET /albums`, `GET /albums/:albumId` | D1 (authorization) + R2 (manifest) |
+| Auth API | `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me` | D1 |
+| Image delivery | `GET /img/:albumId/{cover,thumb/:photoId,preview/:photoId}` | D1 + R2 |
+| Everything else under `/api`, `/img`, `/admin` | always `401` | — |
 
 ## Install
 
@@ -73,15 +57,35 @@ npx wrangler dev
 > them an authenticated request fails closed (401/403/503/500/404).
 > All other `/api`, `/img`, and `/admin` routes always return 401. Reserved for Phase 4.
 
-## Routes (Phase 2 fixture UI)
+## Viewer Pages (SSR)
 
-| Route | Description |
-|---|---|
-| `GET /` | Login placeholder; indicates auth is not yet active |
-| `GET /albums` | Fixture album list |
-| `GET /albums/:albumId` | Fixture album detail with photo cards |
+Real D1/R2-backed pages defined in `src/routes/pages.tsx` (no client-side JavaScript,
+no fixture data). Mounted after the reserved-401 catch-alls so `/api`, `/img`, and
+`/admin` are never shadowed.
 
-Photo cards do **not** link to `/img/*` or any image endpoint.
+| Route | Authenticated | Unauthenticated |
+|---|---|---|
+| `GET /` | `303` to `/albums` | `200` login form (POST to `/api/auth/login`) |
+| `GET /albums` | `200` authorized album list | `303` to `/` |
+| `GET /albums/:albumId` | `200` photo grid / `403` no permission | `303` to `/` |
+
+- **Login form.** `/` shows the generic error 「ユーザーIDまたはパスワードが正しくありません」
+  only when the query is exactly `error=1` (set by the login redirect). No other query
+  content is reflected. The logged-in check on `/` is a fail-safe probe: any D1/crypto
+  failure renders the login form instead of an error.
+- **Redirect-to-login.** HTML pages convert the session 401 into `303` to `/` via the
+  `requireSessionPage` wrapper (`src/middleware/require-session-page.ts`); 503 passes
+  through unchanged. API/image routes keep their raw 401.
+- **Album list.** `listAuthorizedAlbums(userId, now, 50, after?)` with keyset pagination;
+  an invalid `after` cursor falls back to the first page. Covers load from
+  `/img/{albumId}/cover`. Empty list renders a friendly message.
+- **Album detail.** Chain: session → album permission → `getAuthorizedAlbum` (D1 title is
+  the page heading) → `loadAlbumManifest`. Manifest absent renders a 200 「準備中」 page
+  (sync has not produced a manifest yet — not an error); manifest invalid or reader
+  failure renders a generic 500 page. Photos render in manifest order as thumbs linking
+  to previews; no EXIF-style metadata is displayed. All text is JSX auto-escaped.
+- **Caching.** Authenticated HTML uses `Cache-Control: private, no-cache`; redirects and
+  error pages use `no-store`.
 
 ## Viewer Auth Routes (`/api/auth`)
 
@@ -93,17 +97,19 @@ explicit binding check).
 
 | Route | Method | Success | Failure |
 |---|---|---|---|
-| `/api/auth/login` | POST | `303` to `/albums` with a session cookie | `401 Unauthorized` (uniform) |
+| `/api/auth/login` | POST | `303` to `/albums` with a session cookie | `303` to `/?error=1` (uniform credential failure) / `401` (malformed request) |
 | `/api/auth/logout` | POST | `303` to `/` clearing the cookie (idempotent) | `503` only if D1 delete fails (cookie not cleared) |
 | `/api/auth/me` | GET | `200 {"userId": ...}` (via `requireSession`) | `401` / `503` per middleware |
 
 - **Form-only login.** `POST /api/auth/login` accepts `application/x-www-form-urlencoded`
   (`userId`, `password`) only. The viewer UI is SSR with no client JS, so login is a form POST.
-- **Uniform 401 failure.** Every login failure cause — unknown user, disabled user,
-  invalid-format ID, wrong password, locked account — returns the identical
-  `401 Unauthorized` with `Cache-Control: no-store`. No cause, ID, or detail is exposed.
-  A fixed public dummy PBKDF2 hash (a timing decoy, not a secret) is verified when no user
-  row is found so the unknown-user path spends the same work as a real verification.
+- **Uniform credential failure.** Every credential-failure cause — unknown user, disabled
+  user, invalid-format ID, wrong password, locked account — returns the identical
+  `303` to `/?error=1` with `Cache-Control: no-store` (the SSR login form re-renders with
+  a generic message). No cause, ID, or detail is exposed. Malformed requests (wrong
+  Content-Type, missing/oversize fields) return a plain `401`. A fixed public dummy
+  PBKDF2 hash (a timing decoy, not a secret) is verified when no user row is found so the
+  unknown-user path spends the same work as a real verification.
 - **Origin enforcement.** State-changing routes (`login`, `logout`) reject with `403` when an
   `Origin` header is present and does not match the request URL's origin, before parsing the
   body. Combined with the `SameSite=Strict` cookie this blocks login CSRF.
@@ -633,6 +639,8 @@ route uses them yet.
 - Authentication middleware and login/logout/me routes: wired and active under `/api/auth/*`, but require a real `DB` binding; against the current placeholder config they return 503
 - Authorization middleware (album-level): wired and active under the `/img/*` image routes; requires a real `DB` binding (without one, permission lookups return 503)
 - Manifest-authorized photo loading: wired and active under the `/img/:albumId/{thumb,preview}/:photoId` routes; requires real `DB` + `PHOTO_BUCKET` bindings
-- Authorized-album catalog repository: implemented, not wired to any route; no real D1 binding, no active album list or album detail routes
+- Authorized-album catalog repository: wired and active under the `/albums` viewer pages; requires a real `DB` binding
+- Viewer pages: wired and active (`/`, `/albums`, `/albums/:albumId`); no fixture data remains, but without real D1/R2 they render only the login form / fail-closed responses
+- Expired-session cleanup: `deleteExpiredSessions` exists but no Cron trigger is configured
 - PhotoPrism: no API calls
 - Admin UI: `/admin/*` returns 401

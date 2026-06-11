@@ -1,12 +1,13 @@
 import { Hono } from 'hono'
 import type { Env } from './types/env.js'
 import { securityHeaders } from './middleware/security-headers.js'
-import { pages, NotFound } from './routes/pages.js'
+import { createPages, NotFound } from './routes/pages.js'
 import { createAuthApi } from './routes/auth-api.js'
 import { createImgRoutes } from './routes/img-routes.js'
 import { AuthRepository } from './services/auth-repository.js'
 import { SessionRepository } from './services/session-repository.js'
 import { PermissionRepository } from './services/permission-repository.js'
+import { AuthorizedAlbumRepository } from './services/authorized-album-repository.js'
 import { PrivateR2Reader } from './services/private-r2-reader.js'
 
 const app = new Hono<{ Bindings: Env }>()
@@ -49,7 +50,18 @@ for (const prefix of RESERVED) {
   })
 }
 
-app.route('/', pages)
+// Real viewer SSR pages. Mounted AFTER the reserved-401 loop so /api, /img, and
+// /admin are never shadowed by the page router. If env.DB / env.PHOTO_BUCKET are
+// undefined at runtime, deps are resolved lazily per call: the public `/` probe
+// falls back to the login form, and the authenticated pages fail closed
+// (303 to /, 403, 500, or 503) without leaking errors.
+app.route('/', createPages((env) => ({
+  sessionRepo: new SessionRepository(env.DB),
+  permChecker: new PermissionRepository(env.DB),
+  albumRepo: new AuthorizedAlbumRepository(env.DB),
+  reader: new PrivateR2Reader(env.PHOTO_BUCKET),
+  clock: () => new Date(),
+})))
 
 app.notFound((c) => {
   c.header('Cache-Control', 'no-store')

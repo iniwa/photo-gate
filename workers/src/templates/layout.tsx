@@ -1,7 +1,16 @@
 import { raw } from 'hono/html'
 import type { FC } from 'hono/jsx'
 
-export const Layout: FC<{ title: string; children?: unknown }> = ({ title, children }) => {
+/**
+ * Page shell. `authenticated` pages link the site title to `/albums` and show a
+ * logout form button (POST `/api/auth/logout`); the public login page omits both
+ * and links the title to `/`. No client-side JavaScript is used anywhere.
+ */
+export const Layout: FC<{ title: string; authenticated?: boolean; children?: unknown }> = ({
+  title,
+  authenticated,
+  children,
+}) => {
   return (
     <>
       {raw('<!DOCTYPE html>')}
@@ -14,10 +23,16 @@ export const Layout: FC<{ title: string; children?: unknown }> = ({ title, child
         </head>
         <body>
           <header>
-            <a class="site-title" href="/albums">
+            <a class="site-title" href={authenticated ? '/albums' : '/'}>
               photo-gate
             </a>
-            <span class="notice">fixture data only - not for production use</span>
+            {authenticated ? (
+              <form class="logout-form" method="post" action="/api/auth/logout">
+                <button type="submit" class="logout-button">
+                  ログアウト
+                </button>
+              </form>
+            ) : null}
           </header>
           <main>{children}</main>
         </body>
