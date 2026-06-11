@@ -8,6 +8,7 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 > R2 key builders, manifest validator, private-object loaders, and image response helpers are implemented but no R2 reads or object responses are active.
 > A private R2 reader adapter is implemented but no R2 binding or active route uses it.
 > Authorized-album catalog repository is implemented but not wired to any active route.
+> Manifest-authorized photo loading is implemented but not wired to any active route, binding, or real R2 read.
 > All visible content is synthetic fixture data.
 
 ## Architecture
@@ -31,6 +32,7 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 | Image responses | — | Response helpers ready | Active object routes |
 | Private R2 reader | — | Injected adapter ready | Active R2 reads |
 | Authorized-album catalog | — | Repository ready | Active album routes |
+| Manifest-authorized photo loading | — | Service ready | Active image routes |
 
 ## Install
 
@@ -437,6 +439,57 @@ These conditions are redundant with middleware authorization by design — the r
 
 All D1 failures and malformed rows throw the existing sanitized `'database operation failed'` error — no user IDs, album IDs, cursor values, titles, SQL, or internal exception details are included in thrown errors.
 
+## Manifest-Authorized Photo Loading (Phase 3, not wired)
+
+`loadManifestAuthorizedThumb(reader, albumId, photoId)` and `loadManifestAuthorizedPreview(reader, albumId, photoId)` in `src/services/manifest-authorized-photo-service.ts` serve photo objects only when the requested photo is present in the album's currently validated manifest. They are not connected to any active route, binding, or real R2 read.
+
+### Why album authorization alone is insufficient
+
+Album authorization proves the caller may view an album, but not that a specific `photoId` belongs to it. Without manifest membership enforcement, an authorized viewer could probe arbitrary safe photo IDs under the authorized album prefix and read stale or orphaned image objects that remain in R2 until cleanup is implemented. The current validated manifest is the single source of truth for which photos an album currently publishes.
+
+### Manifest-first membership enforcement
+
+Each operation, in fixed order:
+
+1. validates `albumId` and `photoId` against the safe-ID contract (fail closed before any read)
+2. loads and validates the album manifest via `loadAlbumManifest` (strict schemaVersion 1 validation, album-ID match)
+3. returns `{ status: 'not_found' }` if the manifest is absent
+4. searches the validated manifest for an **exact** `photo.id` match
+5. returns `{ status: 'not_found' }` **without reading any image object** if the photo is not listed
+6. loads the image through the existing explicit loader only after membership succeeds
+
+### Exact-match behavior
+
+Membership uses exact string equality on `photo.id` only. Title, index, path substring, prefix, suffix, case-folding, and fuzzy matching never match. Caller-supplied manifest paths are not accepted; the strict manifest validator already guarantees each listed photo's paths match its ID.
+
+### Read order and call counts
+
+| Condition | Reader calls | Result |
+|---|---|---|
+| Invalid album/photo ID | 0 | sanitized `reader_failure` |
+| Manifest absent | 1 (manifest) | `not_found` |
+| Photo not listed | 1 (manifest) | `not_found`; the image key is never probed |
+| Photo listed | 2 (manifest, then exact image key) | image stream or `not_found` |
+| Manifest read/validation failure | 1 (manifest) | sanitized error; the image read is never attempted |
+
+### Absence and failure behavior
+
+- Expected absence (missing manifest, unlisted photo, missing image) returns `{ status: 'not_found' }`. An unlisted photo is indistinguishable from a missing image object — the service never reveals whether an unlisted photo object physically exists.
+- Reader failures and invalid identifiers use the existing sanitized `ObjectServiceError('reader_failure')`; invalid, malformed, or wrong-album manifests use `ObjectServiceError('manifest_invalid')`.
+- Unexpected failures are never converted into `not_found`.
+- Errors and results never expose identifiers, keys, manifest contents, photo metadata, paths, R2 details, or underlying error text.
+- Stale or orphaned R2 image objects that are no longer listed in the current manifest are not readable through this service.
+
+### Verification
+
+```sh
+cd workers
+npm run lint
+npm run typecheck
+npm test
+npm run build
+```
+
 ## What is not connected
 
 - D1 database: no `[d1_databases]` binding in `wrangler.toml`; migrations are not applied
@@ -449,5 +502,6 @@ All D1 failures and malformed rows throw the existing sanitized `'database opera
 - Authentication middleware: implemented, not wired to any route; no login, logout, or session cookies in active routes
 - Authorization middleware: implemented, not wired to any route
 - Authorized-album catalog repository: implemented, not wired to any route; no real D1 binding, no active album list or album detail routes
+- Manifest-authorized photo loading: implemented, not wired to any route or binding; no real R2 reads
 - PhotoPrism: no API calls
 - Admin UI: `/admin/*` returns 401
