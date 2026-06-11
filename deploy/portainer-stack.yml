@@ -14,6 +14,15 @@
 #   すべての値は Portainer 側の environment variables / secrets で注入する。
 #   このリポジトリに実値を絶対にコミットしないこと。
 #
+# Portainer の変数展開に関する注意:
+#   Portainer のスタックデプロイは compose の既定値構文 ${VAR:-default} を
+#   正しく解釈せず、先頭のダッシュ込みの「-default」を注入することが実地で
+#   確認された(SYNC_INTERVAL_SECONDS が「-86400」になり sleep が即失敗、
+#   ループが待機なしで連続リトライする事故)。このファイルでは ${VAR:-...}
+#   を一切使わず、未設定・ジャンク値の防御は下の shell 側で行う。
+#   CF_ACCESS_CLIENT_ID / CF_ACCESS_CLIENT_SECRET / SYNC_INTERVAL_SECONDS は
+#   Portainer 側で未定義でもよい(shell 側で空・既定値 86400 に正規化)。
+#
 # 複数アルバム:
 #   1 サービス = 1 アルバム。複数アルバムを同期する場合はこのサービス
 #   ブロックを複製し、別名のサービスとして別の ALBUM_ID 等を与える。
@@ -40,20 +49,27 @@ services:
       R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
       R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
       R2_BUCKET: ${R2_BUCKET}
-      CF_ACCESS_CLIENT_ID: ${CF_ACCESS_CLIENT_ID:-}
-      CF_ACCESS_CLIENT_SECRET: ${CF_ACCESS_CLIENT_SECRET:-}
+      CF_ACCESS_CLIENT_ID: ${CF_ACCESS_CLIENT_ID}
+      CF_ACCESS_CLIENT_SECRET: ${CF_ACCESS_CLIENT_SECRET}
       ALBUM_ID: ${ALBUM_ID}
       ALBUM_TITLE: ${ALBUM_TITLE}
       PHOTOPRISM_ALBUM_UID: ${PHOTOPRISM_ALBUM_UID}
-      SYNC_INTERVAL_SECONDS: ${SYNC_INTERVAL_SECONDS:-86400}
+      SYNC_INTERVAL_SECONDS: ${SYNC_INTERVAL_SECONDS}
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
+        INTERVAL="$$SYNC_INTERVAL_SECONDS"
+        case "$$INTERVAL" in
+          ''|*[!0-9]*) INTERVAL=86400 ;;
+        esac
+        case "$$CF_ACCESS_CLIENT_ID" in
+          -|*[!a-zA-Z0-9._-]*) CF_ACCESS_CLIENT_ID=''; CF_ACCESS_CLIENT_SECRET='' ;;
+        esac
         while true; do
           photo-gate-sync sync-once \
             --album-id "$$ALBUM_ID" \
             --album-title "$$ALBUM_TITLE" \
             --photoprism-album-uid "$$PHOTOPRISM_ALBUM_UID" \
             --confirm-upload || echo "sync failed; retrying next interval"
-          sleep "$$SYNC_INTERVAL_SECONDS"
+          sleep "$$INTERVAL"
         done

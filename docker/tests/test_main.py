@@ -10,7 +10,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from photo_gate.main import _build_parser, run_sync_once
+from photo_gate.main import _build_parser, _describe_error, run_sync_once
+from photo_gate.photoprism_client import PhotoPrismError
 
 # ---------------------------------------------------------------------------
 # Shared constants
@@ -467,6 +468,88 @@ def test_runtime_failure_returns_1():
     ))
 
     assert code == 1
+
+
+# ---------------------------------------------------------------------------
+# _describe_error — sanitized diagnostics
+# ---------------------------------------------------------------------------
+
+
+def test_describe_error_prints_message_for_sanitized_types():
+    exc = PhotoPrismError("PhotoPrism photo list returned HTTP 401")
+    assert _describe_error(exc) == (
+        "PhotoPrismError: PhotoPrism photo list returned HTTP 401"
+    )
+
+
+def test_describe_error_hides_message_for_unknown_types():
+    exc = RuntimeError("token=SHOULD-NOT-APPEAR")
+    described = _describe_error(exc)
+    assert described == "RuntimeError"
+    assert "SHOULD-NOT-APPEAR" not in described
+
+
+def test_describe_error_unwraps_cause_chain():
+    cause = ConnectionError("dns details that must stay hidden")
+    exc = PhotoPrismError("PhotoPrism photo list request failed")
+    exc.__cause__ = cause
+    described = _describe_error(exc)
+    assert described == (
+        "PhotoPrismError: PhotoPrism photo list request failed "
+        "(caused by ConnectionError)"
+    )
+    assert "dns details" not in described
+
+
+def test_describe_error_unwraps_exception_group():
+    group = ExceptionGroup(
+        "unhandled errors in a TaskGroup",
+        [
+            PhotoPrismError("Preview download returned HTTP 404"),
+            RuntimeError("secret-in-message"),
+        ],
+    )
+    described = _describe_error(group)
+    assert "ExceptionGroup[" in described
+    assert "PhotoPrismError: Preview download returned HTTP 404" in described
+    assert "RuntimeError" in described
+    assert "secret-in-message" not in described
+
+
+def test_describe_error_caps_group_size_and_depth():
+    leaves = [ValueError(f"v{i}") for i in range(5)]
+    group = ExceptionGroup("g", leaves)
+    described = _describe_error(group)
+    assert "+2 more" in described
+
+    deep = ValueError("root")
+    for _ in range(6):
+        wrapper = PhotoPrismError("wrap")
+        wrapper.__cause__ = deep
+        deep = wrapper
+    assert "..." in _describe_error(deep)
+
+
+def test_runtime_failure_prints_sanitized_detail(capsys):
+    async def failing_sync(*args, **kwargs):
+        raise PhotoPrismError("PhotoPrism photo list returned HTTP 401")
+
+    parser = _build_parser()
+    args = parser.parse_args(_VALID_SYNC_ARGS)
+
+    code = asyncio.run(run_sync_once(
+        args,
+        config_loader=_FakeConfig,
+        client_factory=lambda cfg: _FakeClient(),
+        store_factory=lambda cfg: object(),
+        sync_fn=failing_sync,
+        clock=lambda: _FIXED_TS,
+    ))
+
+    captured = capsys.readouterr()
+    assert code == 1
+    assert "Sync failed for album 'my-album'" in captured.err
+    assert "PhotoPrismError: PhotoPrism photo list returned HTTP 401" in captured.err
 
 
 def test_runtime_failure_does_not_leak_secrets(capsys):

@@ -40,10 +40,17 @@ This is a priority-ordered plan. Update status as implementation progresses.
       303→/; credential failure 303→/?error=1 via real D1; /api /img /admin
       401 no-store; JSON login 401; cross-origin 403.)
 - [ ] Build and deploy the existing Docker sync CLI through the human-created
-      Portainer stack. (Image `ghcr.io/iniwa/photo-gate-sync:0.1.0` published;
-      Portainer stack creation pending — human.)
+      Portainer stack. (Stack `iniwa-photo-gate` deployed with image 0.1.0;
+      needs redeploy with 0.1.1 — see below.)
 - [ ] Run a controlled end-to-end album sync and viewer test.
-      (Needs first user/album rows and the Portainer stack.)
+      (First user/album rows inserted. First sync run failed: Portainer
+      mis-expands `${VAR:-default}` and injected `-86400` into sleep, causing
+      a no-wait retry loop, and the CLI hid the failure cause. Both fixed in
+      0.1.1; awaiting stack redeploy and readable logs.)
+- [ ] Add album cover generation/upload to the sync tool.
+      (Gap found 2026-06-11: bootstrap.md §7 and the `/img/:albumId/cover`
+      route expect `albums/<id>/cover.webp`, but `sync-once` never uploads
+      it, so album list covers will 404 until implemented.)
 - [ ] Confirm PhotoPrism/NAS/originals/R2 direct URLs are not exposed.
 
 ## Level 2: Operable

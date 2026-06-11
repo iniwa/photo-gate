@@ -18,6 +18,49 @@ from datetime import datetime, timezone
 from typing import Callable
 
 
+# Exception types whose messages are sanitized at the raise site (no
+# tokens, credentials, or preview tokens) and are therefore safe to print.
+# Matching is by class name so this module stays importable without
+# libvips (image_processor) or network dependencies.
+#   - photo_gate types: ConfigError, MetadataValidationError,
+#     ObjectStoreError, PhotoPrismError, and validation ValueErrors.
+#   - botocore ClientError: messages contain only operation and error code.
+# httpx exceptions are intentionally NOT listed: their messages can embed
+# request URLs, which include the PhotoPrism preview token.
+_SANITIZED_ERROR_TYPES = frozenset({
+    "ClientError",
+    "ConfigError",
+    "MetadataValidationError",
+    "ObjectStoreError",
+    "PhotoPrismError",
+    "ValueError",
+})
+
+
+def _describe_error(exc: BaseException, depth: int = 0) -> str:
+    """
+    Operator-readable failure description that never prints messages of
+    unknown exception types (class name only). Unwraps exception groups
+    and causes a few levels deep so the root cause is visible in logs.
+    """
+    if depth >= 4:
+        return "..."
+    name = type(exc).__name__
+    if isinstance(exc, BaseExceptionGroup):
+        parts = [_describe_error(sub, depth + 1) for sub in exc.exceptions[:3]]
+        remaining = len(exc.exceptions) - 3
+        if remaining > 0:
+            parts.append(f"+{remaining} more")
+        return f"{name}[{'; '.join(parts)}]"
+    if name in _SANITIZED_ERROR_TYPES:
+        described = f"{name}: {exc}"
+    else:
+        described = name
+    if exc.__cause__ is not None:
+        described = f"{described} (caused by {_describe_error(exc.__cause__, depth + 1)})"
+    return described
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="photo-gate-sync",
@@ -147,8 +190,11 @@ async def run_sync_once(
         async with client:
             store = store_factory(config)
             await sync_fn(client, album, store, settings, generated_at, args.concurrency)
-    except Exception:
-        print(f"Sync failed for album {args.album_id!r}", file=sys.stderr)
+    except Exception as exc:
+        print(
+            f"Sync failed for album {args.album_id!r}: {_describe_error(exc)}",
+            file=sys.stderr,
+        )
         return 1
 
     print(f"Sync complete: album={args.album_id!r}")
