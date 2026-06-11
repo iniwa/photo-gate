@@ -48,11 +48,11 @@ Last audited: 2026-06-11.
 - Private object loaders and safe private image response helpers.
 - Private R2 reader adapter with strict standard-key allowlist.
 - Authorized album catalog repository with keyset pagination.
+- Manifest-authorized thumb/preview loading with exact photo-ID membership,
+  manifest-first read order, and no probing of unlisted/stale objects.
 
 ## Workers Missing
 
-- The active handoff:
-  `docs/handoffs/2026-06-09-phase-3-manifest-authorized-photo-loading.md`.
 - Approved production policy wiring: fixed seven-day sessions, five failures
   causing a fifteen-minute lockout, daily expired-session cleanup.
 - Real login/logout/me routes.
@@ -73,11 +73,12 @@ Last audited: 2026-06-11.
 
 ## Current Verification Baseline
 
-The latest recorded Workers verification before this document set:
+The latest recorded Workers verification (2026-06-11, after the
+manifest-authorized photo loading service):
 
 - lint: passed;
 - typecheck: passed;
-- tests: 680 passed;
+- tests: 769 passed;
 - build dry-run: passed;
 - npm audit: zero vulnerabilities.
 

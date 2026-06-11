@@ -6,7 +6,7 @@ This is a priority-ordered plan. Update status as implementation progresses.
 
 ### 1. Complete Route-Independent Viewer Security
 
-- [ ] Complete and archive the active manifest-authorized photo loading handoff.
+- [x] Complete and archive the active manifest-authorized photo loading handoff.
 - [ ] Decide and implement any remaining route-independent login policy helpers
       using the approved defaults.
 - [ ] Add tests proving every real photo read requires exact current-manifest

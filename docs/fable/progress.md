@@ -8,29 +8,24 @@ Working toward Level 1: Securely Usable.
 
 ## Current Task
 
-Complete the active handoff:
-
-`docs/handoffs/2026-06-09-phase-3-manifest-authorized-photo-loading.md`
-
-Acceptance criteria:
-
-- thumbnails and previews are loaded only after exact membership in the current
-  validated manifest;
-- unlisted/stale objects are never probed;
-- read order, sanitized failures, and call counts are tested;
-- Workers verification passes;
-- implementation is committed and the handoff is archived separately.
+Paused by explicit human instruction after completing the manifest-authorized
+photo loading handoff. The human is adding new rules about subagents; wait for
+the updated instructions before selecting the next roadmap item.
 
 ## Last Completed Work
 
-- Added strict private R2 reader adapter and standard-key allowlist.
-- Added authorized album catalog repository.
-- Established Fable autonomous execution and delivery documentation.
+- Implemented `manifest-authorized-photo-service.ts`: thumb/preview loading
+  gated on exact photo-ID membership in the current validated manifest,
+  manifest-first read order, fixed reader call counts, sanitized failures,
+  and no probing of unlisted/stale objects (commit `6333f8d`).
+- Added 89 focused tests; updated `workers/README.md`.
+- Archived the completed handoff
+  `docs/handoffs/archive/2026-06-09-phase-3-manifest-authorized-photo-loading.md`.
 
 ## Latest Known Verification
 
-- Workers: lint, typecheck, build, and audit passed; 680 tests passed.
-- Repository worktree was clean before Fable documentation creation.
+- Workers (2026-06-11): lint, typecheck, build dry-run, and audit passed;
+  769 tests passed.
 - Docker baseline must be rechecked before the next Docker change.
 
 ## Human Setup Expected Later
@@ -42,10 +37,11 @@ Acceptance criteria:
 
 ## Current Blockers
 
-None for the active route-independent handoff.
+- Human is updating working rules (subagent rules); paused on request.
 
 ## Next Priority
 
-After the active handoff, implement approved login/session policy helpers and
-begin safely wiring Workers to `DB` and `PHOTO_BUCKET` as described in the
-roadmap.
+Roadmap Level 1, item 1 remainder: implement approved login/session policy
+helpers (fixed seven-day sessions, five-failure/fifteen-minute lockout,
+PBKDF2 iteration benchmark ADR), then begin wiring Workers to `DB` and
+`PHOTO_BUCKET` per roadmap item 2.
