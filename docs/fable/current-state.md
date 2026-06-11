@@ -7,11 +7,12 @@ Last audited: 2026-06-11.
 - Docker Phase 1 sync CLI foundation is implemented.
 - Workers Phase 2 fixture UI and much of the route-independent Phase 3
   security/data foundation are implemented.
-- Active Workers viewer pages are still fixture-only; `/api/auth/*` and
-  `/img/*` routes are active but need real D1/R2 resources.
+- The full Workers viewer surface is implemented and wired: real login form,
+  authorized album list/detail pages, `/api/auth/*`, and `/img/*`. Fixture
+  data is removed. Everything needs real D1/R2 resources to serve data.
 - `DB` and `PHOTO_BUCKET` bindings are declared in `workers/wrangler.toml`
   (D1 `database_id` is a placeholder until provisioning).
-- No real album API, admin route, or Worker deployment is active.
+- No admin route or Worker deployment is active.
 - No GitHub Actions workflow is implemented; `.github/workflows/` contains only
   a placeholder.
 
@@ -62,12 +63,16 @@ Last audited: 2026-06-11.
   full chain: session, album permission, exact manifest membership for photos,
   standard keys, metadata-free safe responses. Cover is album-scoped and not
   manifest-gated (ADR 2026-06-11 private-image-routes).
+- Real viewer SSR pages replacing all fixtures: login form with uniform
+  `/?error=1` credential-failure redirect, authorized album list with keyset
+  pagination, manifest-driven album detail with a 200 "preparing" page for
+  absent manifests, and redirect-to-login for unauthenticated HTML
+  (ADR 2026-06-11 viewer-pages).
 
 ## Workers Missing
 
 - Daily expired-session cleanup scheduling (helpers and repository exist; no
   Cron trigger is configured).
-- Real authenticated album list/detail routes.
 - Migration application and initial data/operator tooling.
 - Cloudflare Access admin JWT validation and email allowlist.
 - Admin UI/API and sync orchestration.
@@ -75,23 +80,26 @@ Last audited: 2026-06-11.
 
 ## Current Active Behavior
 
-- `GET /`, `/albums`, and fixture album details render synthetic data only.
+- `GET /` renders the real login form; `/albums` and `/albums/:albumId`
+  redirect unauthenticated viewers to `/` and render real D1/R2 data when a
+  valid session exists.
 - `/api/auth/login`, `/api/auth/logout`, and `/api/auth/me` are active; they
   read D1 through the `DB` binding and return 503 until a real database is
   provisioned.
 - The three `/img` route shapes are active; without real D1/R2 they close to
   401/503 before any object read.
 - All other `/api/*`, `/img/*`, and `/admin/*` always return 401.
-- No active route reads PhotoPrism or real photo data.
+- No active route reads PhotoPrism. No real photo data exists until
+  provisioning and a first sync.
 
 ## Current Verification Baseline
 
-The latest recorded Workers verification (2026-06-11, after the private image
-routes):
+The latest recorded Workers verification (2026-06-11, after the real viewer
+pages):
 
 - lint: passed;
 - typecheck: passed;
-- tests: 881 passed;
+- tests: 879 passed;
 - build dry-run: passed;
 - npm audit: zero vulnerabilities.
 

@@ -17,10 +17,10 @@ This is a priority-ordered plan. Update status as implementation progresses.
 - [x] Add `DB` and `PHOTO_BUCKET` bindings and environment types.
 - [x] Implement fixed seven-day session login/logout/me routes.
 - [x] Implement five-failure, fifteen-minute login lockout.
-- [ ] Implement authenticated album list/detail routes.
+- [x] Implement authenticated album list/detail routes.
 - [x] Implement private image routes with session, album permission, manifest
       membership, standard-key validation, and safe responses.
-- [ ] Replace fixture viewer routes only after real routes are fully protected.
+- [x] Replace fixture viewer routes only after real routes are fully protected.
 - [ ] Add daily expired-session cleanup.
 - [ ] Add operator-safe user and album bootstrap instructions/tooling.
 

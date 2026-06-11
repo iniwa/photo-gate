@@ -32,11 +32,15 @@ Acceptance criteria (incremental, in order):
   commit `aff9732`). Implemented by Opus subagents, reviewed in main session.
 - Active `/img` private image routes with the full authorization chain
   (ADR private-image-routes, commit `6a78cfd`).
+- Real viewer SSR pages replacing all fixtures: login form, authorized album
+  list/detail, redirect-to-login, uniform credential-failure redirect
+  (ADR viewer-pages, commit `e6c3b99`). The implementing subagent hit a
+  session limit mid-task; the main session completed tests and README.
 
 ## Latest Known Verification
 
 - Workers (2026-06-11): lint, typecheck, build dry-run, and audit passed;
-  881 tests passed.
+  879 tests passed.
 - Docker baseline must be rechecked before the next Docker change.
 
 ## Human Setup Expected Later
