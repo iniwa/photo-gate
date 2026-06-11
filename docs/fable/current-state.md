@@ -7,12 +7,11 @@ Last audited: 2026-06-11.
 - Docker Phase 1 sync CLI foundation is implemented.
 - Workers Phase 2 fixture UI and much of the route-independent Phase 3
   security/data foundation are implemented.
-- Active Workers viewer pages are still fixture-only; `/api/auth/*`
-  login/logout/me routes are active but need a real D1 database.
+- Active Workers viewer pages are still fixture-only; `/api/auth/*` and
+  `/img/*` routes are active but need real D1/R2 resources.
 - `DB` and `PHOTO_BUCKET` bindings are declared in `workers/wrangler.toml`
   (D1 `database_id` is a placeholder until provisioning).
-- No real album API, image route, admin route, or Worker deployment is
-  active.
+- No real album API, admin route, or Worker deployment is active.
 - No GitHub Actions workflow is implemented; `.github/workflows/` contains only
   a placeholder.
 
@@ -59,14 +58,16 @@ Last audited: 2026-06-11.
   decoy, Origin enforcement, lockout recording, fresh seven-day session with
   digest-only storage), idempotent logout, session-authenticated `me`
   (ADR 2026-06-11 viewer-auth-routes).
+- Active `/img/:albumId/cover|thumb/:photoId|preview/:photoId` routes with the
+  full chain: session, album permission, exact manifest membership for photos,
+  standard keys, metadata-free safe responses. Cover is album-scoped and not
+  manifest-gated (ADR 2026-06-11 private-image-routes).
 
 ## Workers Missing
 
 - Daily expired-session cleanup scheduling (helpers and repository exist; no
   Cron trigger is configured).
 - Real authenticated album list/detail routes.
-- Real image routes with session, album permission, manifest membership, and
-  private R2 reads.
 - Migration application and initial data/operator tooling.
 - Cloudflare Access admin JWT validation and email allowlist.
 - Admin UI/API and sync orchestration.
@@ -78,17 +79,19 @@ Last audited: 2026-06-11.
 - `/api/auth/login`, `/api/auth/logout`, and `/api/auth/me` are active; they
   read D1 through the `DB` binding and return 503 until a real database is
   provisioned.
+- The three `/img` route shapes are active; without real D1/R2 they close to
+  401/503 before any object read.
 - All other `/api/*`, `/img/*`, and `/admin/*` always return 401.
-- No active route reads R2, PhotoPrism, or real photo data.
+- No active route reads PhotoPrism or real photo data.
 
 ## Current Verification Baseline
 
-The latest recorded Workers verification (2026-06-11, after the viewer auth
+The latest recorded Workers verification (2026-06-11, after the private image
 routes):
 
 - lint: passed;
 - typecheck: passed;
-- tests: 827 passed;
+- tests: 881 passed;
 - build dry-run: passed;
 - npm audit: zero vulnerabilities.
 

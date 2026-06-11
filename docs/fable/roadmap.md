@@ -18,7 +18,7 @@ This is a priority-ordered plan. Update status as implementation progresses.
 - [x] Implement fixed seven-day session login/logout/me routes.
 - [x] Implement five-failure, fifteen-minute login lockout.
 - [ ] Implement authenticated album list/detail routes.
-- [ ] Implement private image routes with session, album permission, manifest
+- [x] Implement private image routes with session, album permission, manifest
       membership, standard-key validation, and safe responses.
 - [ ] Replace fixture viewer routes only after real routes are fully protected.
 - [ ] Add daily expired-session cleanup.

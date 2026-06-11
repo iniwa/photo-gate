@@ -30,11 +30,13 @@ Acceptance criteria (incremental, in order):
 - Active `/api/auth/*` login/logout/me routes with uniform failures,
   timing decoy, Origin enforcement, and lockout (ADR viewer-auth-routes,
   commit `aff9732`). Implemented by Opus subagents, reviewed in main session.
+- Active `/img` private image routes with the full authorization chain
+  (ADR private-image-routes, commit `6a78cfd`).
 
 ## Latest Known Verification
 
 - Workers (2026-06-11): lint, typecheck, build dry-run, and audit passed;
-  827 tests passed.
+  881 tests passed.
 - Docker baseline must be rechecked before the next Docker change.
 
 ## Human Setup Expected Later
