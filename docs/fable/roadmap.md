@@ -27,13 +27,23 @@ This is a priority-ordered plan. Update status as implementation progresses.
 
 ### 3. Deploy And Validate Level 1
 
-- [ ] Create/apply additive D1 migrations.
-- [ ] Create/configure private R2 and approved bindings.
-- [ ] Register required secrets without committing or printing them.
-- [ ] Deploy Workers and perform security smoke tests.
+- [x] Create/apply additive D1 migrations.
+      (D1 `photo-gate` created in APAC; both migrations applied remotely.)
+- [x] Create/configure private R2 and approved bindings.
+      (R2 bucket `photo-gate` created, private; bindings live.)
+- [x] Register required secrets without committing or printing them.
+      (GitHub Actions: CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID; local
+      operator token file outside the repository.)
+- [x] Deploy Workers and perform security smoke tests.
+      (https://photo-gate.iniwaiwana.workers.dev, version 70f9fc60, cron
+      active. Smoke: login form 200/CSP/no fixture; unauthenticated pages
+      303→/; credential failure 303→/?error=1 via real D1; /api /img /admin
+      401 no-store; JSON login 401; cross-origin 403.)
 - [ ] Build and deploy the existing Docker sync CLI through the human-created
-      Portainer stack.
+      Portainer stack. (Image `ghcr.io/iniwa/photo-gate-sync:0.1.0` published;
+      Portainer stack creation pending — human.)
 - [ ] Run a controlled end-to-end album sync and viewer test.
+      (Needs first user/album rows and the Portainer stack.)
 - [ ] Confirm PhotoPrism/NAS/originals/R2 direct URLs are not exposed.
 
 ## Level 2: Operable

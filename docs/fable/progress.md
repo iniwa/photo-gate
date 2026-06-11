@@ -10,12 +10,12 @@ human Cloudflare login and provisioning before it can start.
 
 ## Current Task
 
-Delivery pipeline verified end to end (2026-06-11): workers-ci green
-(`61a56ca`), docker-ci green after fixing two Linux-only test failures
-(`b3c44be`: libvips 8.16+ informational JPEG fields allowlisted; Pillow
-fixture uses IFDRational), and `sync-v0.1.0` released
-`ghcr.io/iniwa/photo-gate-sync:0.1.0` (public, multi-arch). The GitHub repo
-is now public, so CI is observable via the API without auth.
+Level 1 item 3 mostly complete (2026-06-11): D1/R2 provisioned, migrations
+applied, Workers deployed to https://photo-gate.iniwaiwana.workers.dev
+(version `70f9fc60`, cron active) with all security smoke tests passing
+against live D1. GitHub secrets registered; future main pushes touching
+`workers/**` auto-migrate and auto-deploy. Remaining: first user/album rows,
+Portainer stack (human), end-to-end sync/viewer test.
 
 ## Last Completed Work
 
@@ -39,17 +39,24 @@ is now public, so CI is observable via the API without auth.
 - Docker (2026-06-11): 143 tests passed on Linux/libvips 8.18 (WSL) and in
   docker-ci (Ubuntu); 121 passed + 22 pyvips-skips on the Windows host.
 
+## Operational Notes
+
+- Cloudflare API token lives in `~\.photo-gate-cf-token` (outside the repo,
+  human-provided, never printed) and in GitHub Actions secrets. Wrangler
+  commands load it into `CLOUDFLARE_API_TOKEN` per invocation.
+- Deployed Worker: https://photo-gate.iniwaiwana.workers.dev, version
+  `70f9fc60-6907-4387-bc75-556317ecb0f4` (commit `e566edb`).
+
 ## Current Blockers / Required Human Actions
 
-1. **Cloudflare login did not persist:** the human reported logging in, but
-   `npx wrangler whoami` still says unauthenticated and no OAuth token file
-   exists under the wrangler config dir. Re-run `cd workers; npx wrangler
-   login` and confirm with `npx wrangler whoami`; then Fable can run
-   provisioning (`bootstrap.md` sections 2-6).
+1. **First viewer user:** generate a hash with
+   `node workers/scripts/hash-password.mjs` and either run bootstrap.md §5
+   yourself or hand Fable the hash + desired user ID to insert.
 2. **Portainer:** create the initial stack from `deploy/portainer-stack.yml`
-   (image tag `0.1.0`; the GHCR package is public, so no registry credential
-   is needed) and set the environment variables. Provide the stack webhook
-   URL as the `PORTAINER_WEBHOOK_URL` GitHub secret for automatic updates.
+   (image tag `0.1.0`, public GHCR package, no registry credential needed),
+   set the environment variables including an R2 S3 API token created in the
+   Cloudflare dashboard, and register the stack webhook URL as the
+   `PORTAINER_WEBHOOK_URL` GitHub secret for automatic updates.
 
 ## Next Priority
 
