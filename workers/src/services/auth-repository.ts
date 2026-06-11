@@ -22,13 +22,26 @@ export class AuthRepository {
     }
   }
 
-  async recordLoginFailure(userId: string, now: string): Promise<void> {
+  async recordLoginFailure(
+    userId: string,
+    now: string,
+    lockoutThreshold: number,
+    lockedUntil: string,
+  ): Promise<void> {
     if (!isValidId(userId)) throw new Error('invalid user ID')
     assertCanonicalUtcTimestamp(now)
+    assertCanonicalUtcTimestamp(lockedUntil)
+    if (!Number.isInteger(lockoutThreshold) || lockoutThreshold < 1) {
+      throw new Error('invalid lockout threshold')
+    }
     try {
       await this.db
-        .prepare('UPDATE users SET fail_count = fail_count + 1, updated_at = ? WHERE id = ?')
-        .bind(now, userId)
+        .prepare(
+          'UPDATE users SET fail_count = fail_count + 1, ' +
+            'locked_until = CASE WHEN fail_count + 1 >= ? THEN ? ELSE locked_until END, ' +
+            'updated_at = ? WHERE id = ?',
+        )
+        .bind(lockoutThreshold, lockedUntil, now, userId)
         .run()
     } catch {
       throw databaseOperationError()

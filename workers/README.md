@@ -165,7 +165,7 @@ pbkdf2-sha256$<iterations>$<salt-base64url>$<digest-base64url>
 - Stored iteration count is validated on every verify call (min 100 000, max 10 000 000)
 - Malformed encodings, unsupported algorithms, and out-of-range iteration counts are rejected
 - Derived keys are compared in constant-time application code
-- **Production iteration count is not yet decided.** `hashPassword` requires an explicit count so a Workers CPU benchmark can select the value before login routes are implemented.
+- **Production iteration count is 100,000** (`PBKDF2_PRODUCTION_ITERATIONS` in `src/services/login-policy.ts`) — the Cloudflare Workers platform cap. See `docs/decisions/2026-06-11-login-session-policy-and-pbkdf2-iterations.md`. `hashPassword` still requires an explicit count at every call site.
 
 ## Session Token Model
 
@@ -490,6 +490,28 @@ npm test
 npm run build
 ```
 
+## Login And Session Policy (Phase 3, not wired)
+
+Route-independent policy helpers are defined in `src/services/login-policy.ts`. They
+are pure functions and constants with no Hono, D1, or R2 dependency, and no login
+route uses them yet.
+
+- **Fixed 7-day sessions.** `SESSION_LIFETIME_SECONDS = 604_800`. `sessionExpiresAtFrom(createdAt)`
+  returns the expiry as a canonical UTC string. There is no sliding refresh in the
+  initial implementation.
+- **5-failure / 15-minute atomic lockout.** `MAX_LOGIN_FAILURES = 5`,
+  `LOCKOUT_DURATION_SECONDS = 900`. `recordLoginFailure` applies the lockout inside a
+  single parameterized `UPDATE` using a `CASE WHEN fail_count + 1 >= ?` expression, so a
+  concurrent read-modify-write cannot drop the lock. The repository stays policy-free:
+  the threshold and lockout timestamp are always passed in by the caller.
+- **Fail-closed `locked_until`.** `isAccountLocked(lockedUntil, now)` treats a non-null
+  but non-canonical `locked_until` value as locked. Authentication uncertainty always
+  resolves to deny.
+- **PBKDF2 production iterations = 100,000.** `PBKDF2_PRODUCTION_ITERATIONS = 100_000`
+  is the Cloudflare Workers (workerd) platform cap; higher counts fail at runtime. See
+  `docs/decisions/2026-06-11-login-session-policy-and-pbkdf2-iterations.md` for the
+  decision and its compensating controls.
+
 ## What is not connected
 
 - D1 database: no `[d1_databases]` binding in `wrangler.toml`; migrations are not applied
@@ -499,6 +521,7 @@ npm run build
 - Private-object loaders: implemented, not wired to any route; no real R2 reads
 - Image response helpers: implemented, not wired to any route; no real object responses
 - Private R2 reader adapter: implemented, not wired to any route or binding; no real object reads
+- Login/session policy helpers: implemented in `src/services/login-policy.ts`, but no login route exists to use them
 - Authentication middleware: implemented, not wired to any route; no login, logout, or session cookies in active routes
 - Authorization middleware: implemented, not wired to any route
 - Authorized-album catalog repository: implemented, not wired to any route; no real D1 binding, no active album list or album detail routes

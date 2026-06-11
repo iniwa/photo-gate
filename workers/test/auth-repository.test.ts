@@ -5,6 +5,8 @@ import type { UserAuthRow } from '../src/types/user.js'
 
 const VALID_USER_ID = 'user-abc-123'
 const NOW = '2026-06-09T00:00:00.000Z'
+const LOCKED_UNTIL = '2026-06-09T00:15:00.000Z'
+const THRESHOLD = 5
 
 const SAMPLE_ROW: UserAuthRow = {
   id: VALID_USER_ID,
@@ -72,42 +74,77 @@ describe('AuthRepository.fetchUserForAuth', () => {
 })
 
 describe('AuthRepository.recordLoginFailure', () => {
-  it('issues a parameterized UPDATE with user ID and timestamp', async () => {
+  it('issues a parameterized UPDATE binding the 4 params in order', async () => {
     const { db, queries } = makeMockDb([{}])
-    await new AuthRepository(db).recordLoginFailure(VALID_USER_ID, NOW)
+    await new AuthRepository(db).recordLoginFailure(VALID_USER_ID, NOW, THRESHOLD, LOCKED_UNTIL)
     expect(queries).toHaveLength(1)
     expect(queries[0]?.sql).toContain('UPDATE users')
     expect(queries[0]?.sql).toContain('fail_count')
     expect(queries[0]?.sql).toContain('?')
-    expect(queries[0]?.params).toContain(VALID_USER_ID)
-    expect(queries[0]?.params).toContain(NOW)
+    expect(queries[0]?.params).toEqual([THRESHOLD, LOCKED_UNTIL, NOW, VALID_USER_ID])
   })
 
-  it('SQL does not contain user ID or timestamp as literals', async () => {
+  it('SQL does not contain caller values as literals', async () => {
     const { db, queries } = makeMockDb([{}])
-    await new AuthRepository(db).recordLoginFailure(VALID_USER_ID, NOW)
+    await new AuthRepository(db).recordLoginFailure(VALID_USER_ID, NOW, THRESHOLD, LOCKED_UNTIL)
     expect(queries[0]?.sql).not.toContain(VALID_USER_ID)
     expect(queries[0]?.sql).not.toContain(NOW)
+    expect(queries[0]?.sql).not.toContain(LOCKED_UNTIL)
   })
 
   it('increments fail_count via SQL expression, not application logic', async () => {
     const { db, queries } = makeMockDb([{}])
-    await new AuthRepository(db).recordLoginFailure(VALID_USER_ID, NOW)
+    await new AuthRepository(db).recordLoginFailure(VALID_USER_ID, NOW, THRESHOLD, LOCKED_UNTIL)
     expect(queries[0]?.sql).toMatch(/fail_count\s*=\s*fail_count\s*\+\s*1/)
+  })
+
+  it('applies the lockout atomically via a CASE WHEN threshold expression', async () => {
+    const { db, queries } = makeMockDb([{}])
+    await new AuthRepository(db).recordLoginFailure(VALID_USER_ID, NOW, THRESHOLD, LOCKED_UNTIL)
+    expect(queries[0]?.sql).toMatch(/locked_until\s*=\s*CASE\s+WHEN/i)
+    expect(queries[0]?.sql).toMatch(/fail_count\s*\+\s*1\s*>=\s*\?/)
+    expect(queries[0]?.sql).toMatch(/ELSE\s+locked_until\s+END/i)
   })
 
   it('throws for an invalid user ID without hitting D1', async () => {
     const { db, queries } = makeMockDb([])
-    await expect(new AuthRepository(db).recordLoginFailure('!bad!', NOW)).rejects.toThrow()
+    await expect(
+      new AuthRepository(db).recordLoginFailure('!bad!', NOW, THRESHOLD, LOCKED_UNTIL),
+    ).rejects.toThrow()
     expect(queries).toHaveLength(0)
   })
 
-  it('throws for a non-canonical timestamp without hitting D1', async () => {
+  it('throws for a non-canonical now without hitting D1', async () => {
     const { db, queries } = makeMockDb([])
     await expect(
-      new AuthRepository(db).recordLoginFailure(VALID_USER_ID, '2026-06-09T00:00:00Z'),
+      new AuthRepository(db).recordLoginFailure(VALID_USER_ID, '2026-06-09T00:00:00Z', THRESHOLD, LOCKED_UNTIL),
     ).rejects.toThrow()
     expect(queries).toHaveLength(0)
+  })
+
+  it('throws for a non-canonical lockedUntil without hitting D1', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AuthRepository(db).recordLoginFailure(VALID_USER_ID, NOW, THRESHOLD, '2026-06-09T00:15:00Z'),
+    ).rejects.toThrow()
+    expect(queries).toHaveLength(0)
+  })
+
+  it('throws for invalid lockout thresholds without hitting D1', async () => {
+    for (const bad of [0, -1, 1.5, NaN, Infinity]) {
+      const { db, queries } = makeMockDb([])
+      await expect(
+        new AuthRepository(db).recordLoginFailure(VALID_USER_ID, NOW, bad, LOCKED_UNTIL),
+      ).rejects.toThrow()
+      expect(queries).toHaveLength(0)
+    }
+  })
+
+  it('does not expose D1 error details when D1 throws', async () => {
+    const { db } = makeMockDb([{ throws: new Error('sensitive D1 details') }])
+    await expect(
+      new AuthRepository(db).recordLoginFailure(VALID_USER_ID, NOW, THRESHOLD, LOCKED_UNTIL),
+    ).rejects.toThrow('database operation failed')
   })
 })
 
