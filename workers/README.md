@@ -12,7 +12,11 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 > R2 key builders, manifest validator, private-object loaders, and image response helpers are implemented but no R2 reads or object responses are active.
 > A private R2 reader adapter is implemented but no R2 binding or active route uses it.
 > Authorized-album catalog repository is implemented but not wired to any active route.
-> Manifest-authorized photo loading is implemented but not wired to any active route, binding, or real R2 read.
+> The private image routes `/img/:albumId/cover`, `/img/:albumId/thumb/:photoId`, and
+> `/img/:albumId/preview/:photoId` are now ACTIVE, but they require both a real `DB` (D1)
+> binding (session + album permission) and a real `PHOTO_BUCKET` (R2) binding (image reads).
+> Against the current placeholder config they fail closed: no cookie -> 401, no permission ->
+> 403, missing/failing bindings -> 503/500/404. No real images are served.
 > All visible page content is synthetic fixture data.
 
 ## Architecture
@@ -29,8 +33,10 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 | Data source | In-code fixtures | Not wired | D1 + R2 |
 | Viewer login | Not implemented | Active `/api/auth/*` (needs real DB) | Full UI + redirects |
 | Album authorization | Not implemented | Middleware ready | Per-user D1 checks |
-| Image delivery | 401 | Not wired | R2 via Workers |
-| R2 key construction | — | Key builders ready | Active routes |
+| Image delivery | 401 | Active `/img/*` (needs real DB + R2) | Full UI integration |
+| Cover delivery | 401 | Active `/img/:albumId/cover` (album-scoped, not manifest-gated) | Full UI integration |
+| Thumb / preview delivery | 401 | Active `/img/:albumId/{thumb,preview}/:photoId` (manifest-gated) | Full UI integration |
+| R2 key construction | — | Key builders wired via image routes | Active routes |
 | Manifest validation | — | Validator ready | Active R2 reads |
 | Private-object loaders | — | Loaders ready | Active R2 reads |
 | Image responses | — | Response helpers ready | Active object routes |
@@ -63,6 +69,8 @@ npx wrangler dev
 ```
 
 > `/api/auth/*` (login, logout, me) is active but needs a real `DB` binding; without one it returns 503.
+> The three `/img/*` image routes are active but need real `DB` + `PHOTO_BUCKET` bindings; without
+> them an authenticated request fails closed (401/403/503/500/404).
 > All other `/api`, `/img`, and `/admin` routes always return 401. Reserved for Phase 4.
 
 ## Routes (Phase 2 fixture UI)
@@ -110,17 +118,75 @@ explicit binding check).
 
 `/api/*` outside `/api/auth/*` stays `401`.
 
+## Private Image Routes (`/img`)
+
+The first routes that perform real R2 reads. Defined in `src/routes/img-routes.ts` and
+mounted in `src/index.tsx` **before** the reserved-401 catch-alls, so the three image GET
+shapes reach this router while every other `/img` path stays 401. They require both a real
+`DB` binding (session + album permission) and a real `PHOTO_BUCKET` binding (R2 reads);
+without them the chain fails closed (no explicit binding check — repository/reader calls
+reject and the middleware/handlers return 503/500/404, while a no-cookie request still
+returns 401 before any binding is touched).
+
+| Route | Method | R2 object | Content-Type |
+|---|---|---|---|
+| `/img/:albumId/cover` | GET | `albums/{albumId}/cover.webp` | `image/webp` |
+| `/img/:albumId/thumb/:photoId` | GET | `albums/{albumId}/thumbs/{photoId}.webp` | `image/webp` |
+| `/img/:albumId/preview/:photoId` | GET | `albums/{albumId}/previews/{photoId}.jpg` | `image/jpeg` |
+
+Successful responses carry `Cache-Control: private, no-store` and `X-Content-Type-Options:
+nosniff` only. No `ETag`, `Last-Modified`, `Content-Disposition`, stored cache headers, or
+any other R2 object metadata is forwarded; the body stream is passed through without
+buffering or inspection. There is no range, conditional-request, or caching support.
+
+### Authorization chain (fixed order)
+
+1. **`requireSession`** — validates the `photo_gate_session` cookie. Invalid/missing session
+   → 401; nothing else runs (the permission check and R2 are never reached).
+2. **`requireAlbumPermission`** — checks the authenticated user's permission for `:albumId`.
+   Invalid-format `albumId` or denied permission → 403; R2 is never reached.
+3. **Object load** —
+   - **thumb/preview:** `:photoId` is format-validated first (invalid → 404, no R2 read).
+     Then manifest-first membership is enforced: the validated manifest is read and the
+     image object is fetched **only** after an exact `photo.id` match. An unlisted or stale
+     photo is never probed in R2, so object existence is never revealed.
+   - **cover:** loaded directly with `loadAlbumCover`. **Cover is an album-scoped asset
+     published by the Docker sync, not a per-photo object, so it is NOT manifest-gated** —
+     album permission is the boundary. A cover can be served even when no manifest exists
+     yet (sync uploads cover/images first, the manifest last). See
+     `docs/decisions/2026-06-11-private-image-routes.md` §2.2.4.
+4. **Response** — only the safe `privateImageResponse` (fixed Content-Type by kind) or the
+   generic `objectNotFoundResponse` / `objectInternalErrorResponse` helpers.
+
+### Failure table
+
+| Condition | Response |
+|---|---|
+| Invalid / missing session | `401` (generic) |
+| Album permission denied / invalid `albumId` | `403` (generic) |
+| Invalid `photoId` format | `404` (no R2 read) |
+| Manifest absent / photo unlisted / image object absent | `404` (generic, indistinguishable) |
+| Manifest invalid / reader failure / any other throw | `500` (generic) |
+| D1 failure (session or permission lookup) | `503` (generic) |
+
+404/500/503 responses contain no album ID, photo ID, R2 key, object type, storage provider,
+or internal error detail. An unlisted photo and a missing image object return the identical
+404; the image key of an unlisted/stale photo is never requested from R2.
+
 ### Reserved routes: intentional 401
 
 ```
 /api (exact)      /api/* except /api/auth/*
-/img    /img/*
+/img (exact)      /img/* except the three image GET shapes
 /admin  /admin/*
 ```
 
 Fail closed by design. No fixture data is returned. `/api/auth/login`, `/api/auth/logout`,
 and `/api/auth/me` are the only active routes under `/api`; everything else under these
-prefixes returns 401.
+prefixes returns 401. Under `/img`, only the three GET shapes
+`/img/:albumId/cover`, `/img/:albumId/thumb/:photoId`, and `/img/:albumId/preview/:photoId`
+reach the image router; `/img` itself, any other path shape, and any non-GET method fall
+through to the reserved 401 catch-all.
 
 ## D1 Schema (Phase 3, created but not applied)
 
@@ -556,17 +622,17 @@ route uses them yet.
 
 ## What is not connected
 
-- D1 database: declared with a placeholder ID in `wrangler.toml`; no real database is provisioned and migrations are not applied, so the active `/api/auth/*` routes return 503
-- R2 bucket: declared in `wrangler.toml` but no real bucket is provisioned; no manifests, thumbs, previews, or covers
-- R2 key builders: implemented, not wired to any route; no R2 reads or object responses
-- Manifest validator: implemented, not wired to any route; no real manifests parsed
-- Private-object loaders: implemented, not wired to any route; no real R2 reads
-- Image response helpers: implemented, not wired to any route; no real object responses
-- Private R2 reader adapter: implemented, not wired to any route or binding; no real object reads
+- D1 database: declared with a placeholder ID in `wrangler.toml`; no real database is provisioned and migrations are not applied, so the active `/api/auth/*` and `/img/*` routes return 503 on session/permission lookups
+- R2 bucket: declared in `wrangler.toml` but no real bucket is provisioned; the active `/img/*` routes have no manifests, thumbs, previews, or covers to read
+- R2 key builders: wired through the active `/img/*` routes via the private-object loaders; still no real R2 data
+- Manifest validator: wired through the active thumb/preview routes (manifest-first membership); no real manifests parsed
+- Private-object loaders: wired through the active `/img/*` routes; no real R2 reads against a provisioned bucket
+- Image response helpers: wired through the active `/img/*` routes; no real object bytes served
+- Private R2 reader adapter: wired through the active `/img/*` routes via the injected reader; no real bucket connected
 - Login/session policy helpers: implemented in `src/services/login-policy.ts` and now used by the active `/api/auth/*` routes (a real `DB` binding is still required for them to function)
 - Authentication middleware and login/logout/me routes: wired and active under `/api/auth/*`, but require a real `DB` binding; against the current placeholder config they return 503
-- Authorization middleware (album-level): implemented, not wired to any route
+- Authorization middleware (album-level): wired and active under the `/img/*` image routes; requires a real `DB` binding (without one, permission lookups return 503)
+- Manifest-authorized photo loading: wired and active under the `/img/:albumId/{thumb,preview}/:photoId` routes; requires real `DB` + `PHOTO_BUCKET` bindings
 - Authorized-album catalog repository: implemented, not wired to any route; no real D1 binding, no active album list or album detail routes
-- Manifest-authorized photo loading: implemented, not wired to any route or binding; no real R2 reads
 - PhotoPrism: no API calls
 - Admin UI: `/admin/*` returns 401
