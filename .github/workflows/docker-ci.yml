@@ -35,8 +35,26 @@ jobs:
       - run: python -m pytest
       - run: python -m compileall src
 
+  # Runs the suite against the exact libvips inside the published base
+  # image. Catches libvips-version-specific behavior (e.g. bookworm 8.14
+  # re-synthesizing EXIF at save time) that host-installed libvips misses.
+  container-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build test image with runtime libvips
+        uses: docker/build-push-action@v6
+        with:
+          context: docker/
+          target: test
+          load: true
+          tags: photo-gate-sync-test:local
+      - name: Run test suite inside the container
+        run: docker run --rm photo-gate-sync-test:local
+
   release:
-    needs: test
+    needs: [test, container-test]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/sync-v')
     permissions:
@@ -60,6 +78,7 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: docker/
+          target: final
           platforms: linux/amd64,linux/arm64
           push: true
           provenance: false

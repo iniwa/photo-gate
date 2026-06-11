@@ -21,16 +21,20 @@ logs:
 2. `main.py` swallowed the sync exception entirely (`Sync failed for album
    ...` with no cause), making the actual failure undiagnosable from logs.
 
-Both fixed in `0.1.1`. The redeployed stack's now-readable logs revealed
-the real failure: the container's libvips (Debian bookworm, 8.14) does not
-honor encoder-level `strip=True`, so EXIF survived re-encoding and the
-fail-closed output validator correctly blocked the upload. Fixed in
-`0.1.2`: `_process` now removes all attached metadata fields from the
-image itself before saving (version-independent); the validator stays as
-the safety net, with `resolution-unit` (JFIF density unit, informational)
-added to the allowlist. Album/user rows are live in D1 and the viewer
-password was reset on request. Waiting on human: bump the stack image to
-`0.1.2`, redeploy, and provide logs.
+Both fixed in `0.1.1`. The readable logs then revealed EXIF surviving
+re-encoding on the container's libvips (bookworm, 8.14); `0.1.2` removed
+all attached metadata before saving, but the failure persisted with the
+exact libexif mandatory-tag set (ExifVersion, FlashpixVersion, ColorSpace,
+ComponentsConfiguration, PixelX/YDimension, Orientation, resolution tags,
+YCbCrPositioning): libvips 8.14 synthesizes a fresh EXIF block at save
+time regardless of image metadata, so no Python-side change can prevent
+it. `0.1.3` moves the base image to Debian trixie (libvips 8.16, same
+keep-based generation as the CI-verified 8.15/8.18) and adds a CI
+container-test job that runs the suite against the runtime libvips inside
+the image, gating release — this would have caught both 8.14 bugs before
+publishing. Album/user rows are live in D1; viewer password was reset on
+request. Waiting on human: bump the stack image to `0.1.3`, redeploy, and
+provide logs.
 
 ## Last Completed Work
 

@@ -45,10 +45,12 @@ This is a priority-ordered plan. Update status as implementation progresses.
 - [ ] Run a controlled end-to-end album sync and viewer test.
       (First user/album rows inserted. Failure 1: Portainer mis-expands
       `${VAR:-default}`; fixed in 0.1.1 along with readable sync errors.
-      Failure 2, revealed by 0.1.1 logs: container libvips 8.14 ignores
-      encoder-level strip, EXIF survived, fail-closed validator blocked the
-      upload as designed. Fixed in 0.1.2 via explicit metadata removal.
-      Awaiting redeploy with 0.1.2.)
+      Failure 2, revealed by 0.1.1 logs: container libvips 8.14 leaves EXIF
+      in saved output — it synthesizes a fresh mandatory-tag EXIF block at
+      save time, so 0.1.2's explicit metadata removal could not stop it; the
+      fail-closed validator blocked the upload as designed. Fixed in 0.1.3
+      by moving the base image to Debian trixie (libvips 8.16) with a new CI
+      container-test job gating release. Awaiting redeploy with 0.1.3.)
 - [ ] Add album cover generation/upload to the sync tool.
       (Gap found 2026-06-11: bootstrap.md §7 and the `/img/:albumId/cover`
       route expect `albums/<id>/cover.webp`, but `sync-once` never uploads

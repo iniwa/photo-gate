@@ -1,4 +1,9 @@
-FROM python:3.12-slim-bookworm
+# Debian trixie ships libvips 8.16. Do not downgrade to bookworm: its
+# libvips 8.14 synthesizes a fresh mandatory-tag EXIF block at save time
+# even when all metadata has been removed from the image, which the
+# fail-closed output validator rejects (first production sync failures,
+# 2026-06-11). libvips >= 8.15 (keep-based metadata handling) is required.
+FROM python:3.12-slim-trixie AS runtime
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -23,3 +28,17 @@ USER appuser
 
 ENTRYPOINT ["photo-gate-sync"]
 CMD ["--help"]
+
+# Test image: runs the suite against the exact runtime libvips so
+# version-specific metadata behavior is caught before release. Built only
+# in CI via --target test; never published.
+FROM runtime AS test
+USER root
+COPY tests/ ./tests/
+RUN pip install --no-cache-dir ".[dev]"
+USER appuser
+ENTRYPOINT []
+CMD ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+
+# Keep the published image as the default build target (last stage wins).
+FROM runtime AS final
