@@ -10,9 +10,12 @@ human Cloudflare login and provisioning before it can start.
 
 ## Current Task
 
-Blocked on human action (see below). Next unblocked candidate is Level 2
-item 4 (CI workflows), but verifying mirror-triggered CI requires the
-Gitea-to-GitHub mirror to exist, which is also human-controlled state.
+Level 2 item 4 delivery pipeline authored and pushed (commit `78a3f3d`):
+Workers CI (secret-gated deploy), Docker CI (`sync-v*` multi-arch GHCR
+release, webhook-gated Portainer update), and the interim
+`deploy/portainer-stack.yml`. The GitHub mirror `iniwa/photo-gate` exists
+(human-confirmed) but is private, so CI run results cannot be observed from
+this environment; verification is pending human confirmation or `gh` auth.
 
 ## Last Completed Work
 
@@ -37,15 +40,17 @@ Gitea-to-GitHub mirror to exist, which is also human-controlled state.
 
 ## Current Blockers / Required Human Actions
 
-1. **Cloudflare provisioning (Level 1 item 3):** interactive `wrangler login`
-   and account selection, then either run `docs/operations/bootstrap.md`
-   sections 2-6 manually or invoke Fable to perform resource creation and
-   additive migrations after login.
-2. **GitHub mirror:** confirm or configure the Gitea-to-GitHub mirror (and
-   target repository) so Level 2 CI workflows can be authored and verified.
-3. **Portainer:** initial stack/container, registry credentials, volumes, and
-   the dedicated stack-update mechanism (needed for Level 1 item 3 Docker
-   deployment and Level 2 delivery automation).
+1. **Cloudflare provisioning (Level 1 item 3):** `cd workers; npx wrangler
+   login` (wrangler is a project devDependency, not a global install), then
+   either run `docs/operations/bootstrap.md` sections 2-6 manually or invoke
+   Fable after login.
+2. **CI verification:** the GitHub mirror repo is private; confirm the
+   `workers-ci` / `docker-ci` Actions runs are green after the mirror syncs
+   commit `78a3f3d`, or provide an authenticated `gh` CLI.
+3. **Portainer:** create the initial stack from `deploy/portainer-stack.yml`
+   with GHCR registry credentials and environment variables; provide the
+   stack webhook URL as the `PORTAINER_WEBHOOK_URL` GitHub secret. The first
+   GHCR image requires a `sync-v0.1.0` tag push after CI is confirmed green.
 
 ## Next Priority
 

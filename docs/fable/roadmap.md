@@ -41,9 +41,15 @@ This is a priority-ordered plan. Update status as implementation progresses.
 ### 4. Delivery Automation
 
 - [ ] Add Workers CI: install, lint, typecheck, test, build, deploy.
+      (Authored in `.github/workflows/workers-ci.yml`; deploy is gated on
+      Cloudflare secrets. Mirror-run verification pending.)
 - [ ] Add Docker CI: tests with libvips, multi-arch build, versioned GHCR push.
+      (Authored in `.github/workflows/docker-ci.yml`; release fires on
+      `sync-v*` tags. Mirror-run verification pending.)
 - [ ] Trigger the dedicated existing Portainer stack update path after a
       successful versioned Docker release.
+      (Authored as a `PORTAINER_WEBHOOK_URL`-gated job; webhook not yet
+      provided. Interim stack: `deploy/portainer-stack.yml`.)
 - [ ] Record deployed commit/version and document rollback.
 - [ ] Keep Gitea canonical and verify GitHub mirror-triggered workflows.
 
