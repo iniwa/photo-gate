@@ -246,6 +246,155 @@ def test_r2_keys_use_album_id_and_photo_uid():
     assert any("test-album/manifest.json" in k for k in keys)
 
 
+def _make_size_aware_client(photos_json: list[dict], by_size: dict[str, bytes]) -> PhotoPrismClient:
+    """PhotoPrism fake that serves different bytes per requested size."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "/api/v1/photos" in url:
+            return httpx.Response(
+                200,
+                headers={
+                    "X-Preview-Token": "preview_tok",
+                    "X-Count": str(len(photos_json)),
+                    "X-Limit": "500",
+                },
+                content=json.dumps(photos_json).encode(),
+            )
+        if "/api/v1/t/" in url:
+            size = url.rstrip("/").rsplit("/", 1)[-1]
+            return httpx.Response(
+                200,
+                headers={"content-type": "image/jpeg"},
+                content=by_size[size],
+            )
+        return httpx.Response(404, content=b"not found")
+
+    return PhotoPrismClient(
+        base_url="http://photoprism.test",
+        token="test-token",
+        _transport=_MockTransport(handler),
+    )
+
+
+def _jpeg_of_size(width: int, height: int) -> bytes:
+    import io
+    from PIL import Image
+
+    img = Image.new("RGB", (width, height), color=(120, 140, 160))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=75)
+    return buf.getvalue()
+
+
+def _large_photo_entry(uid: str, hash_val: str) -> dict:
+    entry = _photo_entry(uid, hash_val)
+    entry["Width"] = 4000
+    entry["Height"] = 3000
+    return entry
+
+
+@skip_no_pyvips
+def test_sync_fails_closed_on_placeholder_preview():
+    """
+    Regression: PhotoPrism answers 200 image/jpeg with a tiny placeholder
+    when its thumbnail settings cannot serve the requested size. The first
+    production sync uploaded 234 such 24x24 "previews"; sync must fail and
+    withhold the manifest instead.
+    """
+    photos_json = [_large_photo_entry("uid001abc", "1" * 40)]
+    client = _make_size_aware_client(
+        photos_json,
+        {"fit_720": _jpeg_of_size(720, 540), "fit_3840": _jpeg_of_size(24, 24)},
+    )
+    store = _FakeStore()
+
+    async def run():
+        async with client:
+            await sync_album(client, _ALBUM, store, _SETTINGS, _FIXED_TS)
+
+    with pytest.raises(BaseExceptionGroup) as excinfo:
+        asyncio.run(run())
+    assert "undersized" in repr(excinfo.value.exceptions)
+
+    uploaded_keys = [k for k, _ in store.puts]
+    assert not any(k.endswith(_MANIFEST_KEY_SUFFIX) for k in uploaded_keys), (
+        "Manifest must not be uploaded when previews are placeholders"
+    )
+
+
+@skip_no_pyvips
+def test_sync_fails_closed_on_placeholder_thumb_source():
+    photos_json = [_large_photo_entry("uid001abc", "1" * 40)]
+    client = _make_size_aware_client(
+        photos_json,
+        {"fit_720": _jpeg_of_size(24, 24), "fit_3840": _jpeg_of_size(3840, 2880)},
+    )
+    store = _FakeStore()
+
+    async def run():
+        async with client:
+            await sync_album(client, _ALBUM, store, _SETTINGS, _FIXED_TS)
+
+    with pytest.raises(BaseExceptionGroup):
+        asyncio.run(run())
+    assert not any(k.endswith(_MANIFEST_KEY_SUFFIX) for k, _ in store.puts)
+
+
+@skip_no_pyvips
+def test_sync_accepts_moderately_smaller_source():
+    """A legit source somewhat below the requested size (e.g. a 2048px
+    cached thumb for fit_3840 on a 4000px photo) must be accepted."""
+    photos_json = [_large_photo_entry("uid001abc", "1" * 40)]
+    client = _make_size_aware_client(
+        photos_json,
+        {"fit_720": _jpeg_of_size(720, 540), "fit_3840": _jpeg_of_size(2048, 1536)},
+    )
+    store = _FakeStore()
+
+    async def run():
+        async with client:
+            await sync_album(client, _ALBUM, store, _SETTINGS, _FIXED_TS)
+
+    asyncio.run(run())
+    assert any(k.endswith(_MANIFEST_KEY_SUFFIX) for k, _ in store.puts)
+
+
+@skip_no_pyvips
+def test_sync_uses_configured_preview_source_size():
+    photos_json = [_large_photo_entry("uid001abc", "1" * 40)]
+    client = _make_size_aware_client(
+        photos_json,
+        {"fit_720": _jpeg_of_size(720, 540), "fit_2048": _jpeg_of_size(2048, 1536)},
+    )
+    store = _FakeStore()
+
+    async def run():
+        async with client:
+            await sync_album(
+                client, _ALBUM, store, _SETTINGS, _FIXED_TS,
+                preview_source_size="fit_2048",
+            )
+
+    asyncio.run(run())
+    assert any(k.endswith(_MANIFEST_KEY_SUFFIX) for k, _ in store.puts)
+
+
+@skip_no_pyvips
+def test_sync_rejects_unknown_preview_source_size():
+    client = _make_photoprism_client([], b"")
+    store = _FakeStore()
+
+    async def run():
+        async with client:
+            await sync_album(
+                client, _ALBUM, store, _SETTINGS, _FIXED_TS,
+                preview_source_size="original",
+            )
+
+    with pytest.raises(ValueError, match="preview_source_size"):
+        asyncio.run(run())
+
+
 @skip_no_pyvips
 def test_sync_rejects_non_positive_concurrency():
     client = _make_photoprism_client([], b"")

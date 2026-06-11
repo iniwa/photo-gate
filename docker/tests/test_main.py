@@ -272,7 +272,7 @@ def test_successful_sync_calls_sync_exactly_once():
 
     sync_calls = []
 
-    async def tracking_sync(client, album, store, settings, generated_at, concurrency):
+    async def tracking_sync(client, album, store, settings, generated_at, concurrency, **kwargs):
         sync_calls.append({
             "album_id": album.album_id,
             "album_title": album.title,
@@ -300,7 +300,7 @@ def test_concurrency_flag_is_passed_to_sync():
 
     received = []
 
-    async def tracking_sync(client, album, store, settings, generated_at, concurrency):
+    async def tracking_sync(client, album, store, settings, generated_at, concurrency, **kwargs):
         received.append(concurrency)
 
     asyncio.run(run_sync_once(
@@ -313,6 +313,43 @@ def test_concurrency_flag_is_passed_to_sync():
     ))
 
     assert received == [4]
+
+
+def test_preview_size_flag_is_passed_to_sync():
+    parser = _build_parser()
+    args = parser.parse_args(
+        _VALID_SYNC_ARGS + ["--photoprism-preview-size", "fit_2048"]
+    )
+
+    received = []
+
+    async def tracking_sync(*args, **kwargs):
+        received.append(kwargs.get("preview_source_size"))
+
+    asyncio.run(run_sync_once(
+        args,
+        config_loader=_FakeConfig,
+        client_factory=lambda cfg: _FakeClient(),
+        store_factory=lambda cfg: object(),
+        sync_fn=tracking_sync,
+        clock=lambda: _FIXED_TS,
+    ))
+
+    assert received == ["fit_2048"]
+
+
+def test_preview_size_defaults_to_fit_3840():
+    parser = _build_parser()
+    args = parser.parse_args(_VALID_SYNC_ARGS)
+    assert args.photoprism_preview_size == "fit_3840"
+
+
+def test_preview_size_rejects_unknown_value(capsys):
+    parser = _build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            _VALID_SYNC_ARGS + ["--photoprism-preview-size", "original"]
+        )
 
 
 def test_factories_receive_config_from_loader():
@@ -341,7 +378,7 @@ def test_clock_result_is_passed_to_sync():
 
     received_ts = []
 
-    async def tracking_sync(client, album, store, settings, generated_at, concurrency):
+    async def tracking_sync(client, album, store, settings, generated_at, concurrency, **kwargs):
         received_ts.append(generated_at)
 
     asyncio.run(run_sync_once(

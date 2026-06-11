@@ -55,6 +55,10 @@ services:
       ALBUM_TITLE: ${ALBUM_TITLE}
       PHOTOPRISM_ALBUM_UID: ${PHOTOPRISM_ALBUM_UID}
       SYNC_INTERVAL_SECONDS: ${SYNC_INTERVAL_SECONDS}
+      # PhotoPrism size used as the preview source (fit_720/fit_1280/
+      # fit_1920/fit_2048/fit_2560/fit_3840). Must be a size the PhotoPrism
+      # instance can actually serve; undefined -> fit_3840.
+      PHOTOPRISM_PREVIEW_SIZE: ${PHOTOPRISM_PREVIEW_SIZE}
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -65,11 +69,16 @@ services:
         case "$$CF_ACCESS_CLIENT_ID" in
           -|*[!a-zA-Z0-9._-]*) CF_ACCESS_CLIENT_ID=''; CF_ACCESS_CLIENT_SECRET='' ;;
         esac
+        PREVIEW_SIZE="$$PHOTOPRISM_PREVIEW_SIZE"
+        case "$$PREVIEW_SIZE" in
+          ''|*[!a-z0-9_]*) PREVIEW_SIZE=fit_3840 ;;
+        esac
         while true; do
           photo-gate-sync sync-once \
             --album-id "$$ALBUM_ID" \
             --album-title "$$ALBUM_TITLE" \
             --photoprism-album-uid "$$PHOTOPRISM_ALBUM_UID" \
+            --photoprism-preview-size "$$PREVIEW_SIZE" \
             --confirm-upload || echo "sync failed; retrying next interval"
           sleep "$$INTERVAL"
         done

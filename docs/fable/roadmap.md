@@ -51,7 +51,11 @@ This is a priority-ordered plan. Update status as implementation progresses.
       fail-closed validator blocked the upload as designed. Fixed in 0.1.3
       by moving the base image to Debian trixie (libvips 8.16) with a new CI
       container-test job gating release; green and published as 0.1.5.
-      Awaiting redeploy with 0.1.5.)
+      Failure 3: 0.1.5 synced 234 photos but PhotoPrism served 24x24
+      placeholders for fit_3840 (instance thumbnail limit); 0.1.6 fails
+      closed on undersized sources and adds --photoprism-preview-size /
+      PHOTOPRISM_PREVIEW_SIZE. Awaiting PhotoPrism config decision and
+      redeploy with 0.1.6.)
 - [ ] Add album cover generation/upload to the sync tool.
       (Gap found 2026-06-11: bootstrap.md §7 and the `/img/:albumId/cover`
       route expect `albums/<id>/cover.webp`, but `sync-once` never uploads

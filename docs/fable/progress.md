@@ -41,7 +41,25 @@ Release iterations (gate worked as designed; no broken image published):
 `libvips42t64`); `0.1.4` failed in CI — `.dockerignore` excluded `tests/`
 so the test stage could not COPY them; `0.1.5` fully green, with
 container-test passing the whole suite against the runtime libvips 8.16
-inside the image, and published multi-arch to GHCR. Deploy `0.1.5`.
+inside the image, and published multi-arch to GHCR.
+
+`0.1.5` synced all 234 photos end-to-end (manifest last, thumbs verified
+640px/EXIF-free from live R2), but every preview was a 455-byte 24x24
+placeholder: PhotoPrism answers 200 image/jpeg with a placeholder when
+asked for a size its thumbnail settings cannot serve (fit_3840 here,
+while fit_720 worked). `0.1.6` adds a fail-closed plausibility check
+(decoded long edge must reach half of what the requested size and source
+photo dimensions allow, manifest withheld otherwise) and a
+`--photoprism-preview-size` flag / `PHOTOPRISM_PREVIEW_SIZE` stack env so
+operators can match their instance. Waiting on human: either raise the
+PhotoPrism thumbnail limit to serve fit_3840 or set
+`PHOTOPRISM_PREVIEW_SIZE=fit_2048` (or similar), update stack to `0.1.6`,
+re-run, and confirm previews are real.
+
+Verified live security posture (2026-06-11): unauthenticated `/albums`
+303 to `/`; `/img/*` 401 `no-store`; direct R2 URL refused; manifest
+contains no URLs/tokens/secrets; sampled thumb and preview carry zero
+EXIF/GPS/XMP.
 
 ## Last Completed Work
 

@@ -81,6 +81,15 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Required to prevent accidental uploads",
     )
     sync.add_argument("--concurrency", type=int, default=2, metavar="N")
+    # Keep in sync with _SOURCE_SIZE_PX in sync.py (not imported here so the
+    # module stays importable without libvips).
+    sync.add_argument(
+        "--photoprism-preview-size",
+        choices=["fit_720", "fit_1280", "fit_1920", "fit_2048", "fit_2560", "fit_3840"],
+        default="fit_3840",
+        help="PhotoPrism size used as the preview source; pick one the "
+        "instance's thumbnail settings can actually serve",
+    )
     sync.add_argument("--thumb-long-edge", type=int, default=640, metavar="PX")
     sync.add_argument("--thumb-quality", type=int, default=80, metavar="Q")
     sync.add_argument("--preview-long-edge", type=int, default=3840, metavar="PX")
@@ -189,7 +198,15 @@ async def run_sync_once(
         client = client_factory(config)
         async with client:
             store = store_factory(config)
-            await sync_fn(client, album, store, settings, generated_at, args.concurrency)
+            await sync_fn(
+                client,
+                album,
+                store,
+                settings,
+                generated_at,
+                args.concurrency,
+                preview_source_size=args.photoprism_preview_size,
+            )
     except Exception as exc:
         print(
             f"Sync failed for album {args.album_id!r}: {_describe_error(exc)}",

@@ -7,7 +7,10 @@ from .models import PhotoPrismPhoto
 
 _SAFE_HASH = re.compile(r"^[0-9a-f]{40}$", re.ASCII)
 _SAFE_UID = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$", re.ASCII)
-_ALLOWED_SIZES = frozenset(["fit_720", "fit_3840"])
+# PhotoPrism preview sizes the client may request. Never original/raw.
+_ALLOWED_SIZES = frozenset(
+    ["fit_720", "fit_1280", "fit_1920", "fit_2048", "fit_2560", "fit_3840"]
+)
 
 
 class PhotoPrismError(Exception):

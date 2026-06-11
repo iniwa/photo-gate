@@ -274,12 +274,14 @@ def test_download_preview_returns_bytes():
 
 
 def test_download_preview_rejects_disallowed_size():
-    async def run():
-        with pytest.raises(ValueError, match="allowlist"):
-            async with _make_client(lambda r: None) as client:
-                await client.download_preview("a" * 40, "tok", "fit_1920")
+    # Originals and raw files must never be downloadable through this client.
+    for size in ("original", "fit_7680", "download", ""):
+        async def run():
+            with pytest.raises(ValueError, match="allowlist"):
+                async with _make_client(lambda r: None) as client:
+                    await client.download_preview("a" * 40, "tok", size)
 
-    asyncio.run(run())
+        asyncio.run(run())
 
 
 def test_download_preview_rejects_non_hex_hash():
