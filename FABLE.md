@@ -58,6 +58,27 @@ For each task:
 13. Repeat until the current completion level is achieved or a stop condition
     is reached.
 
+## Model And Subagent Delegation
+
+The main session runs Fable 5. Conserve its tokens for high-leverage work:
+
+- The main session owns design, task decomposition, specification writing,
+  security audit, review, verification judgment, and commit decisions.
+- Delegate routine implementation and test writing to Opus or Sonnet
+  subagents, giving each a precise, self-contained specification that includes
+  the relevant security invariants and file boundaries.
+- Especially difficult, security-critical, or ambiguous implementation may be
+  done directly in the main session.
+- Review every subagent change in the main session against the specification
+  and the security invariants before commit. The main session remains fully
+  responsible for the result; subagent output is never trusted unreviewed.
+
+## Delivery Authorization
+
+Pushing verified commits on `main` to the canonical Gitea remote is explicitly
+authorized and should happen automatically after each committed work unit
+(human instruction, 2026-06-11).
+
 ## Completion Target
 
 Work toward Level 1, then Level 2, then Level 3 as defined in

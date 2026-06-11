@@ -8,9 +8,16 @@ Working toward Level 1: Securely Usable.
 
 ## Current Task
 
-Paused by explicit human instruction after completing the manifest-authorized
-photo loading handoff. The human is adding new rules about subagents; wait for
-the updated instructions before selecting the next roadmap item.
+Roadmap Level 1, item 1 remainder: route-independent login/session policy
+helpers using the approved defaults.
+
+Acceptance criteria:
+
+- fixed seven-day session lifetime policy helper;
+- five-failure / fifteen-minute lockout decision helpers;
+- PBKDF2 iteration count decided and recorded as an ADR;
+- helpers stay route-independent (no bindings, no active routes);
+- focused tests; full Workers verification passes; committed and pushed.
 
 ## Last Completed Work
 
@@ -37,11 +44,10 @@ the updated instructions before selecting the next roadmap item.
 
 ## Current Blockers
 
-- Human is updating working rules (subagent rules); paused on request.
+None.
 
 ## Next Priority
 
-Roadmap Level 1, item 1 remainder: implement approved login/session policy
-helpers (fixed seven-day sessions, five-failure/fifteen-minute lockout,
-PBKDF2 iteration benchmark ADR), then begin wiring Workers to `DB` and
-`PHOTO_BUCKET` per roadmap item 2.
+After login/session policy helpers: begin wiring Workers to `DB` and
+`PHOTO_BUCKET` per roadmap item 2 (bindings, login/logout/me routes,
+authenticated album routes, protected image routes).
