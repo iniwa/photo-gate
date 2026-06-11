@@ -34,7 +34,9 @@ container-test job that runs the suite against the runtime libvips inside
 the image, gating release — this would have caught both 8.14 bugs before
 publishing. Album/user rows are live in D1; viewer password was reset on
 request. Waiting on human: bump the stack image to `0.1.3`, redeploy, and
-provide logs.
+provide logs. (`0.1.3` itself never published: in trixie `libvips` is only
+a virtual package, so the image build failed and the new container-test
+gate correctly blocked the release; `0.1.4` installs `libvips42t64`.)
 
 ## Last Completed Work
 

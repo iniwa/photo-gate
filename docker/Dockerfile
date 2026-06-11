@@ -5,9 +5,11 @@
 # 2026-06-11). libvips >= 8.15 (keep-based metadata handling) is required.
 FROM python:3.12-slim-trixie AS runtime
 
+# In trixie "libvips" is only a virtual package; libvips42t64 is the real
+# binary package providing libvips.so.42 for pyvips.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        libvips \
+        libvips42t64 \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
