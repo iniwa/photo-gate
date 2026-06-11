@@ -39,23 +39,17 @@ This is a priority-ordered plan. Update status as implementation progresses.
       active. Smoke: login form 200/CSP/no fixture; unauthenticated pages
       303→/; credential failure 303→/?error=1 via real D1; /api /img /admin
       401 no-store; JSON login 401; cross-origin 403.)
-- [ ] Build and deploy the existing Docker sync CLI through the human-created
-      Portainer stack. (Stack `iniwa-photo-gate` deployed with image 0.1.0;
-      needs redeploy with 0.1.1 — see below.)
+- [x] Build and deploy the existing Docker sync CLI through the human-created
+      Portainer stack. (Stack `iniwa-photo-gate` running image 0.1.6.)
 - [ ] Run a controlled end-to-end album sync and viewer test.
-      (First user/album rows inserted. Failure 1: Portainer mis-expands
-      `${VAR:-default}`; fixed in 0.1.1 along with readable sync errors.
-      Failure 2, revealed by 0.1.1 logs: container libvips 8.14 leaves EXIF
-      in saved output — it synthesizes a fresh mandatory-tag EXIF block at
-      save time, so 0.1.2's explicit metadata removal could not stop it; the
-      fail-closed validator blocked the upload as designed. Fixed in 0.1.3
-      by moving the base image to Debian trixie (libvips 8.16) with a new CI
-      container-test job gating release; green and published as 0.1.5.
-      Failure 3: 0.1.5 synced 234 photos but PhotoPrism served 24x24
-      placeholders for fit_3840 (instance thumbnail limit); 0.1.6 fails
-      closed on undersized sources and adds --photoprism-preview-size /
-      PHOTOPRISM_PREVIEW_SIZE. Awaiting PhotoPrism config decision and
-      redeploy with 0.1.6.)
+      (Sync side complete 2026-06-11: 234 photos synced with 0.1.6 +
+      PHOTOPRISM_PREVIEW_SIZE=fit_1920, manifest uploaded last, sampled
+      outputs metadata-free. Iterations: 0.1.1 fixed Portainer
+      `${VAR:-default}` mis-expansion + unreadable errors; 0.1.2/0.1.3
+      fixed bookworm libvips 8.14 synthesizing EXIF at save time (trixie
+      base + CI container-test gate, shipped as 0.1.5); 0.1.6 fails closed
+      on PhotoPrism placeholder previews and made the source size
+      configurable. Remaining: human browser confirmation of the viewer.)
 - [ ] Add album cover generation/upload to the sync tool.
       (Gap found 2026-06-11: bootstrap.md §7 and the `/img/:albumId/cover`
       route expect `albums/<id>/cover.webp`, but `sync-once` never uploads

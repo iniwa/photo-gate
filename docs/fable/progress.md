@@ -51,10 +51,18 @@ while fit_720 worked). `0.1.6` adds a fail-closed plausibility check
 (decoded long edge must reach half of what the requested size and source
 photo dimensions allow, manifest withheld otherwise) and a
 `--photoprism-preview-size` flag / `PHOTOPRISM_PREVIEW_SIZE` stack env so
-operators can match their instance. Waiting on human: either raise the
-PhotoPrism thumbnail limit to serve fit_3840 or set
-`PHOTOPRISM_PREVIEW_SIZE=fit_2048` (or similar), update stack to `0.1.6`,
-re-run, and confirm previews are real.
+operators can match their instance.
+
+**End-to-end sync succeeded 2026-06-11 with `0.1.6` +
+`PHOTOPRISM_PREVIEW_SIZE=fit_1920`** (the operator's PhotoPrism has
+`THUMB_SIZE=1920`, so fit_1920 serves from the static cache with no
+dynamic rendering load). All 234 placeholders were overwritten with real
+previews (107-697 KB), manifest re-uploaded last; a freshly sampled
+preview is 1600x1200 (correct fit_1920 box fit for 4:3) with zero
+EXIF/GPS/XMP. The 0.1.6 check also proved itself live: it refused
+fit_2048 and fit_3840 with exact diagnostics until the size matched.
+Remaining for Level 1: human confirms the viewer in a browser (login,
+album list, detail, preview display).
 
 Verified live security posture (2026-06-11): unauthenticated `/albums`
 303 to `/`; `/img/*` 401 `no-store`; direct R2 URL refused; manifest
