@@ -35,8 +35,9 @@ venv/
 dist/
 build/
 
-# Tests
-tests/
+# tests/ is intentionally NOT excluded: the Dockerfile "test" stage
+# (CI container-test job) COPYs it; runtime/final stages never do, so
+# the published image stays free of test code.
 
 # Runtime media and data directories
 cache/
