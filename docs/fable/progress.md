@@ -24,17 +24,17 @@ Acceptance criteria (incremental, in order):
 
 ## Last Completed Work
 
-- Manifest-authorized thumb/preview loading service with exact-membership
-  enforcement; handoff archived (commits `6333f8d`, `ba76829`).
-- Login/session policy helpers (`login-policy.ts`), atomic lockout-aware
-  `recordLoginFailure`, and ADR fixing PBKDF2 at 100,000 iterations
-  (commit `d5c030d`). Roadmap Level 1 item 1 is complete.
-- Subagent delegation and auto-push rules added to `FABLE.md` (`f8dc674`).
+- Roadmap Level 1 item 1 complete: manifest-authorized photo loading and
+  login/session policy helpers with PBKDF2 ADR (`6333f8d`, `d5c030d`).
+- `DB`/`PHOTO_BUCKET` bindings and env types declared (`44a5835`).
+- Active `/api/auth/*` login/logout/me routes with uniform failures,
+  timing decoy, Origin enforcement, and lockout (ADR viewer-auth-routes,
+  commit `aff9732`). Implemented by Opus subagents, reviewed in main session.
 
 ## Latest Known Verification
 
 - Workers (2026-06-11): lint, typecheck, build dry-run, and audit passed;
-  789 tests passed.
+  827 tests passed.
 - Docker baseline must be rechecked before the next Docker change.
 
 ## Human Setup Expected Later

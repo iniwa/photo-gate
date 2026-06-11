@@ -14,9 +14,9 @@ This is a priority-ordered plan. Update status as implementation progresses.
 
 ### 2. Connect Workers To Real D1 And Private R2
 
-- [ ] Add `DB` and `PHOTO_BUCKET` bindings and environment types.
-- [ ] Implement fixed seven-day session login/logout/me routes.
-- [ ] Implement five-failure, fifteen-minute login lockout.
+- [x] Add `DB` and `PHOTO_BUCKET` bindings and environment types.
+- [x] Implement fixed seven-day session login/logout/me routes.
+- [x] Implement five-failure, fifteen-minute login lockout.
 - [ ] Implement authenticated album list/detail routes.
 - [ ] Implement private image routes with session, album permission, manifest
       membership, standard-key validation, and safe responses.

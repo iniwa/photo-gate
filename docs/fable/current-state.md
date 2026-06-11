@@ -7,9 +7,11 @@ Last audited: 2026-06-11.
 - Docker Phase 1 sync CLI foundation is implemented.
 - Workers Phase 2 fixture UI and much of the route-independent Phase 3
   security/data foundation are implemented.
-- Active Workers routes are still fixture-only.
-- No real D1 or R2 binding is configured in `workers/wrangler.toml`.
-- No real login, album API, image route, admin route, or Worker deployment is
+- Active Workers viewer pages are still fixture-only; `/api/auth/*`
+  login/logout/me routes are active but need a real D1 database.
+- `DB` and `PHOTO_BUCKET` bindings are declared in `workers/wrangler.toml`
+  (D1 `database_id` is a placeholder until provisioning).
+- No real album API, image route, admin route, or Worker deployment is
   active.
 - No GitHub Actions workflow is implemented; `.github/workflows/` contains only
   a placeholder.
@@ -53,16 +55,18 @@ Last audited: 2026-06-11.
 - Login/session policy helpers: fixed seven-day session expiry, five-failure /
   fifteen-minute atomic lockout, fail-closed locked_until handling, PBKDF2
   production iterations fixed at 100,000 (ADR 2026-06-11).
+- Active `/api/auth/*` routes: form-only login (uniform 401, dummy-hash timing
+  decoy, Origin enforcement, lockout recording, fresh seven-day session with
+  digest-only storage), idempotent logout, session-authenticated `me`
+  (ADR 2026-06-11 viewer-auth-routes).
 
 ## Workers Missing
 
 - Daily expired-session cleanup scheduling (helpers and repository exist; no
   Cron trigger is configured).
-- Real login/logout/me routes.
 - Real authenticated album list/detail routes.
 - Real image routes with session, album permission, manifest membership, and
   private R2 reads.
-- `DB` and `PHOTO_BUCKET` bindings and environment type wiring.
 - Migration application and initial data/operator tooling.
 - Cloudflare Access admin JWT validation and email allowlist.
 - Admin UI/API and sync orchestration.
@@ -71,17 +75,20 @@ Last audited: 2026-06-11.
 ## Current Active Behavior
 
 - `GET /`, `/albums`, and fixture album details render synthetic data only.
-- `/api/*`, `/img/*`, and `/admin/*` always return 401.
-- No active route reads D1, R2, PhotoPrism, or real photo data.
+- `/api/auth/login`, `/api/auth/logout`, and `/api/auth/me` are active; they
+  read D1 through the `DB` binding and return 503 until a real database is
+  provisioned.
+- All other `/api/*`, `/img/*`, and `/admin/*` always return 401.
+- No active route reads R2, PhotoPrism, or real photo data.
 
 ## Current Verification Baseline
 
-The latest recorded Workers verification (2026-06-11, after the login/session
-policy helpers):
+The latest recorded Workers verification (2026-06-11, after the viewer auth
+routes):
 
 - lint: passed;
 - typecheck: passed;
-- tests: 789 passed;
+- tests: 827 passed;
 - build dry-run: passed;
 - npm audit: zero vulnerabilities.
 
