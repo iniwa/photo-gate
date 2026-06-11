@@ -34,9 +34,14 @@ container-test job that runs the suite against the runtime libvips inside
 the image, gating release — this would have caught both 8.14 bugs before
 publishing. Album/user rows are live in D1; viewer password was reset on
 request. Waiting on human: bump the stack image to `0.1.3`, redeploy, and
-provide logs. (`0.1.3` itself never published: in trixie `libvips` is only
-a virtual package, so the image build failed and the new container-test
-gate correctly blocked the release; `0.1.4` installs `libvips42t64`.)
+provide logs.
+
+Release iterations (gate worked as designed; no broken image published):
+`0.1.3` failed in CI — trixie's `libvips` is a virtual package (need
+`libvips42t64`); `0.1.4` failed in CI — `.dockerignore` excluded `tests/`
+so the test stage could not COPY them; `0.1.5` fully green, with
+container-test passing the whole suite against the runtime libvips 8.16
+inside the image, and published multi-arch to GHCR. Deploy `0.1.5`.
 
 ## Last Completed Work
 

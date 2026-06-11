@@ -50,7 +50,8 @@ This is a priority-ordered plan. Update status as implementation progresses.
       save time, so 0.1.2's explicit metadata removal could not stop it; the
       fail-closed validator blocked the upload as designed. Fixed in 0.1.3
       by moving the base image to Debian trixie (libvips 8.16) with a new CI
-      container-test job gating release. Awaiting redeploy with 0.1.3.)
+      container-test job gating release; green and published as 0.1.5.
+      Awaiting redeploy with 0.1.5.)
 - [ ] Add album cover generation/upload to the sync tool.
       (Gap found 2026-06-11: bootstrap.md §7 and the `/img/:albumId/cover`
       route expect `albums/<id>/cover.webp`, but `sync-once` never uploads
