@@ -1,0 +1,59 @@
+# photo-gate-sync Portainer スタック定義
+#
+# このファイルは Raspberry Pi 4 (linux/arm64) 上の Portainer で動かす
+# 単一アルバム同期サービスの compose 定義である。ADR §3.4 を参照。
+#
+# 暫定運用:
+#   ネイティブなスケジュール実行(roadmap Level 2 item 5)が実装される
+#   までの暫定措置として、compose 側の shell ループで 1 アルバムを
+#   SYNC_INTERVAL_SECONDS(既定 86400 秒 = 1 日)ごとに
+#   `sync-once --confirm-upload` で同期する。スケジュール実行が実装
+#   されたらこのループは置き換える。
+#
+# 設定値:
+#   すべての値は Portainer 側の environment variables / secrets で注入する。
+#   このリポジトリに実値を絶対にコミットしないこと。
+#
+# 複数アルバム:
+#   1 サービス = 1 アルバム。複数アルバムを同期する場合はこのサービス
+#   ブロックを複製し、別名のサービスとして別の ALBUM_ID 等を与える。
+#
+# メモリ制限:
+#   Pi 4 に適したメモリ制限は運用者が必要に応じて mem_limit で追加する。
+#   下に保守的な目安として mem_limit: 768m を有効で入れている。環境に
+#   合わせて調整・削除してよい。
+#
+# イメージタグ:
+#   image の CHANGE_ME_VERSION は GHCR の immutable タグ(例: 1.2.3)に
+#   置換する。latest は使わない方針(ADR §3.2)。
+
+services:
+  photo-gate-sync:
+    image: ghcr.io/iniwa/photo-gate-sync:CHANGE_ME_VERSION
+    restart: unless-stopped
+    mem_limit: 768m
+    environment:
+      TZ: Asia/Tokyo
+      PHOTOPRISM_URL: ${PHOTOPRISM_URL}
+      PHOTOPRISM_TOKEN: ${PHOTOPRISM_TOKEN}
+      R2_ENDPOINT_URL: ${R2_ENDPOINT_URL}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
+      R2_BUCKET: ${R2_BUCKET}
+      CF_ACCESS_CLIENT_ID: ${CF_ACCESS_CLIENT_ID:-}
+      CF_ACCESS_CLIENT_SECRET: ${CF_ACCESS_CLIENT_SECRET:-}
+      ALBUM_ID: ${ALBUM_ID}
+      ALBUM_TITLE: ${ALBUM_TITLE}
+      PHOTOPRISM_ALBUM_UID: ${PHOTOPRISM_ALBUM_UID}
+      SYNC_INTERVAL_SECONDS: ${SYNC_INTERVAL_SECONDS:-86400}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          photo-gate-sync sync-once \
+            --album-id "$$ALBUM_ID" \
+            --album-title "$$ALBUM_TITLE" \
+            --photoprism-album-uid "$$PHOTOPRISM_ALBUM_UID" \
+            --confirm-upload || echo "sync failed; retrying next interval"
+          sleep "$$SYNC_INTERVAL_SECONDS"
+        done

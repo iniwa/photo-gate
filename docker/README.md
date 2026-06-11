@@ -122,6 +122,21 @@ Verify both `linux/amd64` and `linux/arm64` build without pushing:
 docker buildx build --platform linux/amd64,linux/arm64 --output type=cacheonly docker
 ```
 
+## Delivery
+
+Release images are published to GitHub Container Registry as
+`ghcr.io/iniwa/photo-gate-sync`.
+
+- **Release flow:** push an immutable `sync-vX.Y.Z` tag (via Gitea, mirrored to
+  GitHub). The `docker-ci` workflow builds `linux/amd64,linux/arm64` and pushes
+  image tags `X.Y.Z` and `sha-<short-sha>`. No `latest` tag is published.
+- **Deployment:** the image runs as a Portainer stack on Raspberry Pi 4. See
+  [`deploy/portainer-stack.yml`](../deploy/portainer-stack.yml) for the compose
+  definition (interim single-album sync loop; all values injected via Portainer
+  env vars).
+- **Design:** see
+  [`docs/decisions/2026-06-11-delivery-pipeline.md`](../docs/decisions/2026-06-11-delivery-pipeline.md).
+
 ## Architecture
 
 - `photo_gate.config` — AppConfig and load_config (environment variable loader)
