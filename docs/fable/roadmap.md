@@ -43,10 +43,12 @@ This is a priority-ordered plan. Update status as implementation progresses.
       Portainer stack. (Stack `iniwa-photo-gate` deployed with image 0.1.0;
       needs redeploy with 0.1.1 — see below.)
 - [ ] Run a controlled end-to-end album sync and viewer test.
-      (First user/album rows inserted. First sync run failed: Portainer
-      mis-expands `${VAR:-default}` and injected `-86400` into sleep, causing
-      a no-wait retry loop, and the CLI hid the failure cause. Both fixed in
-      0.1.1; awaiting stack redeploy and readable logs.)
+      (First user/album rows inserted. Failure 1: Portainer mis-expands
+      `${VAR:-default}`; fixed in 0.1.1 along with readable sync errors.
+      Failure 2, revealed by 0.1.1 logs: container libvips 8.14 ignores
+      encoder-level strip, EXIF survived, fail-closed validator blocked the
+      upload as designed. Fixed in 0.1.2 via explicit metadata removal.
+      Awaiting redeploy with 0.1.2.)
 - [ ] Add album cover generation/upload to the sync tool.
       (Gap found 2026-06-11: bootstrap.md §7 and the `/img/:albumId/cover`
       route expect `albums/<id>/cover.webp`, but `sync-once` never uploads

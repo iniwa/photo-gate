@@ -251,6 +251,34 @@ def test_validation_passes_on_clean_output():
     processor.validate_no_forbidden_metadata(thumb)
 
 
+def test_validation_passes_on_preview_output():
+    # Regression: the first production sync failed validation because the
+    # container's libvips (8.14) did not honor encoder-level strip; metadata
+    # is now removed from the image itself before saving.
+    src = _make_jpeg_with_exif_and_gps(400, 300)
+    processor = ImageProcessor()
+    preview = processor.process_preview(src)
+    # Must not raise.
+    processor.validate_no_forbidden_metadata(preview)
+
+
+def test_outputs_carry_no_attached_metadata_fields():
+    """Both outputs must expose no EXIF/XMP/IPTC/orientation fields to pyvips."""
+    import pyvips
+
+    src = _make_jpeg_with_exif_and_gps(800, 600)
+    processor = ImageProcessor()
+    for data in (processor.process_thumb(src), processor.process_preview(src)):
+        img = pyvips.Image.new_from_buffer(data, "")
+        leaked = [
+            field
+            for field in img.get_fields()
+            if field.startswith(("exif", "xmp", "iptc"))
+            or field == "orientation"
+        ]
+        assert not leaked, f"Metadata fields leaked into output: {leaked}"
+
+
 def test_validation_inspect_bytes_not_just_encoder_options():
     """
     Confirm that metadata inspection reads the actual output bytes.

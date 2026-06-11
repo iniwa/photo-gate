@@ -21,14 +21,23 @@ logs:
 2. `main.py` swallowed the sync exception entirely (`Sync failed for album
    ...` with no cause), making the actual failure undiagnosable from logs.
 
-Both fixed; sync `0.1.1` tagged for release. Album rows for the first real
-album inserted into live D1. Waiting on human: redeploy the stack with the
-updated compose and image tag `0.1.1`, then provide the new (now
-informative) logs.
+Both fixed in `0.1.1`. The redeployed stack's now-readable logs revealed
+the real failure: the container's libvips (Debian bookworm, 8.14) does not
+honor encoder-level `strip=True`, so EXIF survived re-encoding and the
+fail-closed output validator correctly blocked the upload. Fixed in
+`0.1.2`: `_process` now removes all attached metadata fields from the
+image itself before saving (version-independent); the validator stays as
+the safety net, with `resolution-unit` (JFIF density unit, informational)
+added to the allowlist. Album/user rows are live in D1 and the viewer
+password was reset on request. Waiting on human: bump the stack image to
+`0.1.2`, redeploy, and provide logs.
 
 ## Last Completed Work
 
-- Sync diagnosability + stack hardening (2026-06-11, this session):
+- Metadata stripping made libvips-version-independent (0.1.2): explicit
+  field removal before save, regression tests for preview validation and
+  zero attached metadata fields; 151 tests pass on Linux/libvips 8.18.
+- Sync diagnosability + stack hardening (0.1.1, 2026-06-11):
   - `deploy/portainer-stack.yml`: no `${VAR:-default}` anywhere; shell-side
     guards normalize junk/missing `SYNC_INTERVAL_SECONDS` (non-numeric ->
     86400) and clear junk CF Access values (guards verified with sh).
