@@ -40,18 +40,19 @@ This is a priority-ordered plan. Update status as implementation progresses.
 
 ### 4. Delivery Automation
 
-- [ ] Add Workers CI: install, lint, typecheck, test, build, deploy.
-      (Authored in `.github/workflows/workers-ci.yml`; deploy is gated on
-      Cloudflare secrets. Mirror-run verification pending.)
-- [ ] Add Docker CI: tests with libvips, multi-arch build, versioned GHCR push.
-      (Authored in `.github/workflows/docker-ci.yml`; release fires on
-      `sync-v*` tags. Mirror-run verification pending.)
+- [x] Add Workers CI: install, lint, typecheck, test, build, deploy.
+      (Verified green on mirror; deploy stays secret-gated until Cloudflare
+      provisioning replaces the D1 placeholder.)
+- [x] Add Docker CI: tests with libvips, multi-arch build, versioned GHCR push.
+      (Verified green; `sync-v0.1.0` published `ghcr.io/iniwa/photo-gate-sync`
+      tags `0.1.0` / `sha-b3c44be`, public package.)
 - [ ] Trigger the dedicated existing Portainer stack update path after a
       successful versioned Docker release.
       (Authored as a `PORTAINER_WEBHOOK_URL`-gated job; webhook not yet
       provided. Interim stack: `deploy/portainer-stack.yml`.)
 - [ ] Record deployed commit/version and document rollback.
-- [ ] Keep Gitea canonical and verify GitHub mirror-triggered workflows.
+- [x] Keep Gitea canonical and verify GitHub mirror-triggered workflows.
+      (Mirror sync to `iniwa/photo-gate` observed within ~1 minute of push.)
 
 ### 5. Scheduled And Observable Operation
 

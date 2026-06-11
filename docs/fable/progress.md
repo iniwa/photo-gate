@@ -10,12 +10,12 @@ human Cloudflare login and provisioning before it can start.
 
 ## Current Task
 
-Level 2 item 4 delivery pipeline authored and pushed (commit `78a3f3d`):
-Workers CI (secret-gated deploy), Docker CI (`sync-v*` multi-arch GHCR
-release, webhook-gated Portainer update), and the interim
-`deploy/portainer-stack.yml`. The GitHub mirror `iniwa/photo-gate` exists
-(human-confirmed) but is private, so CI run results cannot be observed from
-this environment; verification is pending human confirmation or `gh` auth.
+Delivery pipeline verified end to end (2026-06-11): workers-ci green
+(`61a56ca`), docker-ci green after fixing two Linux-only test failures
+(`b3c44be`: libvips 8.16+ informational JPEG fields allowlisted; Pillow
+fixture uses IFDRational), and `sync-v0.1.0` released
+`ghcr.io/iniwa/photo-gate-sync:0.1.0` (public, multi-arch). The GitHub repo
+is now public, so CI is observable via the API without auth.
 
 ## Last Completed Work
 
@@ -35,22 +35,21 @@ this environment; verification is pending human confirmation or `gh` auth.
 ## Latest Known Verification
 
 - Workers (2026-06-11): lint, typecheck, build dry-run, and audit passed;
-  893 tests passed across 24 files.
-- Docker baseline must be rechecked before the next Docker change.
+  893 tests passed across 24 files. workers-ci green on the mirror.
+- Docker (2026-06-11): 143 tests passed on Linux/libvips 8.18 (WSL) and in
+  docker-ci (Ubuntu); 121 passed + 22 pyvips-skips on the Windows host.
 
 ## Current Blockers / Required Human Actions
 
-1. **Cloudflare provisioning (Level 1 item 3):** `cd workers; npx wrangler
-   login` (wrangler is a project devDependency, not a global install), then
-   either run `docs/operations/bootstrap.md` sections 2-6 manually or invoke
-   Fable after login.
-2. **CI verification:** the GitHub mirror repo is private; confirm the
-   `workers-ci` / `docker-ci` Actions runs are green after the mirror syncs
-   commit `78a3f3d`, or provide an authenticated `gh` CLI.
-3. **Portainer:** create the initial stack from `deploy/portainer-stack.yml`
-   with GHCR registry credentials and environment variables; provide the
-   stack webhook URL as the `PORTAINER_WEBHOOK_URL` GitHub secret. The first
-   GHCR image requires a `sync-v0.1.0` tag push after CI is confirmed green.
+1. **Cloudflare login did not persist:** the human reported logging in, but
+   `npx wrangler whoami` still says unauthenticated and no OAuth token file
+   exists under the wrangler config dir. Re-run `cd workers; npx wrangler
+   login` and confirm with `npx wrangler whoami`; then Fable can run
+   provisioning (`bootstrap.md` sections 2-6).
+2. **Portainer:** create the initial stack from `deploy/portainer-stack.yml`
+   (image tag `0.1.0`; the GHCR package is public, so no registry credential
+   is needed) and set the environment variables. Provide the stack webhook
+   URL as the `PORTAINER_WEBHOOK_URL` GitHub secret for automatic updates.
 
 ## Next Priority
 
