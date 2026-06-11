@@ -6,6 +6,10 @@ compatibility_date = "2026-06-09"
 directory = "public"
 binding = "ASSETS"
 
+# Daily expired-session cleanup (UTC; 18:00 UTC = 03:00 JST).
+[triggers]
+crons = ["0 18 * * *"]
+
 # Approved binding names (docs/fable/autonomy-contract.md): DB, PHOTO_BUCKET.
 # database_id is a placeholder until the real D1 database is provisioned at
 # deployment (roadmap Level 1 item 3); local verification uses --dry-run only.

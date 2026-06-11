@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import app from '../src/index.js'
+import { app } from '../src/index.js'
 import { generateSessionToken, digestSessionToken } from '../src/services/auth-crypto.js'
 import { COOKIE_NAME } from '../src/services/session-cookie.js'
 

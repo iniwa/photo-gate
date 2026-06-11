@@ -641,6 +641,6 @@ route uses them yet.
 - Manifest-authorized photo loading: wired and active under the `/img/:albumId/{thumb,preview}/:photoId` routes; requires real `DB` + `PHOTO_BUCKET` bindings
 - Authorized-album catalog repository: wired and active under the `/albums` viewer pages; requires a real `DB` binding
 - Viewer pages: wired and active (`/`, `/albums`, `/albums/:albumId`); no fixture data remains, but without real D1/R2 they render only the login form / fail-closed responses
-- Expired-session cleanup: `deleteExpiredSessions` exists but no Cron trigger is configured
+- Expired-session cleanup: a daily cron trigger (`0 18 * * *` UTC = 03:00 JST) runs `deleteExpiredSessions` via the worker `scheduled` handler; it needs a real `DB` binding to have effect (failures are swallowed — expired sessions are already rejected at read time)
 - PhotoPrism: no API calls
 - Admin UI: `/admin/*` returns 401

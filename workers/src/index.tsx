@@ -68,4 +68,26 @@ app.notFound((c) => {
   return c.html(<NotFound />, 404)
 })
 
-export default app
+/**
+ * Daily expired-session cleanup (approved default; wrangler.toml cron trigger).
+ * Failures are swallowed with a generic operational signal only: a missed
+ * cleanup run is harmless (expired sessions are already rejected at read time
+ * by fetchValidSession) and the next run catches up.
+ */
+export async function runScheduledSessionCleanup(env: Env): Promise<void> {
+  try {
+    await new SessionRepository(env.DB).deleteExpiredSessions(new Date().toISOString())
+  } catch {
+    console.error('scheduled session cleanup failed')
+  }
+}
+
+/** Exported for in-process tests; the deployable worker is the default export. */
+export { app }
+
+export default {
+  fetch: app.fetch,
+  scheduled: (_event: ScheduledController, env: Env, ctx: ExecutionContext): void => {
+    ctx.waitUntil(runScheduledSessionCleanup(env))
+  },
+}

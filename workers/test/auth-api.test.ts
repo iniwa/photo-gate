@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { Hono } from 'hono'
-import realApp from '../src/index.js'
+import { app as realApp } from '../src/index.js'
 import { createAuthApi } from '../src/routes/auth-api.js'
 import type { AuthApiDeps } from '../src/routes/auth-api.js'
 import type { Env } from '../src/types/env.js'

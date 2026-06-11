@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { Hono } from 'hono'
-import realApp from '../src/index.js'
+import { app as realApp } from '../src/index.js'
 import { createImgRoutes } from '../src/routes/img-routes.js'
 import type { ImgRouteDeps } from '../src/routes/img-routes.js'
 import type { Env } from '../src/types/env.js'
