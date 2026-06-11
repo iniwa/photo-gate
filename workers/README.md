@@ -3,13 +3,17 @@
 Cloudflare Workers application for photo-gate. It serves the shared photo viewing UI.
 
 > **WARNING: This is a Phase 2/3 foundation. Do not deploy this as a real photo-sharing service.**
-> Login routes, D1 bindings, R2 bindings, and real photo data are not connected.
-> Authentication and authorization middleware is implemented but not wired to any active route.
+> The viewer auth routes `/api/auth/login`, `/api/auth/logout`, and `/api/auth/me` are now ACTIVE,
+> but they require a real `DB` (D1) binding to function. The binding is declared with a placeholder
+> ID in `wrangler.toml`; no real D1 database exists yet, so against the current configuration these
+> routes fail closed with `503 Service Unavailable`.
+> R2 bindings and real photo data are still not connected.
+> Authorization middleware (album-level) is implemented but not wired to any active route.
 > R2 key builders, manifest validator, private-object loaders, and image response helpers are implemented but no R2 reads or object responses are active.
 > A private R2 reader adapter is implemented but no R2 binding or active route uses it.
 > Authorized-album catalog repository is implemented but not wired to any active route.
 > Manifest-authorized photo loading is implemented but not wired to any active route, binding, or real R2 read.
-> All visible content is synthetic fixture data.
+> All visible page content is synthetic fixture data.
 
 ## Architecture
 
@@ -23,7 +27,7 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 | | Phase 2 (active routes) | Phase 3 (this foundation) | Phase 4 |
 |---|---|---|---|
 | Data source | In-code fixtures | Not wired | D1 + R2 |
-| Viewer login | Not implemented | Middleware ready | Full login route |
+| Viewer login | Not implemented | Active `/api/auth/*` (needs real DB) | Full UI + redirects |
 | Album authorization | Not implemented | Middleware ready | Per-user D1 checks |
 | Image delivery | 401 | Not wired | R2 via Workers |
 | R2 key construction | — | Key builders ready | Active routes |
@@ -58,7 +62,8 @@ Verification runs without a Cloudflare account, D1, R2, PhotoPrism, or secrets.
 npx wrangler dev
 ```
 
-> `/api`, `/img`, and `/admin` routes always return 401. Reserved for Phase 4.
+> `/api/auth/*` (login, logout, me) is active but needs a real `DB` binding; without one it returns 503.
+> All other `/api`, `/img`, and `/admin` routes always return 401. Reserved for Phase 4.
 
 ## Routes (Phase 2 fixture UI)
 
@@ -70,15 +75,52 @@ npx wrangler dev
 
 Photo cards do **not** link to `/img/*` or any image endpoint.
 
+## Viewer Auth Routes (`/api/auth`)
+
+The first real D1-backed routes. Defined in `src/routes/auth-api.ts` and mounted in
+`src/index.tsx` **before** the reserved-401 catch-alls, so `/api/auth/*` reaches this
+router while every other `/api/*` path stays 401. They require a real `DB` binding;
+without one, repository calls reject and the handlers return `503` (fail closed — no
+explicit binding check).
+
+| Route | Method | Success | Failure |
+|---|---|---|---|
+| `/api/auth/login` | POST | `303` to `/albums` with a session cookie | `401 Unauthorized` (uniform) |
+| `/api/auth/logout` | POST | `303` to `/` clearing the cookie (idempotent) | `503` only if D1 delete fails (cookie not cleared) |
+| `/api/auth/me` | GET | `200 {"userId": ...}` (via `requireSession`) | `401` / `503` per middleware |
+
+- **Form-only login.** `POST /api/auth/login` accepts `application/x-www-form-urlencoded`
+  (`userId`, `password`) only. The viewer UI is SSR with no client JS, so login is a form POST.
+- **Uniform 401 failure.** Every login failure cause — unknown user, disabled user,
+  invalid-format ID, wrong password, locked account — returns the identical
+  `401 Unauthorized` with `Cache-Control: no-store`. No cause, ID, or detail is exposed.
+  A fixed public dummy PBKDF2 hash (a timing decoy, not a secret) is verified when no user
+  row is found so the unknown-user path spends the same work as a real verification.
+- **Origin enforcement.** State-changing routes (`login`, `logout`) reject with `403` when an
+  `Origin` header is present and does not match the request URL's origin, before parsing the
+  body. Combined with the `SameSite=Strict` cookie this blocks login CSRF.
+- **Lockout.** 5 consecutive failures lock the account for 15 minutes
+  (`MAX_LOGIN_FAILURES` / `LOCKOUT_DURATION_SECONDS` in `src/services/login-policy.ts`).
+- **Session issuance.** Each success mints a fresh 32-byte token (anti-fixation); only its
+  SHA-256 digest is stored in D1. The raw token appears only in the `Set-Cookie` header.
+  Cookie contract: see [Secure Cookie Contract](#secure-cookie-contract); lifetime is the
+  fixed 7-day `SESSION_LIFETIME_SECONDS`.
+- **Fail closed.** Binding-missing, D1, and crypto failures all return `503` with a generic
+  body containing no IDs, digests, SQL, or internal error text.
+
+`/api/*` outside `/api/auth/*` stays `401`.
+
 ### Reserved routes: intentional 401
 
 ```
-/api    /api/*
+/api (exact)      /api/* except /api/auth/*
 /img    /img/*
 /admin  /admin/*
 ```
 
-Fail closed by design. No fixture data is returned.
+Fail closed by design. No fixture data is returned. `/api/auth/login`, `/api/auth/logout`,
+and `/api/auth/me` are the only active routes under `/api`; everything else under these
+prefixes returns 401.
 
 ## D1 Schema (Phase 3, created but not applied)
 
@@ -514,16 +556,16 @@ route uses them yet.
 
 ## What is not connected
 
-- D1 database: no `[d1_databases]` binding in `wrangler.toml`; migrations are not applied
-- R2 bucket: no `[r2_buckets]` binding in `wrangler.toml`; no manifests, thumbs, previews, or covers
+- D1 database: declared with a placeholder ID in `wrangler.toml`; no real database is provisioned and migrations are not applied, so the active `/api/auth/*` routes return 503
+- R2 bucket: declared in `wrangler.toml` but no real bucket is provisioned; no manifests, thumbs, previews, or covers
 - R2 key builders: implemented, not wired to any route; no R2 reads or object responses
 - Manifest validator: implemented, not wired to any route; no real manifests parsed
 - Private-object loaders: implemented, not wired to any route; no real R2 reads
 - Image response helpers: implemented, not wired to any route; no real object responses
 - Private R2 reader adapter: implemented, not wired to any route or binding; no real object reads
-- Login/session policy helpers: implemented in `src/services/login-policy.ts`, but no login route exists to use them
-- Authentication middleware: implemented, not wired to any route; no login, logout, or session cookies in active routes
-- Authorization middleware: implemented, not wired to any route
+- Login/session policy helpers: implemented in `src/services/login-policy.ts` and now used by the active `/api/auth/*` routes (a real `DB` binding is still required for them to function)
+- Authentication middleware and login/logout/me routes: wired and active under `/api/auth/*`, but require a real `DB` binding; against the current placeholder config they return 503
+- Authorization middleware (album-level): implemented, not wired to any route
 - Authorized-album catalog repository: implemented, not wired to any route; no real D1 binding, no active album list or album detail routes
 - Manifest-authorized photo loading: implemented, not wired to any route or binding; no real R2 reads
 - PhotoPrism: no API calls
