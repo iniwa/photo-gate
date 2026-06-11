@@ -310,9 +310,14 @@ Applied to all Worker-generated responses:
 Content-Security-Policy: default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'
 X-Content-Type-Options: nosniff
 X-Frame-Options: DENY
-Referrer-Policy: no-referrer
+Referrer-Policy: same-origin
 Permissions-Policy: camera=(), microphone=(), geolocation=()
 ```
+
+`Referrer-Policy` must stay `same-origin`, not `no-referrer`: browsers
+serialize the `Origin` header of navigation POSTs (the login form)
+according to the referrer policy, so `no-referrer` makes every browser
+send `Origin: null` and the login origin check rejects it with 403.
 
 Cache headers:
 

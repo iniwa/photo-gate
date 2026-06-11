@@ -49,6 +49,14 @@ describe('GET / (login form, fail-safe probe)', () => {
     hasSecurityHeaders(res)
   })
 
+  // Regression: with 'no-referrer', browsers serialize the Origin header of
+  // navigation POSTs (the login form) as "Origin: null" per the Fetch spec,
+  // so the login origin check fails closed with 403 for every real browser.
+  it('Referrer-Policy is same-origin (no-referrer breaks the login form Origin header)', async () => {
+    const res = await app.request('/', {}, fakeEnv)
+    expect(res.headers.get('referrer-policy')).toBe('same-origin')
+  })
+
   it('error=1 shows the generic credential error message', async () => {
     const res = await app.request('/?error=1', {}, fakeEnv)
     expect(res.status).toBe(200)

@@ -64,6 +64,16 @@ fit_2048 and fit_3840 with exact diagnostics until the size matched.
 Remaining for Level 1: human confirms the viewer in a browser (login,
 album list, detail, preview display).
 
+Browser login was then found broken for every real browser (plain 403
+"Forbidden"): with `Referrer-Policy: no-referrer`, the Fetch spec makes
+browsers serialize the login form POST's Origin header as `Origin: null`,
+which the origin check correctly rejects. curl-based smoke tests missed
+it because curl does not apply referrer policy. Fixed by switching to
+`Referrer-Policy: same-origin` (nothing leaks cross-origin; the app has
+no external links) with a value-asserting regression test; `Origin: null`
+is still rejected by design (sandboxed attacker pages send it).
+Reproduced and diagnosed with a real browser via Playwright.
+
 Verified live security posture (2026-06-11): unauthenticated `/albums`
 303 to `/`; `/img/*` 401 `no-store`; direct R2 URL refused; manifest
 contains no URLs/tokens/secrets; sampled thumb and preview carry zero
