@@ -21,8 +21,9 @@ This is a priority-ordered plan. Update status as implementation progresses.
 - [x] Implement private image routes with session, album permission, manifest
       membership, standard-key validation, and safe responses.
 - [x] Replace fixture viewer routes only after real routes are fully protected.
-- [ ] Add daily expired-session cleanup.
-- [ ] Add operator-safe user and album bootstrap instructions/tooling.
+- [x] Add daily expired-session cleanup.
+- [x] Add operator-safe user and album bootstrap instructions/tooling
+      (`docs/operations/bootstrap.md`, `workers/scripts/hash-password.mjs`).
 
 ### 3. Deploy And Validate Level 1
 

@@ -68,12 +68,15 @@ Last audited: 2026-06-11.
   pagination, manifest-driven album detail with a 200 "preparing" page for
   absent manifests, and redirect-to-login for unauthenticated HTML
   (ADR 2026-06-11 viewer-pages).
+- Daily expired-session cleanup cron (18:00 UTC) via the worker scheduled
+  handler.
+- Operator bootstrap runbook and stdin-only password-hash script
+  (cross-verified against auth-crypto).
 
 ## Workers Missing
 
-- Daily expired-session cleanup scheduling (helpers and repository exist; no
-  Cron trigger is configured).
-- Migration application and initial data/operator tooling.
+- Migration application against a real database (operator runbook and
+  password-hash tooling exist: `docs/operations/bootstrap.md`).
 - Cloudflare Access admin JWT validation and email allowlist.
 - Admin UI/API and sync orchestration.
 - Workers CI/CD and deployment.
