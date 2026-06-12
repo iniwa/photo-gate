@@ -95,9 +95,20 @@ This is a priority-ordered plan. Update status as implementation progresses.
 
 ### 5. Scheduled And Observable Operation
 
-- [ ] Add scheduled or long-running Docker sync operation.
-- [ ] Add health/readiness behavior suitable for Portainer.
-- [ ] Add sanitized operational logs and failure visibility.
+- [x] Add scheduled or long-running Docker sync operation.
+      (0.2.0 `sync-daemon`: in-process interval scheduler as PID 1,
+      SIGTERM-aware, config errors exit 2, transient failures retry.
+      Compose shell loop replaced; junk-env guards kept. Released via
+      docker-ci with the container-test gate, 2026-06-12.)
+- [x] Add health/readiness behavior suitable for Portainer.
+      (Atomic JSON health file + heartbeat task + `healthcheck`
+      subcommand wired to Dockerfile HEALTHCHECK; fails closed on
+      missing/stale/corrupt state or >= 3 consecutive failures.
+      Visibility-only by design — see the 2026-06-12 scheduler ADR.)
+- [x] Add sanitized operational logs and failure visibility.
+      (Daemon + sync INFO logs with no URLs/tokens/titles; health file
+      records the `_describe_error`-sanitized failure text via an
+      error_sink shared with stderr.)
 - [x] Add backup and recovery procedures for D1/configuration.
       (docs/operations/backup.md, 2026-06-12. `wrangler d1 export` is
       documented but pending verification after the operator token

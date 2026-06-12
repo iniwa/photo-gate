@@ -23,8 +23,8 @@ Level 2 (Operable) execution, 2026-06-12:
   Sonnet subagent implementation, audited in the main session with
   three fixes (heartbeat waiter leak via asyncio.shield, unwired
   sleep_fn, last_error hardcoded None). 182 tests in 2 s on WSL.
-  docker-ci for the tag in progress — covers + daemon land together
-  when the stack is bumped to `0.2.0` (0.1.7 can be skipped).
+  docker-ci for the tag green; GHCR `0.2.0` published — covers + daemon
+  land together when the stack is bumped to `0.2.0` (0.1.7 skipped).
 - DROPPED by operator decision: Portainer stack auto-update webhook
   (Business Edition feature; running Community Edition). Manual tag
   bumps are the documented path.
