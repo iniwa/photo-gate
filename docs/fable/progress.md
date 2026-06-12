@@ -11,16 +11,26 @@ Operable.
 
 ## Current Task
 
-Cover generation shipped as sync `0.1.7` (cover.webp = first manifest
-photo's thumb-processed fit_720 source, fail-closed, uploaded before the
-manifest; Sonnet subagent implementation audited in the main session,
-164 tests). Waiting on human: bump the Portainer stack image to `0.1.7`
-when convenient — covers appear after the next sync run.
+Level 2 (Operable) execution, 2026-06-12:
 
-Then Level 2 leftovers: verify CI auto-deploy on the next workers/**
-push, `PORTAINER_WEBHOOK_URL` secret, deployed-version/rollback records,
-native scheduled sync, health behavior, sanitized progress logs,
-backups.
+- DONE: CI auto-deploy verified end to end (workers-ci c884256 ran
+  every deploy step with the registered secrets; live smoke passed;
+  workflow_dispatch deploys from main enabled).
+- DONE: docs/operations/ deploy-log.md, rollback.md, backup.md.
+- DONE: sync `0.2.0` implemented and tagged (`sync-v0.2.0`):
+  sync-daemon native scheduler, atomic health file + healthcheck
+  subcommand + Dockerfile HEALTHCHECK, sanitized INFO progress logs.
+  Sonnet subagent implementation, audited in the main session with
+  three fixes (heartbeat waiter leak via asyncio.shield, unwired
+  sleep_fn, last_error hardcoded None). 182 tests in 2 s on WSL.
+  docker-ci for the tag in progress — covers + daemon land together
+  when the stack is bumped to `0.2.0` (0.1.7 can be skipped).
+- DROPPED by operator decision: Portainer stack auto-update webhook
+  (Business Edition feature; running Community Edition). Manual tag
+  bumps are the documented path.
+
+Level 2 leftovers: re-verify wrangler rollback/export after the local
+token refresh; rollback-procedure verification record.
 
 ## Last Completed Work (Level 1 closure, 2026-06-11..12)
 
@@ -67,13 +77,13 @@ backups.
 
 ## Current Blockers / Required Human Actions
 
-None for Level 1. For Level 2, when convenient:
-
-1. Register the Portainer stack webhook URL as the
-   `PORTAINER_WEBHOOK_URL` GitHub secret (enables auto-update on
-   release).
-2. Optionally trigger workers-ci via workflow_dispatch (Actions > Run
-   workflow) to confirm the now-registered secrets drive a CI deploy.
+1. Bump the Portainer stack to image `0.2.0` once docker-ci publishes it,
+   replacing the stack `command:` block with the new
+   `deploy/portainer-stack.yml` content (`exec photo-gate-sync
+   sync-daemon ...`).
+2. Refresh the local operator token via
+   `scripts/update-cf-token.ps1` (the old token is invalid; CI deploys
+   are unaffected because GitHub secrets hold a valid token).
 
 ## Next Priority
 

@@ -78,10 +78,13 @@ This is a priority-ordered plan. Update status as implementation progresses.
 - [x] Add Docker CI: tests with libvips, multi-arch build, versioned GHCR push.
       (Verified green; `sync-v0.1.0` published `ghcr.io/iniwa/photo-gate-sync`
       tags `0.1.0` / `sha-b3c44be`, public package.)
-- [ ] Trigger the dedicated existing Portainer stack update path after a
-      successful versioned Docker release.
-      (Authored as a `PORTAINER_WEBHOOK_URL`-gated job; webhook not yet
-      provided. Interim stack: `deploy/portainer-stack.yml`.)
+- [x] ~~Trigger the dedicated existing Portainer stack update path after a
+      successful versioned Docker release.~~
+      (DROPPED 2026-06-12 by operator decision: stack webhooks require
+      Portainer Business Edition and this deployment runs Community
+      Edition. The webhook-gated CI job was removed; releases are applied
+      by manually bumping the image tag in the stack, documented in
+      docs/operations/rollback.md and recorded in deploy-log.md.)
 - [x] Record deployed commit/version and document rollback.
       (docs/operations/deploy-log.md + rollback.md, 2026-06-12. Git-based
       redeploy is the primary Workers rollback; wrangler rollback is

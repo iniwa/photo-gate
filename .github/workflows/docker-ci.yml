@@ -86,23 +86,8 @@ jobs:
             ghcr.io/iniwa/photo-gate-sync:${{ steps.version.outputs.version }}
             ghcr.io/iniwa/photo-gate-sync:sha-${{ steps.version.outputs.sha_short }}
 
-  portainer-update:
-    needs: release
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/sync-v')
-    steps:
-      - id: gate
-        env:
-          PORTAINER_WEBHOOK_URL: ${{ secrets.PORTAINER_WEBHOOK_URL }}
-        run: |
-          if [ -n "$PORTAINER_WEBHOOK_URL" ]; then
-            echo "update=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "update=false" >> "$GITHUB_OUTPUT"
-            echo "Portainer webhook not configured; skipping update."
-          fi
-      - if: steps.gate.outputs.update == 'true'
-        name: Trigger Portainer redeploy webhook
-        env:
-          PORTAINER_WEBHOOK_URL: ${{ secrets.PORTAINER_WEBHOOK_URL }}
-        run: curl -fsS -X POST "$PORTAINER_WEBHOOK_URL"
+# NOTE: a portainer-update job (stack redeploy webhook after release) used
+# to live here. Removed 2026-06-12: stack webhooks are a Portainer
+# Business Edition feature and this deployment runs Community Edition.
+# Releases are applied by manually bumping the image tag in the stack
+# (see docs/operations/rollback.md and deploy-log.md).

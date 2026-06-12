@@ -30,8 +30,9 @@ thumbnail grid, and preview display (2026-06-12).
   and runs CI.
 - docker-ci: host-libvips tests + container-test (suite inside the
   published image's libvips, gates release) + `sync-v*` multi-arch GHCR
-  release + webhook-gated Portainer update (webhook secret still
-  unregistered).
+  release. Stack updates are manual tag bumps in Portainer: automated
+  stack webhooks were dropped 2026-06-12 (Business Edition feature;
+  this deployment runs Community Edition).
 - workers-ci: checks green; the deploy job is secret-gated. Cloudflare
   secrets were registered on GitHub 2026-06-12 but a CI-driven deploy has
   not yet been observed end-to-end (every production deploy so far was
