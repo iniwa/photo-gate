@@ -43,11 +43,13 @@ npx wrangler versions list           # 版数と作成日時の一覧
 npx wrangler rollback [<version-id>] # 指定版へ戻す
 ```
 
-> **検証状況 (2026-06-12)**: この経路は未検証です。スコープ付き API
-> トークンでは `versions list` が認証エラーになる事例を確認しており
-> (当時のローカルトークンが失効していた可能性あり)、確実なのは
-> オペレーターが `wrangler login` した OAuth セッションでの実行です。
-> 1.1 の git ベース手順を優先してください。
+> **検証状況 (2026-06-12)**: この経路は未検証です。`versions list` /
+> `rollback` / ローカル `wrangler deploy` には API トークンの
+> **Account → Workers Scripts → Edit** 権限が必要で、現在のローカル
+> トークンは D1 権限のみのため 403 になります。必要になったら
+> ダッシュボードでトークンに権限を追加するか、`wrangler login` の
+> OAuth セッションで実行してください。通常は 1.1 の git ベース手順
+> (CI がデプロイ)を優先します。
 
 ### 1.3 ロールバック後の確認
 

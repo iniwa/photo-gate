@@ -30,9 +30,10 @@ wrangler d1 export photo-gate --remote \
   --output "%USERPROFILE%\photo-gate-backups\d1-YYYYMMDD.sql"
 ```
 
-> **検証状況 (2026-06-12)**: ローカルの API トークンが失効していた
-> ため未検証。トークン認証で `Authentication error [code: 10000]` が
-> 出る場合は `wrangler login` の OAuth セッションで実行してください。
+> **検証済み (2026-06-12)**: D1 権限を持つスコープ付き API トークンで
+> 実行に成功(`wrangler login` 不要)。`Authentication error
+> [code: 10000]` が出る場合はトークンの失効か D1 権限の欠落を疑う
+> こと(`scripts/update-cf-token.ps1` で差し替え・検証できる)。
 
 ### 2.2 代替: SELECT ダンプ(スコープ付きトークンで可)
 

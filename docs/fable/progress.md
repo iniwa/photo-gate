@@ -77,13 +77,13 @@ token refresh; rollback-procedure verification record.
 
 ## Current Blockers / Required Human Actions
 
-1. Bump the Portainer stack to image `0.2.0` once docker-ci publishes it,
-   replacing the stack `command:` block with the new
-   `deploy/portainer-stack.yml` content (`exec photo-gate-sync
-   sync-daemon ...`).
-2. Refresh the local operator token via
-   `scripts/update-cf-token.ps1` (the old token is invalid; CI deploys
-   are unaffected because GitHub secrets hold a valid token).
+1. DONE 2026-06-12: stack updated to `0.2.0` with the sync-daemon
+   command block; awaiting confirmation from container logs / health
+   status / browser covers.
+2. DONE 2026-06-12: local token refreshed (D1 permission only).
+   Optional: add Account -> Workers Scripts -> Edit to the token if
+   local `wrangler versions list` / emergency local deploys are wanted;
+   until then Workers changes deploy via CI.
 
 ## Next Priority
 
