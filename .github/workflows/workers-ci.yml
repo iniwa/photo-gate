@@ -39,7 +39,12 @@ jobs:
   deploy:
     needs: checks
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    # workflow_dispatch on main is allowed so an operator (or agent) can
+    # re-deploy the current main without an artificial commit; the secret
+    # gate below still controls whether anything actually deploys.
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     steps:
       # Checkout must come first: the workflow-level working-directory (workers)
       # does not exist until the repository is checked out, and run steps fail
