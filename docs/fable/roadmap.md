@@ -70,10 +70,11 @@ This is a priority-ordered plan. Update status as implementation progresses.
 ### 4. Delivery Automation
 
 - [x] Add Workers CI: install, lint, typecheck, test, build, deploy.
-      (Checks verified green on mirror. Deploy job: the secret gate
-      silently skipped all steps until the operator registered the GitHub
-      repository secrets on 2026-06-12; a CI-driven deploy has not yet
-      been observed — verify on the next workers/** push.)
+      (Fully verified 2026-06-12: after the operator registered the
+      GitHub secrets, the workers-ci run for c884256 executed every
+      deploy step for real — migrations apply + wrangler deploy success,
+      no skips — and the live smoke checks passed afterwards. Deploys
+      can also be triggered via workflow_dispatch on main now.)
 - [x] Add Docker CI: tests with libvips, multi-arch build, versioned GHCR push.
       (Verified green; `sync-v0.1.0` published `ghcr.io/iniwa/photo-gate-sync`
       tags `0.1.0` / `sha-b3c44be`, public package.)
@@ -81,7 +82,11 @@ This is a priority-ordered plan. Update status as implementation progresses.
       successful versioned Docker release.
       (Authored as a `PORTAINER_WEBHOOK_URL`-gated job; webhook not yet
       provided. Interim stack: `deploy/portainer-stack.yml`.)
-- [ ] Record deployed commit/version and document rollback.
+- [x] Record deployed commit/version and document rollback.
+      (docs/operations/deploy-log.md + rollback.md, 2026-06-12. Git-based
+      redeploy is the primary Workers rollback; wrangler rollback is
+      documented but unverified because the local operator token expired
+      — re-verify after token refresh.)
 - [x] Keep Gitea canonical and verify GitHub mirror-triggered workflows.
       (Mirror sync to `iniwa/photo-gate` observed within ~1 minute of push.)
 
@@ -90,7 +95,11 @@ This is a priority-ordered plan. Update status as implementation progresses.
 - [ ] Add scheduled or long-running Docker sync operation.
 - [ ] Add health/readiness behavior suitable for Portainer.
 - [ ] Add sanitized operational logs and failure visibility.
-- [ ] Add backup and recovery procedures for D1/configuration.
+- [x] Add backup and recovery procedures for D1/configuration.
+      (docs/operations/backup.md, 2026-06-12. `wrangler d1 export` is
+      documented but pending verification after the operator token
+      refresh; SELECT-dump fallback and Time Travel restore — the
+      latter human-approval-only — are documented.)
 - [ ] Verify Worker rollback and Docker image rollback procedures.
 
 ## Level 3: Feature Complete
