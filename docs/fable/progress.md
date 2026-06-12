@@ -11,12 +11,16 @@ Operable.
 
 ## Current Task
 
-Next: implement album cover generation/upload in the sync tool
-(`albums/<id>/cover.webp`; bootstrap.md §7 and the `/img/:albumId/cover`
-route already expect it). Then Level 2 leftovers: verify CI auto-deploy
-on the next workers/** push, `PORTAINER_WEBHOOK_URL` secret,
-deployed-version/rollback records, native scheduled sync, health
-behavior, sanitized progress logs, backups.
+Cover generation shipped as sync `0.1.7` (cover.webp = first manifest
+photo's thumb-processed fit_720 source, fail-closed, uploaded before the
+manifest; Sonnet subagent implementation audited in the main session,
+164 tests). Waiting on human: bump the Portainer stack image to `0.1.7`
+when convenient — covers appear after the next sync run.
+
+Then Level 2 leftovers: verify CI auto-deploy on the next workers/**
+push, `PORTAINER_WEBHOOK_URL` secret, deployed-version/rollback records,
+native scheduled sync, health behavior, sanitized progress logs,
+backups.
 
 ## Last Completed Work (Level 1 closure, 2026-06-11..12)
 

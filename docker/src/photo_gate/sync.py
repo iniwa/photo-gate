@@ -70,7 +70,9 @@ async def sync_album(
       1. List photos from PhotoPrism.
       2. For each photo: download fit_720 + the preview source size,
          re-encode, validate, upload.
-      3. Upload manifest only after all image uploads succeed.
+      3. If the album is non-empty, generate and upload the cover webp from
+         the first photo's fit_720 preview to albums/<id>/cover.webp.
+      4. Upload manifest only after all image uploads (including the cover) succeed.
 
     If any step for any photo fails the exception propagates and manifest is not uploaded.
     Concurrency limits simultaneous per-photo downloads; default is conservative for Pi.
@@ -116,6 +118,17 @@ async def sync_album(
     async with asyncio.TaskGroup() as tg:
         for photo in photos:
             tg.create_task(process_one(photo))
+
+    if photos:
+        cover_photo = photos[0]
+        cover_src = await client.download_preview(
+            cover_photo.hash, preview_token, _THUMB_SOURCE_SIZE
+        )
+        _require_plausible_source(cover_src, cover_photo, _THUMB_SOURCE_SIZE, "cover source")
+        cover_data = processor.process_thumb(cover_src, settings.thumb)
+        processor.validate_no_forbidden_metadata(cover_data)
+        cover_key = f"albums/{album.album_id}/cover.webp"
+        await store.put(cover_key, cover_data, "image/webp")
 
     manifest_json = build_manifest(album, photos, settings, generated_at)
     manifest_key = f"albums/{album.album_id}/manifest.json"

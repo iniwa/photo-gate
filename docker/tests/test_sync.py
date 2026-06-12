@@ -408,3 +408,179 @@ def test_sync_rejects_non_positive_concurrency():
 
     with pytest.raises(ValueError, match="concurrency"):
         asyncio.run(run())
+
+
+# ---------------------------------------------------------------------------
+# Cover generation tests
+# ---------------------------------------------------------------------------
+
+
+@skip_no_pyvips
+def test_cover_uploaded_for_non_empty_album():
+    """sync_album must upload a cover.webp for a non-empty album."""
+    photos_json = [_photo_entry("uid001abc", "1" * 40)]
+    preview = _tiny_jpeg()
+    client = _make_photoprism_client(photos_json, preview)
+    store = _FakeStore()
+
+    async def run():
+        async with client:
+            await sync_album(client, _ALBUM, store, _SETTINGS, _FIXED_TS)
+
+    asyncio.run(run())
+
+    keys = [k for k, _ in store.puts]
+    cover_puts = [(k, ct) for k, ct in store.puts if "cover.webp" in k]
+    assert cover_puts, f"No cover.webp uploaded; keys={keys}"
+    cover_key, cover_ct = cover_puts[0]
+    assert "test-album/cover.webp" in cover_key
+    assert cover_ct == "image/webp"
+
+
+@skip_no_pyvips
+def test_cover_uploaded_before_manifest():
+    """Cover must be uploaded before the manifest."""
+    photos_json = [_photo_entry("uid001abc", "1" * 40)]
+    preview = _tiny_jpeg()
+    client = _make_photoprism_client(photos_json, preview)
+    store = _FakeStore()
+
+    async def run():
+        async with client:
+            await sync_album(client, _ALBUM, store, _SETTINGS, _FIXED_TS)
+
+    asyncio.run(run())
+
+    keys = [k for k, _ in store.puts]
+    cover_idx = next((i for i, k in enumerate(keys) if "cover.webp" in k), None)
+    manifest_idx = next((i for i, k in enumerate(keys) if k.endswith(_MANIFEST_KEY_SUFFIX)), None)
+    assert cover_idx is not None, "No cover.webp found in uploads"
+    assert manifest_idx is not None, "No manifest found in uploads"
+    assert cover_idx < manifest_idx, (
+        f"Cover (idx={cover_idx}) must be uploaded before manifest (idx={manifest_idx})"
+    )
+
+
+@skip_no_pyvips
+def test_empty_album_uploads_manifest_only_no_cover():
+    """An empty album must not produce a cover upload — only the manifest."""
+    client = _make_photoprism_client([], b"")
+    store = _FakeStore()
+
+    async def run():
+        async with client:
+            await sync_album(client, _ALBUM, store, _SETTINGS, _FIXED_TS)
+
+    asyncio.run(run())
+
+    assert len(store.puts) == 1, f"Expected exactly 1 put (manifest), got {store.puts}"
+    manifest_key, ct = store.puts[0]
+    assert manifest_key.endswith(_MANIFEST_KEY_SUFFIX)
+    assert ct == "application/json"
+    cover_puts = [k for k, _ in store.puts if "cover.webp" in k]
+    assert not cover_puts, f"Unexpected cover upload for empty album: {cover_puts}"
+
+
+@skip_no_pyvips
+def test_cover_upload_failure_withholds_manifest():
+    """If the cover upload fails, manifest must not be uploaded."""
+    photos_json = [_photo_entry("uid001abc", "1" * 40)]
+    preview = _tiny_jpeg()
+    client = _make_photoprism_client(photos_json, preview)
+    store = _FakeStore(fail_on_key="cover.webp")
+
+    async def run():
+        async with client:
+            await sync_album(client, _ALBUM, store, _SETTINGS, _FIXED_TS)
+
+    with pytest.raises(Exception):
+        asyncio.run(run())
+
+    uploaded_keys = [k for k, _ in store.puts]
+    manifest_keys = [k for k in uploaded_keys if k.endswith(_MANIFEST_KEY_SUFFIX)]
+    assert not manifest_keys, (
+        f"Manifest was uploaded despite cover failure: {manifest_keys}"
+    )
+
+
+@skip_no_pyvips
+def test_cover_uses_first_photo_thumb_source():
+    """Cover must be derived from the FIRST photo, not any subsequent one."""
+    import io
+    from PIL import Image
+
+    # First photo: 700x700 square -> after thumb processing (max edge 640): 640x640
+    # Second photo: 700x350 landscape -> after thumb processing: 640x320
+    # The outputs are distinguishable by their aspect ratio / dimensions.
+    hash1 = "1" * 40
+    hash2 = "2" * 40
+
+    photos_json = [
+        _photo_entry("uid001abc", hash1),
+        _photo_entry("uid002abc", hash2),
+    ]
+    # Update dimensions in photo entries so plausibility check passes
+    photos_json[0]["Width"] = 700
+    photos_json[0]["Height"] = 700
+    photos_json[1]["Width"] = 700
+    photos_json[1]["Height"] = 350
+
+    first_jpeg = _jpeg_of_size(700, 700)   # square
+    second_jpeg = _jpeg_of_size(700, 350)  # landscape
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "/api/v1/photos" in url:
+            return httpx.Response(
+                200,
+                headers={
+                    "X-Preview-Token": "preview_tok",
+                    "X-Count": str(len(photos_json)),
+                    "X-Limit": "500",
+                },
+                content=json.dumps(photos_json).encode(),
+            )
+        if "/api/v1/t/" in url:
+            # URL pattern: /api/v1/t/<hash>/<token>/<size>
+            parts = url.rstrip("/").split("/")
+            photo_hash = parts[-3]
+            if photo_hash == hash1:
+                return httpx.Response(200, headers={"content-type": "image/jpeg"}, content=first_jpeg)
+            if photo_hash == hash2:
+                return httpx.Response(200, headers={"content-type": "image/jpeg"}, content=second_jpeg)
+        return httpx.Response(404, content=b"not found")
+
+    client = PhotoPrismClient(
+        base_url="http://photoprism.test",
+        token="test-token",
+        _transport=_MockTransport(handler),
+    )
+
+    class _DataCapturingStore:
+        """Like _FakeStore but also records raw bytes per key."""
+        def __init__(self):
+            self.puts: list[tuple[str, str]] = []
+            self.data: dict[str, bytes] = {}
+
+        async def put(self, key: str, data: bytes, content_type: str) -> None:
+            self.puts.append((key, content_type))
+            self.data[key] = data
+
+    store = _DataCapturingStore()
+
+    async def run():
+        async with client:
+            await sync_album(client, _ALBUM, store, _SETTINGS, _FIXED_TS)
+
+    asyncio.run(run())
+
+    cover_key = f"albums/{_ALBUM.album_id}/cover.webp"
+    assert cover_key in store.data, f"Cover not uploaded; keys={list(store.data)}"
+
+    cover_img = Image.open(io.BytesIO(store.data[cover_key]))
+    w, h = cover_img.size
+    # First photo was 700x700 square; after thumb (max long edge 640): 640x640
+    # Verify it's roughly square (within 5% tolerance)
+    assert w == h, (
+        f"Cover should be square (from first photo 700x700), got {w}x{h}"
+    )

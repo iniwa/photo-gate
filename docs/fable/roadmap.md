@@ -52,10 +52,13 @@ This is a priority-ordered plan. Update status as implementation progresses.
       placeholder previews; Workers Referrer-Policy switched to
       same-origin because no-referrer made browsers send Origin: null on
       the login POST.)
-- [ ] Add album cover generation/upload to the sync tool.
-      (Gap found 2026-06-11: bootstrap.md §7 and the `/img/:albumId/cover`
-      route expect `albums/<id>/cover.webp`, but `sync-once` never uploads
-      it, so album list covers will 404 until implemented. Next task.)
+- [x] Add album cover generation/upload to the sync tool.
+      (0.1.7: cover.webp is the first manifest photo's thumb-processed
+      fit_720 source, validated metadata-free, uploaded after all images
+      and before the manifest; empty albums upload no cover. Implemented
+      by a Sonnet subagent per FABLE delegation rules, audited in the
+      main session; 164 tests. Appears on the Pi after the stack image
+      is bumped to 0.1.7.)
 - [x] Confirm PhotoPrism/NAS/originals/R2 direct URLs are not exposed.
       (Verified 2026-06-11/12 against production: manifest and sampled
       image bytes contain no URLs/tokens/EXIF/GPS/XMP; direct R2 access
