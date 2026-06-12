@@ -74,6 +74,16 @@ no external links) with a value-asserting regression test; `Origin: null`
 is still rejected by design (sandboxed attacker pages send it).
 Reproduced and diagnosed with a real browser via Playwright.
 
+Deploying the fix exposed another gap: the workers-ci deploy job ran with
+every real step skipped — the secret gate reports the Cloudflare secrets
+as not configured on the GitHub repo, so CI has never actually deployed
+(all production deploys so far were manual with the local operator
+token). The fix was deployed manually (version `131a0632`, live header
+verified, browser login flow re-tested green via Playwright). Human TODO:
+register `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` as GitHub
+**repository secrets** (Settings > Secrets and variables > Actions) on
+`iniwa/photo-gate` so auto-deploy works.
+
 Verified live security posture (2026-06-11): unauthenticated `/albums`
 303 to `/`; `/img/*` 401 `no-store`; direct R2 URL refused; manifest
 contains no URLs/tokens/secrets; sampled thumb and preview carry zero
