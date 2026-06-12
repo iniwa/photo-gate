@@ -1,119 +1,79 @@
 # Current State
 
-Last audited: 2026-06-11.
+Last audited: 2026-06-12.
 
-## Repository Status
+## Level
 
-- Docker Phase 1 sync CLI foundation is implemented.
-- Workers Phase 2 fixture UI and much of the route-independent Phase 3
-  security/data foundation are implemented.
-- The full Workers viewer surface is implemented and wired: real login form,
-  authorized album list/detail pages, `/api/auth/*`, and `/img/*`. Fixture
-  data is removed. Everything needs real D1/R2 resources to serve data.
-- `DB` and `PHOTO_BUCKET` bindings are declared in `workers/wrangler.toml`
-  (D1 `database_id` is a placeholder until provisioning).
-- No admin route or Worker deployment is active.
-- No GitHub Actions workflow is implemented; `.github/workflows/` contains only
-  a placeholder.
+**Level 1 (Securely Usable) is complete.** A real family album is served
+end-to-end in production: PhotoPrism -> Docker sync on the Pi -> private
+R2 -> Workers viewer, with a human-confirmed browser login, album list,
+thumbnail grid, and preview display (2026-06-12).
 
-## Docker Implemented
+## Production Topology
 
-- PhotoPrism async client and generated-preview retrieval.
-- Optional Cloudflare Access service-token headers.
-- pyvips re-encoding, resize, autorotation, metadata stripping, and output
-  validation.
-- Deterministic schemaVersion 1 manifest generation.
-- Concurrent sync with manifest uploaded last.
-- Cloudflare R2 S3-compatible object store with strict key validation.
-- Environment configuration and `photo-gate-sync sync-once` CLI.
-- Explicit `--confirm-upload` safety gate.
-- Production non-root Docker image based on Python 3.12 slim Bookworm.
+- Workers viewer: https://photo-gate.iniwaiwana.workers.dev
+  (manual deploy version `131a0632`; cron 18:00 UTC session cleanup).
+- D1 `photo-gate` (APAC, id `de77cb73-497a-4a41-bd1c-151fd907be3f`),
+  2 migrations applied. One user, one album, one permission row (real
+  identifiers live only in D1/Portainer, never in the repo).
+- R2 `photo-gate`, private. One album: 234 thumbs (640 WebP) + 234
+  previews (fit_1920 source, JPEG) + manifest.json, all metadata-free.
+- Sync: Portainer stack `iniwa-photo-gate` on a Raspberry Pi 4 running
+  `ghcr.io/iniwa/photo-gate-sync:0.1.6` with
+  `PHOTOPRISM_PREVIEW_SIZE=fit_1920`, interval loop (default 86400 s).
+- PhotoPrism serves static thumbs up to 1920 px; dynamic previews stay
+  disabled by operator choice (Pi load).
 
-## Docker Missing
+## Delivery
 
-- Scheduled/long-running sync operation.
-- HTTP sync job API and health endpoint.
-- Safe cleanup implementation; R2 deletion must remain dry-run.
-- Portainer compose/stack delivery files and automated release/update workflow.
-- CI/CD and GHCR publication.
-- Production integration verification against operator-provided services.
+- Gitea is canonical; GitHub `iniwa/photo-gate` mirrors within ~1 minute
+  and runs CI.
+- docker-ci: host-libvips tests + container-test (suite inside the
+  published image's libvips, gates release) + `sync-v*` multi-arch GHCR
+  release + webhook-gated Portainer update (webhook secret still
+  unregistered).
+- workers-ci: checks green; the deploy job is secret-gated. Cloudflare
+  secrets were registered on GitHub 2026-06-12 but a CI-driven deploy has
+  not yet been observed end-to-end (every production deploy so far was
+  manual with the local operator token). Verify on the next `workers/**`
+  push or via workflow_dispatch.
 
-## Workers Implemented
+## Key Operational Lessons (details in docs/fable/progress.md)
 
-- Hono + JSX fixture pages and security headers.
-- Reserved `/api`, `/img`, and `/admin` routes that fail closed with 401.
-- D1 migrations for users, sessions, albums, and album permissions.
-- PBKDF2-SHA256 password primitives and session token/digest/cookie primitives.
-- Auth, session, and permission repositories.
-- Session authentication and album authorization middleware.
-- Safe-ID validation, standard R2 key builders, strict manifest validator.
-- Private object loaders and safe private image response helpers.
-- Private R2 reader adapter with strict standard-key allowlist.
-- Authorized album catalog repository with keyset pagination.
-- Manifest-authorized thumb/preview loading with exact photo-ID membership,
-  manifest-first read order, and no probing of unlisted/stale objects.
-- Login/session policy helpers: fixed seven-day session expiry, five-failure /
-  fifteen-minute atomic lockout, fail-closed locked_until handling, PBKDF2
-  production iterations fixed at 100,000 (ADR 2026-06-11).
-- Active `/api/auth/*` routes: form-only login (uniform 401, dummy-hash timing
-  decoy, Origin enforcement, lockout recording, fresh seven-day session with
-  digest-only storage), idempotent logout, session-authenticated `me`
-  (ADR 2026-06-11 viewer-auth-routes).
-- Active `/img/:albumId/cover|thumb/:photoId|preview/:photoId` routes with the
-  full chain: session, album permission, exact manifest membership for photos,
-  standard keys, metadata-free safe responses. Cover is album-scoped and not
-  manifest-gated (ADR 2026-06-11 private-image-routes).
-- Real viewer SSR pages replacing all fixtures: login form with uniform
-  `/?error=1` credential-failure redirect, authorized album list with keyset
-  pagination, manifest-driven album detail with a 200 "preparing" page for
-  absent manifests, and redirect-to-login for unauthenticated HTML
-  (ADR 2026-06-11 viewer-pages).
-- Daily expired-session cleanup cron (18:00 UTC) via the worker scheduled
-  handler.
-- Operator bootstrap runbook and stdin-only password-hash script
-  (cross-verified against auth-crypto).
+- Portainer mis-expands `${VAR:-default}`; the stack file forbids that
+  syntax and normalizes junk values in the container shell.
+- Debian bookworm libvips 8.14 synthesizes EXIF at save time; the image
+  is pinned to trixie (libvips 8.16) and CI tests inside the container.
+- PhotoPrism answers an unservable size with a 200 placeholder; sync
+  fails closed on undersized sources (`--photoprism-preview-size`).
+- `Referrer-Policy: no-referrer` makes browsers send `Origin: null` on
+  form POSTs; the viewer uses `same-origin` and a value-asserting test.
 
-## Workers Missing
+## Missing / Next (see roadmap)
 
-- Migration application against a real database (operator runbook and
-  password-hash tooling exist: `docs/operations/bootstrap.md`).
-- Cloudflare Access admin JWT validation and email allowlist.
-- Admin UI/API and sync orchestration.
-- Workers CI/CD and deployment.
+- Sync does not yet generate `albums/<id>/cover.webp`; album-list covers
+  404 (viewer handles it; known Level 1 gap promoted to next task).
+- Level 2: verify CI auto-deploy, `PORTAINER_WEBHOOK_URL` secret,
+  deployed-version/rollback records, native scheduled sync (replace the
+  compose shell loop), health/readiness, sanitized progress logging,
+  backup/recovery procedures.
+- Level 3: `/admin` (Cloudflare Access), administration, dry-run cleanup,
+  final hardening.
 
-## Current Active Behavior
+## Verification Baseline
 
-- `GET /` renders the real login form; `/albums` and `/albums/:albumId`
-  redirect unauthenticated viewers to `/` and render real D1/R2 data when a
-  valid session exists.
-- `/api/auth/login`, `/api/auth/logout`, and `/api/auth/me` are active; they
-  read D1 through the `DB` binding and return 503 until a real database is
-  provisioned.
-- The three `/img` route shapes are active; without real D1/R2 they close to
-  401/503 before any object read.
-- All other `/api/*`, `/img/*`, and `/admin/*` always return 401.
-- No active route reads PhotoPrism. No real photo data exists until
-  provisioning and a first sync.
-
-## Current Verification Baseline
-
-The latest recorded Workers verification (2026-06-11, after the real viewer
-pages):
-
-- lint: passed;
-- typecheck: passed;
-- tests: 879 passed;
-- build dry-run: passed;
-- npm audit: zero vulnerabilities.
-
-Docker verification previously passed unit tests available on the Windows
-development host, with pyvips-dependent tests skipped when system libvips was
-not installed. Re-establish the current baseline before changing Docker.
+- Workers: 894 tests / 24 files, lint, typecheck, build, audit green
+  (2026-06-12).
+- Docker: 159 tests on Linux/libvips 8.18 and inside the trixie image
+  (8.16) via docker-ci container-test (2026-06-11).
+- Live security posture verified 2026-06-11/12: unauthenticated pages
+  303 to `/`; `/img` and reserved routes 401 `no-store`; cross-origin
+  and `Origin: null` POSTs 403; direct R2 access refused; manifest and
+  sampled images carry no URLs, tokens, EXIF, GPS, or XMP.
 
 ## Documentation Condition
 
-Some older Japanese documents, including `photo-gate-design.md` and older ADR
-content, are mojibake in the working tree. Preserve them as historical evidence.
-Use `FABLE.md`, `AGENTS.md`, and `docs/fable/` as the current operational source
-of truth. Correct historical documents only when needed for an active task and
-without losing recoverable meaning.
+Some older Japanese documents (e.g. `photo-gate-design.md`, old ADRs) are
+mojibake in the working tree; preserve as historical evidence. Use
+`FABLE.md`, `AGENTS.md`, and `docs/fable/` as the operational source of
+truth.

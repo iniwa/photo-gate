@@ -41,28 +41,36 @@ This is a priority-ordered plan. Update status as implementation progresses.
       401 no-store; JSON login 401; cross-origin 403.)
 - [x] Build and deploy the existing Docker sync CLI through the human-created
       Portainer stack. (Stack `iniwa-photo-gate` running image 0.1.6.)
-- [ ] Run a controlled end-to-end album sync and viewer test.
-      (Sync side complete 2026-06-11: 234 photos synced with 0.1.6 +
+- [x] Run a controlled end-to-end album sync and viewer test.
+      (Complete 2026-06-12: 234 photos synced with 0.1.6 +
       PHOTOPRISM_PREVIEW_SIZE=fit_1920, manifest uploaded last, sampled
-      outputs metadata-free. Iterations: 0.1.1 fixed Portainer
-      `${VAR:-default}` mis-expansion + unreadable errors; 0.1.2/0.1.3
+      outputs metadata-free; human confirmed browser login, album list,
+      thumbnails, and preview display. Iterations: 0.1.1 fixed Portainer
+      `${VAR:-default}` mis-expansion + unreadable errors; 0.1.2-0.1.5
       fixed bookworm libvips 8.14 synthesizing EXIF at save time (trixie
-      base + CI container-test gate, shipped as 0.1.5); 0.1.6 fails closed
-      on PhotoPrism placeholder previews and made the source size
-      configurable. Remaining: human browser confirmation of the viewer.)
+      base + CI container-test gate); 0.1.6 fails closed on PhotoPrism
+      placeholder previews; Workers Referrer-Policy switched to
+      same-origin because no-referrer made browsers send Origin: null on
+      the login POST.)
 - [ ] Add album cover generation/upload to the sync tool.
       (Gap found 2026-06-11: bootstrap.md §7 and the `/img/:albumId/cover`
       route expect `albums/<id>/cover.webp`, but `sync-once` never uploads
-      it, so album list covers will 404 until implemented.)
-- [ ] Confirm PhotoPrism/NAS/originals/R2 direct URLs are not exposed.
+      it, so album list covers will 404 until implemented. Next task.)
+- [x] Confirm PhotoPrism/NAS/originals/R2 direct URLs are not exposed.
+      (Verified 2026-06-11/12 against production: manifest and sampled
+      image bytes contain no URLs/tokens/EXIF/GPS/XMP; direct R2 access
+      refused; client size allowlist excludes originals; viewer responses
+      are fixed-shape.)
 
 ## Level 2: Operable
 
 ### 4. Delivery Automation
 
 - [x] Add Workers CI: install, lint, typecheck, test, build, deploy.
-      (Verified green on mirror; deploy stays secret-gated until Cloudflare
-      provisioning replaces the D1 placeholder.)
+      (Checks verified green on mirror. Deploy job: the secret gate
+      silently skipped all steps until the operator registered the GitHub
+      repository secrets on 2026-06-12; a CI-driven deploy has not yet
+      been observed — verify on the next workers/** push.)
 - [x] Add Docker CI: tests with libvips, multi-arch build, versioned GHCR push.
       (Verified green; `sync-v0.1.0` published `ghcr.io/iniwa/photo-gate-sync`
       tags `0.1.0` / `sha-b3c44be`, public package.)
