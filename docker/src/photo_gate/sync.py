@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from datetime import datetime
 
 import pyvips
@@ -8,6 +9,8 @@ from .manifest import build_manifest
 from .models import AlbumIdentity, ImageSettings, PhotoPrismPhoto
 from .object_store import ObjectStore
 from .photoprism_client import PhotoPrismClient, PhotoPrismError
+
+_log = logging.getLogger(__name__)
 
 # Long edge in pixels for each PhotoPrism preview size this tool may use
 # as a source. Keep the keys in sync with --photoprism-preview-size in
@@ -87,8 +90,10 @@ async def sync_album(
 
     processor = ImageProcessor()
     photos, preview_token = await client.list_album_photos(album.photoprism_album_uid)
+    _log.info("album %s: %d photos to sync", album.album_id, len(photos))
 
     sem = asyncio.Semaphore(concurrency)
+    _done = [0]
 
     async def process_one(photo: PhotoPrismPhoto) -> None:
         async with sem:
@@ -114,6 +119,8 @@ async def sync_album(
 
             await store.put(thumb_key, thumb_data, "image/webp")
             await store.put(preview_key, preview_data, "image/jpeg")
+            _done[0] += 1
+            _log.info("synced %s (%d/%d)", photo.uid, _done[0], len(photos))
 
     async with asyncio.TaskGroup() as tg:
         for photo in photos:
@@ -129,7 +136,9 @@ async def sync_album(
         processor.validate_no_forbidden_metadata(cover_data)
         cover_key = f"albums/{album.album_id}/cover.webp"
         await store.put(cover_key, cover_data, "image/webp")
+        _log.info("uploaded cover for album %s", album.album_id)
 
     manifest_json = build_manifest(album, photos, settings, generated_at)
     manifest_key = f"albums/{album.album_id}/manifest.json"
     await store.put(manifest_key, manifest_json.encode("utf-8"), "application/json")
+    _log.info("uploaded manifest for album %s", album.album_id)

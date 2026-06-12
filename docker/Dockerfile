@@ -44,3 +44,5 @@ CMD ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider"]
 
 # Keep the published image as the default build target (last stage wins).
 FROM runtime AS final
+HEALTHCHECK --interval=60s --timeout=10s --start-period=120s --retries=3 \
+    CMD ["photo-gate-sync", "healthcheck"]

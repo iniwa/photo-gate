@@ -13,9 +13,16 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import dataclasses
+import logging
+import os
+import signal
 import sys
+import time
 from datetime import datetime, timezone
 from typing import Callable
+
+_UTC = timezone.utc
 
 
 # Exception types whose messages are sanitized at the raise site (no
@@ -95,6 +102,37 @@ def _build_parser() -> argparse.ArgumentParser:
     sync.add_argument("--preview-long-edge", type=int, default=3840, metavar="PX")
     sync.add_argument("--preview-quality", type=int, default=88, metavar="Q")
 
+    # sync-daemon subcommand
+    daemon = sub.add_parser(
+        "sync-daemon",
+        help="Run sync repeatedly on a schedule (requires --confirm-upload)",
+    )
+    # Same positional args as sync-once
+    daemon.add_argument("--album-id", required=True, metavar="ID")
+    daemon.add_argument("--album-title", required=True, metavar="TITLE")
+    daemon.add_argument("--photoprism-album-uid", required=True, metavar="UID")
+    daemon.add_argument("--confirm-upload", action="store_true",
+                        help="Required to prevent accidental uploads")
+    daemon.add_argument("--concurrency", type=int, default=2, metavar="N")
+    daemon.add_argument(
+        "--photoprism-preview-size",
+        choices=["fit_720", "fit_1280", "fit_1920", "fit_2048", "fit_2560", "fit_3840"],
+        default="fit_3840",
+    )
+    daemon.add_argument("--thumb-long-edge", type=int, default=640, metavar="PX")
+    daemon.add_argument("--thumb-quality", type=int, default=80, metavar="Q")
+    daemon.add_argument("--preview-long-edge", type=int, default=3840, metavar="PX")
+    daemon.add_argument("--preview-quality", type=int, default=88, metavar="Q")
+    daemon.add_argument("--interval-seconds", type=int, default=86400, metavar="N")
+    daemon.add_argument("--health-file", default="/tmp/photo-gate-health.json", metavar="PATH")
+    daemon.add_argument("--max-runs", type=int, default=0, metavar="N")
+
+    # healthcheck subcommand
+    hc = sub.add_parser("healthcheck", help="Check daemon health file (for Docker HEALTHCHECK)")
+    hc.add_argument("--health-file", default="/tmp/photo-gate-health.json", metavar="PATH")
+    hc.add_argument("--max-consecutive-failures", type=int, default=3, metavar="N")
+    hc.add_argument("--heartbeat-stale-seconds", type=int, default=300, metavar="N")
+
     return parser
 
 
@@ -107,6 +145,33 @@ def _validate_sync_once_args(args: argparse.Namespace) -> str | None:
     return None
 
 
+def _validate_daemon_args(args: argparse.Namespace) -> str | None:
+    """Return an error message, or None if args are valid."""
+    if not args.confirm_upload:
+        return "--confirm-upload is required to prevent accidental uploads"
+    if args.interval_seconds < 60:
+        return "--interval-seconds must be >= 60"
+    if args.concurrency < 1:
+        return "--concurrency must be a positive integer"
+    return None
+
+
+def _utc_now_iso(clock: Callable[[], datetime]) -> str:
+    return clock().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _configure_daemon_logging() -> None:
+    logging.basicConfig(
+        stream=sys.stdout,
+        format="%(asctime)sZ %(levelname)s %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%S",
+        level=logging.INFO,
+        force=True,
+    )
+    # Make logging use UTC
+    logging.Formatter.converter = time.gmtime
+
+
 async def run_sync_once(
     args: argparse.Namespace,
     *,
@@ -115,6 +180,7 @@ async def run_sync_once(
     store_factory: Callable | None = None,
     sync_fn: Callable | None = None,
     clock: Callable[[], datetime] | None = None,
+    error_sink: Callable[[str], None] | None = None,
 ) -> int:
     """
     Async composition function for sync-once.
@@ -208,13 +274,307 @@ async def run_sync_once(
                 preview_source_size=args.photoprism_preview_size,
             )
     except Exception as exc:
+        described = _describe_error(exc)
         print(
-            f"Sync failed for album {args.album_id!r}: {_describe_error(exc)}",
+            f"Sync failed for album {args.album_id!r}: {described}",
+            file=sys.stderr,
+        )
+        if error_sink is not None:
+            # described is already sanitized; safe to record elsewhere.
+            error_sink(described)
+        return 1
+
+    print(f"Sync complete: album={args.album_id!r}")
+    return 0
+
+
+async def run_sync_daemon(
+    args: argparse.Namespace,
+    *,
+    config_loader: Callable | None = None,
+    client_factory: Callable | None = None,
+    store_factory: Callable | None = None,
+    sync_fn: Callable | None = None,
+    clock: Callable[[], datetime] | None = None,
+    sleep_fn: Callable[[float], object] | None = None,
+    heartbeat_period: float = 60.0,
+) -> int:
+    """
+    Async composition function for sync-daemon.
+
+    Validates args, then loops: run sync -> write health -> sleep -> repeat.
+    Injectable for tests: sleep_fn, clock, heartbeat_period.
+    Returns exit code:
+      0 -- normal shutdown (SIGTERM/SIGINT or max-runs reached)
+      2 -- argument/config validation error
+    """
+    # --- Validate args before any factory or network call ---
+    error = _validate_daemon_args(args)
+    if error:
+        print(f"Error: {error}", file=sys.stderr)
+        return 2
+
+    _configure_daemon_logging()
+    log = logging.getLogger(__name__)
+
+    if clock is None:
+        clock = lambda: datetime.now(tz=timezone.utc)
+    if sleep_fn is None:
+        sleep_fn = asyncio.sleep
+
+    from .health import HealthState, write_health
+
+    started_at = _utc_now_iso(clock)
+    health_path = args.health_file
+    album_id = args.album_id
+
+    # Try to get version string
+    try:
+        import importlib.metadata as _meta
+        _version = _meta.version("photo-gate-sync")
+    except Exception:
+        _version = "unknown"
+
+    log.info(
+        "photo-gate-sync %s starting: album_id=%s interval=%ds "
+        "preview_size=%s concurrency=%d",
+        _version,
+        album_id,
+        args.interval_seconds,
+        args.photoprism_preview_size,
+        args.concurrency,
+    )
+
+    state = HealthState(
+        schema=1,
+        pid=os.getpid(),
+        album_id=album_id,
+        interval_seconds=args.interval_seconds,
+        started_at=started_at,
+        heartbeat_at=_utc_now_iso(clock),
+        last_attempt_started_at=None,
+        last_attempt_completed_at=None,
+        last_result=None,
+        last_error=None,
+        consecutive_failures=0,
+        runs_completed=0,
+    )
+    try:
+        write_health(state, health_path)
+    except OSError:
+        pass  # Non-fatal; health is best-effort
+
+    shutdown_event = asyncio.Event()
+    loop = asyncio.get_running_loop()
+
+    def _handle_signal():
+        shutdown_event.set()
+
+    try:
+        loop.add_signal_handler(signal.SIGTERM, _handle_signal)
+        loop.add_signal_handler(signal.SIGINT, _handle_signal)
+    except NotImplementedError:
+        pass  # Windows: signal handling not supported
+
+    # Heartbeat background task. No asyncio.shield here: wait_for cancels
+    # the inner event.wait() on timeout, which is harmless and avoids
+    # leaking one pending waiter per period for the daemon's lifetime.
+    async def _heartbeat_task():
+        nonlocal state
+        while not shutdown_event.is_set():
+            state = dataclasses.replace(state, heartbeat_at=_utc_now_iso(clock))
+            try:
+                write_health(state, health_path)
+            except OSError:
+                pass
+            try:
+                await asyncio.wait_for(shutdown_event.wait(), timeout=heartbeat_period)
+            except asyncio.TimeoutError:
+                pass
+
+    heartbeat_bg = asyncio.create_task(_heartbeat_task())
+
+    runs = 0
+    exit_code = 0
+    # run_sync_once reports the sanitized failure description here so the
+    # health file can show why the last attempt failed.
+    last_error_box: list[str | None] = [None]
+
+    try:
+        while not shutdown_event.is_set():
+            if args.max_runs > 0 and runs >= args.max_runs:
+                break
+
+            # Record attempt start
+            state = dataclasses.replace(
+                state,
+                last_attempt_started_at=_utc_now_iso(clock),
+                heartbeat_at=_utc_now_iso(clock),
+            )
+            try:
+                write_health(state, health_path)
+            except OSError:
+                pass
+
+            log.info("starting sync attempt %d for album %s", runs + 1, album_id)
+            t_start = clock()
+
+            # Run a single sync attempt
+            last_error_box[0] = None
+            attempt_code = await run_sync_once(
+                args,
+                config_loader=config_loader,
+                client_factory=client_factory,
+                store_factory=store_factory,
+                sync_fn=sync_fn,
+                clock=clock,
+                error_sink=lambda described: last_error_box.__setitem__(0, described),
+            )
+
+            duration = (clock() - t_start).total_seconds()
+            runs += 1
+
+            if attempt_code == 2:
+                # Config/arg error -- will never fix itself; exit immediately
+                log.error(
+                    "sync attempt %d for album %s failed with config error (exit 2); "
+                    "stopping daemon",
+                    runs,
+                    album_id,
+                )
+                exit_code = 2
+                break
+            elif attempt_code == 0:
+                log.info(
+                    "sync attempt %d for album %s succeeded in %.1fs",
+                    runs,
+                    album_id,
+                    duration,
+                )
+                state = dataclasses.replace(
+                    state,
+                    last_attempt_completed_at=_utc_now_iso(clock),
+                    last_result="ok",
+                    last_error=None,
+                    consecutive_failures=0,
+                    runs_completed=runs,
+                    heartbeat_at=_utc_now_iso(clock),
+                )
+            else:
+                # attempt_code == 1: runtime failure; continue
+                log.warning(
+                    "sync attempt %d for album %s failed in %.1fs",
+                    runs,
+                    album_id,
+                    duration,
+                )
+                new_consecutive = state.consecutive_failures + 1
+                state = dataclasses.replace(
+                    state,
+                    last_attempt_completed_at=_utc_now_iso(clock),
+                    last_result="failed",
+                    # Sanitized by _describe_error in run_sync_once; the same
+                    # text already goes to stderr, so recording it here adds
+                    # no new exposure.
+                    last_error=last_error_box[0],
+                    consecutive_failures=new_consecutive,
+                    runs_completed=runs,
+                    heartbeat_at=_utc_now_iso(clock),
+                )
+
+            try:
+                write_health(state, health_path)
+            except OSError:
+                pass
+
+            if shutdown_event.is_set():
+                break
+            if args.max_runs > 0 and runs >= args.max_runs:
+                break
+
+            # Sleep interruptibly: race the (injectable) sleep against
+            # shutdown, then cancel whichever is still pending.
+            waiter = asyncio.create_task(shutdown_event.wait())
+            sleeper = asyncio.create_task(sleep_fn(float(args.interval_seconds)))
+            try:
+                await asyncio.wait(
+                    {waiter, sleeper}, return_when=asyncio.FIRST_COMPLETED
+                )
+            finally:
+                for task in (waiter, sleeper):
+                    task.cancel()
+                await asyncio.gather(waiter, sleeper, return_exceptions=True)
+
+    except asyncio.CancelledError:
+        pass
+    finally:
+        heartbeat_bg.cancel()
+        try:
+            await heartbeat_bg
+        except asyncio.CancelledError:
+            pass
+
+    log.info("photo-gate-sync shutting down")
+    return exit_code
+
+
+def _run_healthcheck(args: argparse.Namespace) -> int:
+    """
+    Check daemon health file. Exit 0 if healthy, 1 if not.
+    Prints a single sanitized line to stderr on failure; no stack traces.
+    No network or libvips required.
+    """
+    import json
+
+    path = args.health_file
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        print(f"healthcheck: health file not found: {path}", file=sys.stderr)
+        return 1
+    except (json.JSONDecodeError, OSError):
+        print("healthcheck: health file is missing or unparseable", file=sys.stderr)
+        return 1
+
+    if not isinstance(data, dict) or data.get("schema") != 1:
+        print("healthcheck: unknown health file schema", file=sys.stderr)
+        return 1
+
+    consecutive = data.get("consecutive_failures")
+    if not isinstance(consecutive, int):
+        # Fail closed: a schema-1 file must carry this field.
+        print("healthcheck: consecutive_failures missing or invalid", file=sys.stderr)
+        return 1
+    if consecutive >= args.max_consecutive_failures:
+        print(
+            f"healthcheck: consecutive_failures={consecutive} >= "
+            f"threshold={args.max_consecutive_failures}",
             file=sys.stderr,
         )
         return 1
 
-    print(f"Sync complete: album={args.album_id!r}")
+    heartbeat_str = data.get("heartbeat_at")
+    if not heartbeat_str:
+        print("healthcheck: heartbeat_at missing", file=sys.stderr)
+        return 1
+
+    try:
+        heartbeat_dt = datetime.fromisoformat(heartbeat_str.replace("Z", "+00:00"))
+        now = datetime.now(tz=timezone.utc)
+        age = (now - heartbeat_dt).total_seconds()
+    except (ValueError, TypeError):
+        print("healthcheck: heartbeat_at unparseable", file=sys.stderr)
+        return 1
+
+    if age > args.heartbeat_stale_seconds:
+        print(
+            f"healthcheck: heartbeat stale ({age:.0f}s > "
+            f"{args.heartbeat_stale_seconds}s threshold)",
+            file=sys.stderr,
+        )
+        return 1
+
     return 0
 
 
@@ -224,6 +584,10 @@ def main() -> None:
 
     if args.command == "sync-once":
         sys.exit(asyncio.run(run_sync_once(args)))
+    elif args.command == "sync-daemon":
+        sys.exit(asyncio.run(run_sync_daemon(args)))
+    elif args.command == "healthcheck":
+        sys.exit(_run_healthcheck(args))
     else:
         parser.print_help()
         sys.exit(2)
