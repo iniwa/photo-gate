@@ -83,6 +83,9 @@ procedures.
   authentication foundation and read-only user inventory pass lint, typecheck,
   build, and 1029 tests / 27 files locally (2026-06-15). `npm audit` still
   reports the existing two high-severity esbuild advisories through wrangler.
+  Workers CI gates production dependencies with `npm audit --omit=dev`; the
+  Wrangler dev-only advisories remain explicitly tracked until upstream adopts
+  the fixed esbuild release.
   Live remains version `131a0632`.
 - Docker: sync `0.2.1` reports 183 tests green and is published multi-arch;
   the targeted daemon regression suite independently passed 19 tests on
