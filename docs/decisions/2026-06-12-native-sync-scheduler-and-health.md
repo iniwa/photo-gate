@@ -67,6 +67,18 @@ records exactly the string `run_sync_once` produced (via an `error_sink`
 callback) into `last_error`, so the health file and stderr share one
 sanitization boundary and the file adds no new exposure.
 
+**Root logger discipline (0.2.1).** The error-path sanitization above is
+not sufficient on its own: third-party libraries log untrusted text on the
+*success* path too. `httpx` logs every request at INFO as
+`HTTP Request: GET <url>`, and that URL embeds the PhotoPrism preview
+token.  The 0.2.0 daemon configured the *root* logger at INFO, which
+silently enabled those httpx lines on stdout (sync-once never configured
+logging, so the same code stayed silent there).  0.2.1 fixes this: the
+root logger stays at WARNING and only `photo_gate.*` logs at INFO, with
+`httpx`/`httpcore`/`botocore`/`boto3`/`urllib3`/`pyvips` pinned to WARNING
+as defense in depth.  Rule: **enabling INFO logging must be scoped to our
+own logger namespace, never the root logger.**
+
 ### Shutdown semantics
 
 On SIGTERM/SIGINT the daemon stops promptly when sleeping; an in-flight

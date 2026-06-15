@@ -160,14 +160,33 @@ def _utc_now_iso(clock: Callable[[], datetime]) -> str:
     return clock().strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+# Third-party loggers that emit request URLs or other untrusted text at
+# INFO. httpx/httpcore log every request line as
+# "HTTP Request: GET <full url>" — and that URL embeds the PhotoPrism
+# preview token (see _SANITIZED_ERROR_TYPES, which excludes httpx for the
+# same reason). They must never reach stdout, so the root logger stays at
+# WARNING and only our own package logs at INFO.
+_NOISY_LOGGER_NAMES = ("httpx", "httpcore", "botocore", "boto3", "urllib3", "pyvips")
+
+
 def _configure_daemon_logging() -> None:
+    # Root stays at WARNING so third-party INFO logs (which can contain the
+    # PhotoPrism preview token in request URLs) never reach stdout.
     logging.basicConfig(
         stream=sys.stdout,
         format="%(asctime)sZ %(levelname)s %(message)s",
         datefmt="%Y-%m-%dT%H:%M:%S",
-        level=logging.INFO,
+        level=logging.WARNING,
         force=True,
     )
+    # Only photo_gate.* logs at INFO; its records propagate to the root
+    # handler installed above. Children (photo_gate.main, photo_gate.sync)
+    # inherit this level.
+    logging.getLogger("photo_gate").setLevel(logging.INFO)
+    # Defense in depth: pin known-chatty libraries to WARNING even if some
+    # future caller raises the root level back to INFO.
+    for name in _NOISY_LOGGER_NAMES:
+        logging.getLogger(name).setLevel(logging.WARNING)
     # Make logging use UTC
     logging.Formatter.converter = time.gmtime
 

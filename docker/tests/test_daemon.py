@@ -17,7 +17,15 @@ from typing import Any
 
 import pytest
 
-from photo_gate.main import _build_parser, run_sync_daemon, _run_healthcheck
+import io
+import logging
+
+from photo_gate.main import (
+    _build_parser,
+    _configure_daemon_logging,
+    run_sync_daemon,
+    _run_healthcheck,
+)
 from photo_gate.health import HealthState, write_health
 
 
@@ -58,6 +66,51 @@ class _FakeConfig:
 
 async def _noop_sync(*args, **kwargs):
     pass
+
+
+# ---------------------------------------------------------------------------
+# Logging configuration: third-party loggers must not leak request URLs
+# ---------------------------------------------------------------------------
+
+
+def test_daemon_logging_suppresses_httpx_request_urls():
+    """
+    httpx logs every request as "HTTP Request: GET <url>" at INFO, and that
+    URL embeds the PhotoPrism preview token. After _configure_daemon_logging,
+    the root logger is WARNING so those lines never reach stdout, while our
+    own photo_gate.* INFO lines still do.
+    """
+    fake_token = "FAKE-PREVIEW-TOKEN-98765"
+    try:
+        _configure_daemon_logging()
+        # Redirect the root handler's stream to a buffer we can inspect.
+        buf = io.StringIO()
+        root = logging.getLogger()
+        assert root.handlers, "basicConfig should have installed a handler"
+        original_streams = [getattr(h, "stream", None) for h in root.handlers]
+        for h in root.handlers:
+            if hasattr(h, "stream"):
+                h.stream = buf
+
+        try:
+            logging.getLogger("httpx").info(
+                "HTTP Request: GET https://photos.example.com/api/v1/t/"
+                f"{fake_token}/hash/fit_720 \"HTTP/1.1 200 OK\""
+            )
+            logging.getLogger("photo_gate.sync").info("album my-album: 234 photos to sync")
+        finally:
+            for h, s in zip(root.handlers, original_streams):
+                if hasattr(h, "stream") and s is not None:
+                    h.stream = s
+
+        output = buf.getvalue()
+        assert fake_token not in output, "preview token must not reach stdout"
+        assert "HTTP Request" not in output, "httpx request line must be suppressed"
+        assert "234 photos to sync" in output, "our own INFO logs must still appear"
+    finally:
+        # Reset logging so this test does not affect others.
+        logging.getLogger().handlers.clear()
+        logging.getLogger("photo_gate").setLevel(logging.NOTSET)
 
 
 # ---------------------------------------------------------------------------

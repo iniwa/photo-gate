@@ -80,22 +80,24 @@ token refresh; rollback-procedure verification record.
 See `docs/operations/operator-actions.md` for the operator-facing
 action list and full status snapshot.
 
-1. ACTIVE BLOCKER: production sync is failing on R2 `Unauthorized`.
-   The 0.2.0 daemon starts and lists 234 photos but every PutObject
-   returns Unauthorized — the R2 S3 access key (Portainer
-   `R2_ACCESS_KEY_ID`/`R2_SECRET_ACCESS_KEY`) was very likely
-   invalidated when the API token was rolled on 2026-06-12. Fail-closed
-   means nothing was overwritten: the last good 0.1.6 sync (234 photos)
-   plus covers are still served, so viewing is fine; only new uploads
-   are stalled. Fix: issue a new R2 Object Read & Write key scoped to
-   `photo-gate` and update the Portainer env (operator-actions.md A-1).
-2. DONE 2026-06-12: stack updated to `0.2.0` with the sync-daemon
-   command block (daemon confirmed starting from logs).
-3. DONE 2026-06-12: local token refreshed; D1 export verified. The
-   token has D1 permission only — add Account -> Workers Scripts -> Edit
-   if local `wrangler versions list` / emergency local deploys are
-   wanted; until then Workers changes deploy via CI
-   (operator-actions.md A-2).
+1. ACTIVE: bump the Portainer stack image to `0.2.1` once docker-ci
+   publishes it. 0.2.1 fixes a log leak found in production on
+   2026-06-15: the 0.2.0 daemon configured the *root* logger at INFO,
+   which enabled httpx's `HTTP Request: GET <url>` lines on stdout —
+   and that URL embeds the PhotoPrism preview token + hostname. 0.2.1
+   keeps root at WARNING and logs only `photo_gate.*` at INFO. The
+   leaked tokens are short-lived (re-fetched each sync) so no emergency
+   revocation is needed (operator-actions.md A-0).
+2. DONE 2026-06-15: R2 `Unauthorized` blocker resolved. The R2 S3 key
+   had been invalidated by the 2026-06-12 token roll; the operator
+   issued a new photo-gate-scoped Object Read & Write key and updated
+   the Portainer env. Production 0.2.0 then synced 234/234, uploaded
+   cover + manifest, "sync attempt 1 succeeded in 134.1s". Fail-closed
+   meant nothing was corrupted while the key was bad.
+3. DONE 2026-06-12: stack updated to `0.2.0` sync-daemon command block.
+4. DONE 2026-06-12: local token refreshed; D1 export verified (D1
+   permission only — see operator-actions.md A-2 for the optional
+   Workers-scope edit).
 
 ## Next Priority
 
