@@ -128,7 +128,9 @@ This is a priority-ordered plan. Update status as implementation progresses.
       verification remain.)
 - [ ] Implement user, album, and permission administration.
       (Read-only, keyset-paginated user inventory implemented and reviewed
-      2026-06-15. User mutation and album/permission administration remain.)
+      2026-06-15. Read-only, keyset-paginated album and permission inventories
+      implemented and reviewed 2026-06-16. User/album/permission mutation
+      operations remain.)
 - [ ] Implement sync request/status administration.
 - [ ] Add operational audit information without sensitive-data leakage.
 

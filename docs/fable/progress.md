@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-06-15.
+Last updated: 2026-06-16.
 
 ## Current Completion Level
 
@@ -11,13 +11,17 @@ Operable.
 
 ## Current Task
 
-The active Level 3 implementation handoff is:
+There is no active implementation handoff.
 
-- `docs/handoffs/2026-06-15-admin-read-only-album-permission-inventory.md`
-- Add separate read-only, keyset-paginated album and permission inventories
-  behind the existing admin Access boundary.
-- Exclude PhotoPrism identifiers, transform settings, passwords, sessions, R2
-  data, joins, and every mutation operation.
+The third Level 3 implementation handoff is reviewed and complete:
+
+- DONE: read-only, keyset-paginated `GET /admin/albums` and
+  `GET /admin/permissions` inventories behind the reviewed Access boundary.
+- The album repository selects only seven approved album fields and strictly
+  excludes PhotoPrism identifiers, transform settings, R2 data, and mutation
+  operations.
+- The permission repository selects only `album_id`, `user_id`, and
+  `created_at` from `album_permissions`, with no joins to users or albums.
 
 The second Level 3 implementation handoff is reviewed and complete:
 
@@ -91,12 +95,13 @@ procedures.
 
 - Workers: 894 tests / 24 files, lint, typecheck, build, audit green
   in the production baseline (2026-06-12). The reviewed `/admin`
-  authentication foundation and read-only user inventory pass lint, typecheck,
-  build, and 1029 tests / 27 files locally (2026-06-15). `npm audit` still
-  reports the existing two high-severity esbuild advisories through wrangler.
-  Workers CI gates production dependencies with `npm audit --omit=dev`; the
-  Wrangler dev-only advisories remain explicitly tracked until upstream adopts
-  the fixed esbuild release.
+  authentication foundation plus read-only user, album, and permission
+  inventories pass lint, typecheck, build, and 1155 tests / 29 files locally
+  (2026-06-16). `npm audit` reports four high-severity advisories through
+  devDependencies (`wrangler -> esbuild`, `miniflare -> ws`); production
+  dependency audit with `npm audit --omit=dev --audit-level=high` reports 0
+  vulnerabilities. Workers CI gates production dependencies only until upstream
+  Wrangler/Miniflare adopt fixed transitive releases.
   Live includes CI-deployed commit `e72de73`; unauthenticated admin smoke checks
   return the expected 403/no-store while Access configuration is absent.
 - Docker: sync `0.2.1` reports 183 tests green and is published multi-arch;
@@ -143,6 +148,7 @@ action list and full status snapshot.
 ## Next Priority
 
 Complete the operator's sync `0.2.1` Portainer update and configure the deployed
-`/admin` Access boundary. The next local implementation priority is a similarly
-read-only admin album/permission inventory. Complete Level 2 rollback
-verification when production access and token scope permit.
+`/admin` Access boundary. Complete Level 2 rollback verification when production
+access and token scope permit. The next local Level 3 implementation priority
+should be selected from the remaining admin roadmap after those operator
+actions are either completed or explicitly deferred.

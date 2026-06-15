@@ -1,6 +1,6 @@
 # Current State
 
-Last audited: 2026-06-15.
+Last audited: 2026-06-16.
 
 ## Level
 
@@ -60,20 +60,24 @@ thumbnail grid, and preview display (2026-06-12).
   version rollback remains blocked on optional local token scope; Docker
   rollback requires an intentional production stack operation.
 - Level 3: `/admin` Worker-side Cloudflare Access JWT validation plus admin
-  email allowlist and the read-only, keyset-paginated user inventory are
-  deployed. The operator must create the path-scoped Access application and
-  register the three Worker values before the production admin surface is
-  usable; until then `/admin` and `/admin/users` fail closed with 403. User
-  mutation operations, album/permission administration, dry-run cleanup, and
-  final hardening remain unimplemented.
+  email allowlist and the read-only, keyset-paginated user, album, and
+  permission inventories are implemented. The operator must create the
+  path-scoped Access application and register the three Worker values before
+  the production admin surface is usable; until then deployed admin routes fail
+  closed with 403. User/album/permission mutation operations, sync
+  administration, dry-run cleanup, and final hardening remain unimplemented.
 
 ## Verification Baseline
 
 - Workers: 894 tests / 24 files, lint, typecheck, build, audit green
   in the last production baseline (2026-06-12). The reviewed `/admin`
-  authentication foundation and read-only user inventory pass lint, typecheck,
-  build, and 1029 tests / 27 files locally and in CI (2026-06-15). Production
-  smoke confirms both admin routes fail closed with 403/no-store without config.
+  authentication foundation plus read-only user, album, and permission
+  inventories pass lint, typecheck, build, and 1155 tests / 29 files locally
+  (2026-06-16). Production audit is clean; full `npm audit` remains blocked by
+  devDependency advisories in Wrangler/Miniflare. Production smoke has confirmed
+  deployed `/admin` and `/admin/users` fail closed with 403/no-store without
+  config; album/permission inventories are not deployed until the new commit
+  reaches Workers CI.
 - Docker: 183 tests reported green for sync `0.2.1`; the targeted daemon
   regression suite independently passed 19 tests on Windows (2026-06-15).
 - Live security posture verified 2026-06-11/12: unauthenticated pages
