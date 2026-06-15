@@ -77,13 +77,25 @@ token refresh; rollback-procedure verification record.
 
 ## Current Blockers / Required Human Actions
 
-1. DONE 2026-06-12: stack updated to `0.2.0` with the sync-daemon
-   command block; awaiting confirmation from container logs / health
-   status / browser covers.
-2. DONE 2026-06-12: local token refreshed (D1 permission only).
-   Optional: add Account -> Workers Scripts -> Edit to the token if
-   local `wrangler versions list` / emergency local deploys are wanted;
-   until then Workers changes deploy via CI.
+See `docs/operations/operator-actions.md` for the operator-facing
+action list and full status snapshot.
+
+1. ACTIVE BLOCKER: production sync is failing on R2 `Unauthorized`.
+   The 0.2.0 daemon starts and lists 234 photos but every PutObject
+   returns Unauthorized — the R2 S3 access key (Portainer
+   `R2_ACCESS_KEY_ID`/`R2_SECRET_ACCESS_KEY`) was very likely
+   invalidated when the API token was rolled on 2026-06-12. Fail-closed
+   means nothing was overwritten: the last good 0.1.6 sync (234 photos)
+   plus covers are still served, so viewing is fine; only new uploads
+   are stalled. Fix: issue a new R2 Object Read & Write key scoped to
+   `photo-gate` and update the Portainer env (operator-actions.md A-1).
+2. DONE 2026-06-12: stack updated to `0.2.0` with the sync-daemon
+   command block (daemon confirmed starting from logs).
+3. DONE 2026-06-12: local token refreshed; D1 export verified. The
+   token has D1 permission only — add Account -> Workers Scripts -> Edit
+   if local `wrangler versions list` / emergency local deploys are
+   wanted; until then Workers changes deploy via CI
+   (operator-actions.md A-2).
 
 ## Next Priority
 
