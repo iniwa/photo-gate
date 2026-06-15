@@ -6,6 +6,7 @@ import { createPages, NotFound } from './routes/pages.js'
 import { createAuthApi } from './routes/auth-api.js'
 import { createImgRoutes } from './routes/img-routes.js'
 import { createAdminRoutes } from './routes/admin.js'
+import { AdminUserRepository } from './services/admin-user-repository.js'
 import { AuthRepository } from './services/auth-repository.js'
 import { SessionRepository } from './services/session-repository.js'
 import { PermissionRepository } from './services/permission-repository.js'
@@ -63,7 +64,9 @@ app.route('/img', createImgRoutes((env) => ({
 // viewer page router. The router's own guard fails closed with a generic 403
 // (Cloudflare Access JWT + administrator allowlist); missing/malformed config
 // resolves to that same 403. No viewer/album/R2/PhotoPrism/NAS data is exposed.
-app.route('/admin', createAdminRoutes(resolveAdminAuth))
+app.route('/admin', createAdminRoutes(resolveAdminAuth, (env) => ({
+  userRepo: new AdminUserRepository(env.DB),
+})))
 
 // Reserved routes fail closed with 401 regardless of auth state.
 // No fixture data, no album/photo IDs, no redirect.

@@ -342,6 +342,28 @@ h2 {
   text-decoration: underline;
 }
 
+/* Admin user table */
+.user-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1.25rem;
+  font-size: 0.875rem;
+}
+
+.user-table th,
+.user-table td {
+  border: 1px solid var(--border);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.user-table th {
+  background: var(--bg);
+  font-weight: 600;
+  color: var(--muted);
+}
+
 /* Responsive */
 @media (max-width: 600px) {
   header {

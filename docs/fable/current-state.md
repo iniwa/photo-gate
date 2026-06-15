@@ -62,15 +62,17 @@ thumbnail grid, and preview display (2026-06-12).
 - Level 3: `/admin` Worker-side Cloudflare Access JWT validation plus admin
   email allowlist is implemented and locally verified. The operator must create
   the path-scoped Access application, register the three Worker values, and
-  deploy before the production admin surface is protected and usable. Admin
-  operations, dry-run cleanup, and final hardening remain unimplemented.
+  deploy before the production admin surface is protected and usable. A
+  read-only, keyset-paginated user inventory is also implemented locally;
+  mutation operations, album/permission administration, dry-run cleanup, and
+  final hardening remain unimplemented.
 
 ## Verification Baseline
 
 - Workers: 894 tests / 24 files, lint, typecheck, build, audit green
   in the last production baseline (2026-06-12). The reviewed `/admin`
-  authentication foundation passes lint, typecheck, build, and 963 tests /
-  26 files locally (2026-06-15); deployment is pending.
+  authentication foundation and read-only user inventory pass lint, typecheck,
+  build, and 1029 tests / 27 files locally (2026-06-15); deployment is pending.
 - Docker: 183 tests reported green for sync `0.2.1`; the targeted daemon
   regression suite independently passed 19 tests on Windows (2026-06-15).
 - Live security posture verified 2026-06-11/12: unauthenticated pages

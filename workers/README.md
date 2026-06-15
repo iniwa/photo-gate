@@ -27,6 +27,7 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 | Auth API | `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me` | D1 |
 | Image delivery | `GET /img/:albumId/{cover,thumb/:photoId,preview/:photoId}` | D1 + R2 |
 | Admin surface | `GET /admin` | Cloudflare Access JWT + email allowlist |
+| Admin user inventory | `GET /admin/users` | D1 (read-only; no `password_hash`) |
 | Everything else under `/api`, `/img` | always `401` | — |
 | `/admin/*` (non-GET or unknown path) | authenticated `404` (behind Access guard) | — |
 
@@ -214,13 +215,17 @@ removed from the reserved-401 set; only `/api` and `/img` remain there.
 
 | Route | Auth result | Response |
 |---|---|---|
-| `GET /admin` | Verified + allowlisted | `200` minimal SSR page (heading 「管理コンソール」) |
+| `GET /admin` | Verified + allowlisted | `200` minimal SSR page (heading 「管理コンソール」; link to `/admin/users`) |
 | `GET /admin` | Any failure | `403 Forbidden` (generic, no-store) |
+| `GET /admin/users` | Verified + allowlisted | `200` read-only user inventory (keyset-paginated; no `password_hash`) |
+| `GET /admin/users?after=<id>` | Verified + allowlisted | `200` next page; `400` on invalid/repeated cursor |
+| `GET /admin/users` | Any failure | `403 Forbidden` (generic, no-store) |
 | Any other method or `/admin/*` path | Verified + allowlisted | `404 Not Found` (generic, no-store) |
 | Any other method or `/admin/*` path | Any failure | `403 Forbidden` (generic, no-store) |
 
-The `GET /admin` success page contains **no** viewer, album, R2, PhotoPrism, or NAS data.
-All responses under `/admin` use `Cache-Control: no-store`.
+The `GET /admin` and `GET /admin/users` pages contain **no** `password_hash`, session,
+PhotoPrism, R2, NAS, or private metadata. The Access administrator email is never
+displayed or logged. All responses under `/admin` use `Cache-Control: no-store`.
 
 ### Authentication: Cloudflare Access JWT validation
 
@@ -724,4 +729,5 @@ route uses them yet.
 - Viewer pages: wired and active (`/`, `/albums`, `/albums/:albumId`); no fixture data remains, but without real D1/R2 they render only the login form / fail-closed responses
 - Expired-session cleanup: a daily cron trigger (`0 18 * * *` UTC = 03:00 JST) runs `deleteExpiredSessions` via the worker `scheduled` handler; it needs a real `DB` binding to have effect (failures are swallowed — expired sessions are already rejected at read time)
 - PhotoPrism: no API calls
-- Admin authentication boundary: implemented (`/admin` is now Cloudflare Access-gated with Worker-side JWT validation and email allowlist). No admin features are implemented. The Cloudflare Access application, the three Worker config values (`CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, `ADMIN_EMAILS`), and deployment are **not yet done** — `/admin` fails closed with `403` for everyone until those are configured by a human operator (see `docs/operations/admin-access.md`)
+- Admin authentication boundary: implemented (`/admin` is now Cloudflare Access-gated with Worker-side JWT validation and email allowlist). The Cloudflare Access application, the three Worker config values (`CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, `ADMIN_EMAILS`), and deployment are **not yet done** — `/admin` fails closed with `403` for everyone until those are configured by a human operator (see `docs/operations/admin-access.md`)
+- Admin user inventory: implemented (`GET /admin/users`). Reads the D1 `users` table with 7 explicit columns; `password_hash` is never selected, returned, rendered, logged, or exposed. Keyset-paginated (50 per page). Requires a real `DB` binding to function; without one, D1 calls fail closed with `500`.

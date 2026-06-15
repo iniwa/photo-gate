@@ -11,6 +11,13 @@ Operable.
 
 ## Current Task
 
+The second Level 3 implementation handoff is reviewed and complete:
+
+- DONE: read-only, keyset-paginated `GET /admin/users` inventory behind the
+  reviewed Access boundary.
+- The repository selects only seven approved user fields and strictly excludes
+  password hashes, sessions, mutation operations, albums, and permissions.
+
 The first Level 3 implementation handoff is reviewed and complete:
 
 - DONE: `/admin` Worker-side Cloudflare Access JWT verification, strict
@@ -73,10 +80,10 @@ procedures.
 
 - Workers: 894 tests / 24 files, lint, typecheck, build, audit green
   in the production baseline (2026-06-12). The reviewed `/admin`
-  authentication foundation passes lint, typecheck, build, and 963 tests /
-  26 files locally (2026-06-15). `npm audit` still reports the existing two
-  high-severity esbuild advisories through wrangler. Live remains version
-  `131a0632`.
+  authentication foundation and read-only user inventory pass lint, typecheck,
+  build, and 1029 tests / 27 files locally (2026-06-15). `npm audit` still
+  reports the existing two high-severity esbuild advisories through wrangler.
+  Live remains version `131a0632`.
 - Docker: sync `0.2.1` reports 183 tests green and is published multi-arch;
   the targeted daemon regression suite independently passed 19 tests on
   Windows (2026-06-15). Production Pi remains on `0.2.0` pending the
@@ -121,6 +128,6 @@ action list and full status snapshot.
 ## Next Priority
 
 Complete the operator's sync `0.2.1` Portainer update and configure/deploy the
-new `/admin` Access boundary. After the authentication boundary is confirmed
-in production, scope the first narrow admin management operation. Complete
-Level 2 rollback verification when production access and token scope permit.
+new `/admin` Access boundary. The next local implementation priority is a
+similarly read-only admin album/permission inventory. Complete Level 2 rollback
+verification when production access and token scope permit.

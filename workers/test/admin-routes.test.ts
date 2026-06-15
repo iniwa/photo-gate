@@ -3,6 +3,7 @@ import { Hono } from 'hono'
 import { createAdminRoutes } from '../src/routes/admin.js'
 import { normalizeEmail, parseAdminAllowlist } from '../src/middleware/require-admin.js'
 import type { AdminAuthConfig } from '../src/types/admin-auth.js'
+import type { AdminUserPage, AdminUserSummary } from '../src/types/admin-user.js'
 import type { Env } from '../src/types/env.js'
 
 // ---------------------------------------------------------------------------
@@ -11,9 +12,56 @@ import type { Env } from '../src/types/env.js'
 
 type ResolveAuth = (env: Env) => AdminAuthConfig | null
 
-function makeApp(resolveAuth: ResolveAuth): Hono {
+const NOW_TS = '2026-06-15T00:00:00.000Z'
+
+const SAMPLE_USER: AdminUserSummary = {
+  id: 'user-sample-001',
+  display_name: 'Sample User',
+  enabled: 1,
+  fail_count: 0,
+  locked_until: null,
+  created_at: NOW_TS,
+  updated_at: NOW_TS,
+}
+
+const SAMPLE_USER_2: AdminUserSummary = {
+  id: 'user-sample-002',
+  display_name: 'Second User',
+  enabled: 0,
+  fail_count: 3,
+  locked_until: '2026-06-15T01:00:00.000Z',
+  created_at: NOW_TS,
+  updated_at: NOW_TS,
+}
+
+function makeEmptyUserRepo(): { listUsers(): Promise<AdminUserPage> } {
+  return { listUsers: async () => ({ users: [], hasMore: false }) }
+}
+
+function makeUserRepo(
+  users: AdminUserSummary[],
+  hasMore = false,
+): { listUsers(): Promise<AdminUserPage> } {
+  return { listUsers: async () => ({ users, hasMore }) }
+}
+
+function makeThrowingUserRepo(): { listUsers(): Promise<AdminUserPage> } {
+  return {
+    listUsers: async () => {
+      throw new Error('D1 exploded')
+    },
+  }
+}
+
+function makeApp(
+  resolveAuth: ResolveAuth,
+  userRepo?: { listUsers(afterUserId?: string): Promise<AdminUserPage> },
+): Hono {
   const app = new Hono()
-  app.route('/admin', createAdminRoutes(resolveAuth))
+  app.route(
+    '/admin',
+    createAdminRoutes(resolveAuth, () => ({ userRepo: userRepo ?? makeEmptyUserRepo() })),
+  )
   return app
 }
 
@@ -44,7 +92,7 @@ function getAdmin(
 }
 
 // ---------------------------------------------------------------------------
-// SUCCESS CASES
+// SUCCESS CASES (existing)
 // ---------------------------------------------------------------------------
 
 describe('admin-routes: success — valid config, token, allowlisted email', () => {
@@ -89,6 +137,12 @@ describe('admin-routes: success — valid config, token, allowlisted email', () 
     }))
     const res = await getAdmin(app)
     expect(res.status).toBe(200)
+  })
+
+  it('GET /admin body now contains a link to /admin/users', async () => {
+    const res = await getAdmin(makeApp(goodAuth()))
+    const body = await res.text()
+    expect(body).toContain('/admin/users')
   })
 })
 
@@ -189,7 +243,7 @@ describe('admin-routes: fail closed — 403 Forbidden', () => {
 })
 
 // ---------------------------------------------------------------------------
-// ROUTE SHAPE
+// ROUTE SHAPE (existing)
 // ---------------------------------------------------------------------------
 
 describe('admin-routes: route shape', () => {
@@ -230,7 +284,7 @@ describe('admin-routes: route shape', () => {
 })
 
 // ---------------------------------------------------------------------------
-// LEAK CHECKS
+// LEAK CHECKS (existing)
 // ---------------------------------------------------------------------------
 
 describe('admin-routes: leak checks', () => {
@@ -259,6 +313,191 @@ describe('admin-routes: leak checks', () => {
     )
     const body = await res.text()
     expect(body).not.toContain(secretToken)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// GET /admin/users — success
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: GET /admin/users success', () => {
+  it('returns 200 with valid admin and fake repo', async () => {
+    const app = makeApp(goodAuth(), makeUserRepo([SAMPLE_USER]))
+    const res = await getAdmin(app, { path: '/admin/users' })
+    expect(res.status).toBe(200)
+  })
+
+  it('sets Cache-Control: no-store', async () => {
+    const app = makeApp(goodAuth(), makeUserRepo([SAMPLE_USER]))
+    const res = await getAdmin(app, { path: '/admin/users' })
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('body contains user id', async () => {
+    const app = makeApp(goodAuth(), makeUserRepo([SAMPLE_USER]))
+    const res = await getAdmin(app, { path: '/admin/users' })
+    const body = await res.text()
+    expect(body).toContain(SAMPLE_USER.id)
+  })
+
+  it('body contains display_name', async () => {
+    const app = makeApp(goodAuth(), makeUserRepo([SAMPLE_USER]))
+    const res = await getAdmin(app, { path: '/admin/users' })
+    const body = await res.text()
+    expect(body).toContain(SAMPLE_USER.display_name)
+  })
+
+  it('body shows 有効 for enabled=1', async () => {
+    const app = makeApp(goodAuth(), makeUserRepo([SAMPLE_USER]))
+    const res = await getAdmin(app, { path: '/admin/users' })
+    const body = await res.text()
+    expect(body).toContain('有効')
+  })
+
+  it('body shows 無効 for enabled=0', async () => {
+    const app = makeApp(goodAuth(), makeUserRepo([SAMPLE_USER_2]))
+    const res = await getAdmin(app, { path: '/admin/users' })
+    const body = await res.text()
+    expect(body).toContain('無効')
+  })
+
+  it('body shows なし for locked_until=null', async () => {
+    const app = makeApp(goodAuth(), makeUserRepo([SAMPLE_USER]))
+    const res = await getAdmin(app, { path: '/admin/users' })
+    const body = await res.text()
+    expect(body).toContain('なし')
+  })
+
+  it('body shows ロック中 for non-null locked_until', async () => {
+    const app = makeApp(goodAuth(), makeUserRepo([SAMPLE_USER_2]))
+    const res = await getAdmin(app, { path: '/admin/users' })
+    const body = await res.text()
+    expect(body).toContain('ロック中')
+    expect(body).toContain(SAMPLE_USER_2.locked_until!)
+  })
+
+  it('body does NOT contain password_hash', async () => {
+    const app = makeApp(goodAuth(), makeUserRepo([SAMPLE_USER]))
+    const res = await getAdmin(app, { path: '/admin/users' })
+    const body = await res.text()
+    expect(body).not.toContain('password_hash')
+  })
+
+  it('body does NOT contain admin email', async () => {
+    const app = makeApp(goodAuth(), makeUserRepo([SAMPLE_USER]))
+    const res = await getAdmin(app, { path: '/admin/users' })
+    const body = await res.text()
+    expect(body).not.toContain(ADMIN_EMAIL)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// GET /admin/users — empty list
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: GET /admin/users empty list', () => {
+  it('returns 200 with empty state message', async () => {
+    const app = makeApp(goodAuth(), makeEmptyUserRepo())
+    const res = await getAdmin(app, { path: '/admin/users' })
+    expect(res.status).toBe(200)
+    const body = await res.text()
+    expect(body).toContain('ユーザーがいません')
+  })
+
+  it('no table rows in empty state', async () => {
+    const app = makeApp(goodAuth(), makeEmptyUserRepo())
+    const res = await getAdmin(app, { path: '/admin/users' })
+    const body = await res.text()
+    expect(body).not.toContain('<tr>')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// GET /admin/users — pagination
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: GET /admin/users pagination', () => {
+  it('hasMore true → body contains next-page link with last user id', async () => {
+    const app = makeApp(goodAuth(), makeUserRepo([SAMPLE_USER, SAMPLE_USER_2], true))
+    const res = await getAdmin(app, { path: '/admin/users' })
+    const body = await res.text()
+    expect(body).toContain(`/admin/users?after=${SAMPLE_USER_2.id}`)
+  })
+
+  it('hasMore false → no next-page link', async () => {
+    const app = makeApp(goodAuth(), makeUserRepo([SAMPLE_USER], false))
+    const res = await getAdmin(app, { path: '/admin/users' })
+    const body = await res.text()
+    expect(body).not.toContain('/admin/users?after=')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// GET /admin/users — 400 bad cursor
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: GET /admin/users 400 bad cursor', () => {
+  it('invalid after param → 400 no-store', async () => {
+    const app = makeApp(goodAuth(), makeEmptyUserRepo())
+    const res = await getAdmin(app, { path: '/admin/users?after=!invalid!' })
+    expect(res.status).toBe(400)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('invalid after param — body does not reflect the bad input', async () => {
+    const badInput = '!invalid-cursor!'
+    const app = makeApp(goodAuth(), makeEmptyUserRepo())
+    const res = await getAdmin(app, { path: `/admin/users?after=${badInput}` })
+    const body = await res.text()
+    expect(body).not.toContain(badInput)
+  })
+
+  it('repeated after param → 400 no-store', async () => {
+    const app = makeApp(goodAuth(), makeEmptyUserRepo())
+    const res = await getAdmin(app, { path: '/admin/users?after=user-a-001&after=user-b-002' })
+    expect(res.status).toBe(400)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// GET /admin/users — 500 repo throws
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: GET /admin/users 500 repo throws', () => {
+  it('repo.listUsers throws → 500 no-store', async () => {
+    const app = makeApp(goodAuth(), makeThrowingUserRepo())
+    const res = await getAdmin(app, { path: '/admin/users' })
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('500 body has no error detail', async () => {
+    const app = makeApp(goodAuth(), makeThrowingUserRepo())
+    const res = await getAdmin(app, { path: '/admin/users' })
+    const body = await res.text()
+    expect(body).not.toContain('D1 exploded')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// GET /admin/users — AUTH PRESERVED
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: GET /admin/users auth preserved', () => {
+  it('no Cf-Access-Jwt-Assertion header → 403', async () => {
+    const app = makeApp(goodAuth(), makeEmptyUserRepo())
+    const res = await getAdmin(app, { path: '/admin/users', token: null })
+    expect(res.status).toBe(403)
+  })
+
+  it('non-allowlisted email → 403', async () => {
+    const app = makeApp(() => ({
+      verifier: async () => ({ email: 'other@example.com' }),
+      allowlist: new Set([ADMIN_EMAIL]),
+    }), makeEmptyUserRepo())
+    const res = await getAdmin(app, { path: '/admin/users' })
+    expect(res.status).toBe(403)
   })
 })
 
