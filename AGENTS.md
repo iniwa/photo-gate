@@ -64,6 +64,18 @@ Claude Code must not independently select roadmap work. It must not commit,
 push, deploy, mutate production, or archive a handoff unless the active handoff
 explicitly authorizes that action.
 
+## Claude Code Model Orchestration
+
+Claude Code should normally run with Opus as the primary coordinator. Opus reads
+`AGENTS.md`, `CLAUDE.md`, the active handoff, and the security invariants; plans;
+and reviews subagent output before reporting. Sonnet subagents may take scoped
+implementation, mechanical edits, and verification when the handoff's goal,
+files, constraints, and non-goals are already clear. Subagents must not change
+design intent, expand scope, touch secrets, weaken authentication/authorization
+or any Non-Negotiable Invariant, or make architectural decisions — those return
+to Opus/Codex. If the model split is unavailable, continue with the available
+model and report that limitation.
+
 ## Non-Negotiable Invariants
 
 - Normal viewing must use Cloudflare Workers, D1, and private R2 only.

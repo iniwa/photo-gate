@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-06-12.
+Last updated: 2026-06-15.
 
 ## Current Completion Level
 
@@ -11,7 +11,17 @@ Operable.
 
 ## Current Task
 
-Level 2 (Operable) execution, 2026-06-12:
+The first Level 3 implementation handoff is reviewed and complete:
+
+- DONE: `/admin` Worker-side Cloudflare Access JWT verification, strict
+  `*.cloudflareaccess.com` JWKS origin validation, admin email allowlist,
+  minimal protected SSR page, fail-closed tests, and operator documentation.
+- PENDING HUMAN/DELIVERY: create the path-scoped Cloudflare Access application,
+  register `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, and `ADMIN_EMAILS`, deploy,
+  and perform the documented production smoke checks.
+- Admin CRUD, sync operations, audit UI, and cleanup remain unimplemented.
+
+Recent Level 2 execution:
 
 - DONE: CI auto-deploy verified end to end (workers-ci c884256 ran
   every deploy step with the registered secrets; live smoke passed;
@@ -28,9 +38,13 @@ Level 2 (Operable) execution, 2026-06-12:
 - DROPPED by operator decision: Portainer stack auto-update webhook
   (Business Edition feature; running Community Edition). Manual tag
   bumps are the documented path.
+- DONE: sync `0.2.1` implemented, tagged, and published multi-arch. It
+  restores the root logger to WARNING so httpx cannot expose PhotoPrism
+  preview URLs/tokens while retaining `photo_gate.*` INFO logs.
 
-Level 2 leftovers: re-verify wrangler rollback/export after the local
-token refresh; rollback-procedure verification record.
+Level 2 leftovers: verify Worker version rollback after the local token gains
+the optional Workers Scripts scope; verify Docker rollback and record both
+procedures.
 
 ## Last Completed Work (Level 1 closure, 2026-06-11..12)
 
@@ -58,10 +72,15 @@ token refresh; rollback-procedure verification record.
 ## Latest Known Verification
 
 - Workers: 894 tests / 24 files, lint, typecheck, build, audit green
-  (2026-06-12). Live: version `131a0632`.
-- Docker: 159 tests on Linux/libvips 8.18 (WSL) and inside the trixie
-  image (libvips 8.16) via docker-ci container-test; GHCR `0.1.6`
-  multi-arch published and running on the Pi.
+  in the production baseline (2026-06-12). The reviewed `/admin`
+  authentication foundation passes lint, typecheck, build, and 963 tests /
+  26 files locally (2026-06-15). `npm audit` still reports the existing two
+  high-severity esbuild advisories through wrangler. Live remains version
+  `131a0632`.
+- Docker: sync `0.2.1` reports 183 tests green and is published multi-arch;
+  the targeted daemon regression suite independently passed 19 tests on
+  Windows (2026-06-15). Production Pi remains on `0.2.0` pending the
+  operator update.
 - Live security posture (2026-06-11/12): unauthenticated pages 303 to
   `/`; `/img` + reserved routes 401 `no-store`; cross-origin and
   `Origin: null` POSTs 403; direct R2 refused; no URL/token/EXIF/GPS/XMP
@@ -80,8 +99,8 @@ token refresh; rollback-procedure verification record.
 See `docs/operations/operator-actions.md` for the operator-facing
 action list and full status snapshot.
 
-1. ACTIVE: bump the Portainer stack image to `0.2.1` once docker-ci
-   publishes it. 0.2.1 fixes a log leak found in production on
+1. ACTIVE: bump the Portainer stack image to published `0.2.1`. 0.2.1
+   fixes a log leak found in production on
    2026-06-15: the 0.2.0 daemon configured the *root* logger at INFO,
    which enabled httpx's `HTTP Request: GET <url>` lines on stdout —
    and that URL embeds the PhotoPrism preview token + hostname. 0.2.1
@@ -101,5 +120,7 @@ action list and full status snapshot.
 
 ## Next Priority
 
-Sync cover.webp generation (Level 1 polish), then Level 2 item 4/5
-leftovers.
+Complete the operator's sync `0.2.1` Portainer update and configure/deploy the
+new `/admin` Access boundary. After the authentication boundary is confirmed
+in production, scope the first narrow admin management operation. Complete
+Level 2 rollback verification when production access and token scope permit.

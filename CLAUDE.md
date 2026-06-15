@@ -53,6 +53,18 @@ Stop and report to Codex when:
 - a possible production, security, privacy, or data-integrity incident is found;
 - the same blocking problem remains after three repair attempts.
 
+## Model / Subagent Policy
+
+- Use Opus as the primary Claude Code coordinator by default: it reads the handoff,
+  `AGENTS.md`, `CLAUDE.md`, and security invariants, plans, and does final review.
+- Delegate scoped implementation, mechanical edits, and verification to Sonnet
+  subagents only when goal, files, constraints, and non-goals are already explicit.
+- Subagents must not change design intent, expand scope, touch secrets, alter
+  security/authorization boundaries, or make architectural decisions — those
+  return to Opus.
+- For small edits, Opus may implement directly. If the model split is unavailable,
+  continue with the available model and report that limitation.
+
 ## Safety Summary
 
 - Never expose PhotoPrism, NAS originals, private R2, secrets, or metadata.

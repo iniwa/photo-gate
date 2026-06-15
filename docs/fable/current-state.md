@@ -1,6 +1,6 @@
 # Current State
 
-Last audited: 2026-06-12.
+Last audited: 2026-06-15.
 
 ## Level
 
@@ -19,8 +19,13 @@ thumbnail grid, and preview display (2026-06-12).
 - R2 `photo-gate`, private. One album: 234 thumbs (640 WebP) + 234
   previews (fit_1920 source, JPEG) + manifest.json, all metadata-free.
 - Sync: Portainer stack `iniwa-photo-gate` on a Raspberry Pi 4 running
-  `ghcr.io/iniwa/photo-gate-sync:0.1.6` with
-  `PHOTOPRISM_PREVIEW_SIZE=fit_1920`, interval loop (default 86400 s).
+  `ghcr.io/iniwa/photo-gate-sync:0.2.0` with the native sync daemon,
+  healthcheck, and
+  `PHOTOPRISM_PREVIEW_SIZE=fit_1920`, scheduled at the default 86400-second
+  interval.
+- Sync `0.2.1` is published for `linux/amd64` and `linux/arm64` but is not
+  yet confirmed deployed on the Pi. It fixes an httpx log leak that exposed
+  short-lived PhotoPrism preview URLs/tokens in Portainer logs.
 - PhotoPrism serves static thumbs up to 1920 px; dynamic previews stay
   disabled by operator choice (Pi load).
 
@@ -33,11 +38,8 @@ thumbnail grid, and preview display (2026-06-12).
   release. Stack updates are manual tag bumps in Portainer: automated
   stack webhooks were dropped 2026-06-12 (Business Edition feature;
   this deployment runs Community Edition).
-- workers-ci: checks green; the deploy job is secret-gated. Cloudflare
-  secrets were registered on GitHub 2026-06-12 but a CI-driven deploy has
-  not yet been observed end-to-end (every production deploy so far was
-  manual with the local operator token). Verify on the next `workers/**`
-  push or via workflow_dispatch.
+- workers-ci: checks green; the secret-gated deploy job was verified end to
+  end on 2026-06-12, including migrations, deploy, and live smoke checks.
 
 ## Key Operational Lessons (details in docs/fable/progress.md)
 
@@ -52,21 +54,25 @@ thumbnail grid, and preview display (2026-06-12).
 
 ## Missing / Next (see roadmap)
 
-- Sync does not yet generate `albums/<id>/cover.webp`; album-list covers
-  404 (viewer handles it; known Level 1 gap promoted to next task).
-- Level 2: verify CI auto-deploy, `PORTAINER_WEBHOOK_URL` secret,
-  deployed-version/rollback records, native scheduled sync (replace the
-  compose shell loop), health/readiness, sanitized progress logging,
-  backup/recovery procedures.
-- Level 3: `/admin` (Cloudflare Access), administration, dry-run cleanup,
-  final hardening.
+- Operator: update the existing Portainer stack from sync `0.2.0` to `0.2.1`
+  and confirm no `HTTP Request:` lines appear.
+- Level 2: verify and record Worker and Docker rollback procedures. Worker
+  version rollback remains blocked on optional local token scope; Docker
+  rollback requires an intentional production stack operation.
+- Level 3: `/admin` Worker-side Cloudflare Access JWT validation plus admin
+  email allowlist is implemented and locally verified. The operator must create
+  the path-scoped Access application, register the three Worker values, and
+  deploy before the production admin surface is protected and usable. Admin
+  operations, dry-run cleanup, and final hardening remain unimplemented.
 
 ## Verification Baseline
 
 - Workers: 894 tests / 24 files, lint, typecheck, build, audit green
-  (2026-06-12).
-- Docker: 159 tests on Linux/libvips 8.18 and inside the trixie image
-  (8.16) via docker-ci container-test (2026-06-11).
+  in the last production baseline (2026-06-12). The reviewed `/admin`
+  authentication foundation passes lint, typecheck, build, and 963 tests /
+  26 files locally (2026-06-15); deployment is pending.
+- Docker: 183 tests reported green for sync `0.2.1`; the targeted daemon
+  regression suite independently passed 19 tests on Windows (2026-06-15).
 - Live security posture verified 2026-06-11/12: unauthenticated pages
   303 to `/`; `/img` and reserved routes 401 `no-store`; cross-origin
   and `Origin: null` POSTs 403; direct R2 access refused; manifest and

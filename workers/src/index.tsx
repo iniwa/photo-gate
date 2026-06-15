@@ -1,16 +1,38 @@
 import { Hono } from 'hono'
 import type { Env } from './types/env.js'
+import type { AdminAuthConfig } from './types/admin-auth.js'
 import { securityHeaders } from './middleware/security-headers.js'
 import { createPages, NotFound } from './routes/pages.js'
 import { createAuthApi } from './routes/auth-api.js'
 import { createImgRoutes } from './routes/img-routes.js'
+import { createAdminRoutes } from './routes/admin.js'
 import { AuthRepository } from './services/auth-repository.js'
 import { SessionRepository } from './services/session-repository.js'
 import { PermissionRepository } from './services/permission-repository.js'
 import { AuthorizedAlbumRepository } from './services/authorized-album-repository.js'
 import { PrivateR2Reader } from './services/private-r2-reader.js'
+import { parseAccessConfig, createVerifierCache } from './services/cloudflare-access-jwt.js'
+import { parseAdminAllowlist } from './middleware/require-admin.js'
 
 const app = new Hono<{ Bindings: Env }>()
+
+// Memoize Access verifiers by configuration (non-secret team domain + audience)
+// so the JWKS key cache is reused across requests. This holds only config-derived
+// key resolvers — never request-specific identity or claims.
+const adminVerifierCache = createVerifierCache()
+
+/**
+ * Resolve per-request admin auth from the Worker env, or null (fail closed) when
+ * any of the three Access values is missing or malformed. The middleware maps a
+ * null result to the same generic 403 as every other admin failure.
+ */
+function resolveAdminAuth(env: Env): AdminAuthConfig | null {
+  const config = parseAccessConfig(env.CF_ACCESS_TEAM_DOMAIN, env.CF_ACCESS_AUD)
+  if (config === null) return null
+  const allowlist = parseAdminAllowlist(env.ADMIN_EMAILS)
+  if (allowlist === null) return null
+  return { verifier: adminVerifierCache(config), allowlist }
+}
 
 app.use('*', securityHeaders)
 
@@ -36,9 +58,16 @@ app.route('/img', createImgRoutes((env) => ({
   reader: new PrivateR2Reader(env.PHOTO_BUCKET),
 })))
 
+// Admin surface. Mounted before the reserved-401 loop so every /admin and
+// /admin/* request reaches this router and never falls through to the public
+// viewer page router. The router's own guard fails closed with a generic 403
+// (Cloudflare Access JWT + administrator allowlist); missing/malformed config
+// resolves to that same 403. No viewer/album/R2/PhotoPrism/NAS data is exposed.
+app.route('/admin', createAdminRoutes(resolveAdminAuth))
+
 // Reserved routes fail closed with 401 regardless of auth state.
 // No fixture data, no album/photo IDs, no redirect.
-const RESERVED = ['/api', '/img', '/admin'] as const
+const RESERVED = ['/api', '/img'] as const
 for (const prefix of RESERVED) {
   app.all(prefix, (c) => {
     c.header('Cache-Control', 'no-store')
@@ -50,9 +79,9 @@ for (const prefix of RESERVED) {
   })
 }
 
-// Real viewer SSR pages. Mounted AFTER the reserved-401 loop so /api, /img, and
-// /admin are never shadowed by the page router. If env.DB / env.PHOTO_BUCKET are
-// undefined at runtime, deps are resolved lazily per call: the public `/` probe
+// Real viewer SSR pages. Mounted AFTER the admin router and reserved-401 loop so
+// /admin, /api, and /img are never shadowed by the page router. If env.DB /
+// env.PHOTO_BUCKET are undefined at runtime, deps are resolved lazily per call: the public `/` probe
 // falls back to the login form, and the authenticated pages fail closed
 // (303 to /, 403, 500, or 503) without leaking errors.
 app.route('/', createPages((env) => ({

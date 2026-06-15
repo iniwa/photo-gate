@@ -117,8 +117,6 @@ describe('Reserved routes - fail closed with 401', () => {
     '/api/albums',
     '/img',
     '/img/some-album/thumb/some-photo',
-    '/admin',
-    '/admin/api/albums',
   ]
 
   for (const path of cases) {
@@ -143,6 +141,42 @@ describe('Reserved routes - fail closed with 401', () => {
     expect(res.status).toBe(401)
     expect(res.headers.get('cache-control')).toBe('no-store')
     hasSecurityHeaders(res)
+  })
+})
+
+describe('GET /admin (Cloudflare Access boundary, fail closed)', () => {
+  // fakeEnv has no CF_ACCESS_TEAM_DOMAIN / CF_ACCESS_AUD / ADMIN_EMAILS, so
+  // resolveAdminAuth returns null and the admin guard closes with a generic 403.
+
+  it('GET /admin → 403 (NOT 401, NOT 200)', async () => {
+    const res = await app.request('/admin', {}, fakeEnv)
+    expect(res.status).toBe(403)
+  })
+
+  it('GET /admin has Cache-Control: no-store', async () => {
+    const res = await app.request('/admin', {}, fakeEnv)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('GET /admin has security headers', async () => {
+    const res = await app.request('/admin', {}, fakeEnv)
+    hasSecurityHeaders(res)
+  })
+
+  it('GET /admin body does NOT contain login form action', async () => {
+    const res = await app.request('/admin', {}, fakeEnv)
+    const body = await res.text()
+    expect(body).not.toContain('action="/api/auth/login"')
+  })
+
+  it('GET /admin/anything → 403', async () => {
+    const res = await app.request('/admin/anything', {}, fakeEnv)
+    expect(res.status).toBe(403)
+  })
+
+  it('POST /admin → 403', async () => {
+    const res = await app.request('/admin', { method: 'POST' }, fakeEnv)
+    expect(res.status).toBe(403)
   })
 })
 

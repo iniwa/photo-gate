@@ -597,9 +597,10 @@ describe('routing precedence against real src/index.tsx', () => {
     expect(res.status).toBe(401)
   })
 
-  it('/admin still returns 401', async () => {
+  it('/admin now fails closed with 403 (Access boundary, no config)', async () => {
     const res = await realApp.request(`${APP_ORIGIN}/admin`, {}, fakeEnv)
-    expect(res.status).toBe(401)
+    // /admin left the reserved-401 set; with no Access config the guard returns 403.
+    expect(res.status).toBe(403)
   })
 
   it('/ fixture page unchanged 200', async () => {

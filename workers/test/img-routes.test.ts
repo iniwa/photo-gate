@@ -566,11 +566,12 @@ describe('routing precedence (real app, fake env)', () => {
     expect(res.status).toBe(401)
   })
 
-  it('/api and /admin reserved routes unchanged', async () => {
+  it('/api stays reserved-401; /admin is now the Access boundary (fail-closed 403)', async () => {
     const apiRes = await realApp.request('/api', { method: 'GET' }, fakeEnv)
     const adminRes = await realApp.request('/admin', { method: 'GET' }, fakeEnv)
     expect(apiRes.status).toBe(401)
-    expect(adminRes.status).toBe(401)
+    // /admin left the reserved-401 set: with no Access config it fails closed 403.
+    expect(adminRes.status).toBe(403)
   })
 
   it('login page / is 200 and unauthenticated /albums redirects to /', async () => {

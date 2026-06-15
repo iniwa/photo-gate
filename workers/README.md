@@ -26,7 +26,9 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 | Album pages | `GET /albums`, `GET /albums/:albumId` | D1 (authorization) + R2 (manifest) |
 | Auth API | `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me` | D1 |
 | Image delivery | `GET /img/:albumId/{cover,thumb/:photoId,preview/:photoId}` | D1 + R2 |
-| Everything else under `/api`, `/img`, `/admin` | always `401` | — |
+| Admin surface | `GET /admin` | Cloudflare Access JWT + email allowlist |
+| Everything else under `/api`, `/img` | always `401` | — |
+| `/admin/*` (non-GET or unknown path) | authenticated `404` (behind Access guard) | — |
 
 ## Install
 
@@ -55,7 +57,11 @@ npx wrangler dev
 > `/api/auth/*` (login, logout, me) is active but needs a real `DB` binding; without one it returns 503.
 > The three `/img/*` image routes are active but need real `DB` + `PHOTO_BUCKET` bindings; without
 > them an authenticated request fails closed (401/403/503/500/404).
-> All other `/api`, `/img`, and `/admin` routes always return 401. Reserved for Phase 4.
+> `/admin` is now the Cloudflare Access boundary: `GET /admin` returns 200 only to a verified,
+> allowlisted administrator; all other callers get 403. However, until the three Access config
+> values (`CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, `ADMIN_EMAILS`) are registered as Worker
+> vars/secrets, `/admin` fails closed with 403 for everyone.
+> All other `/api` and `/img` routes always return 401.
 
 ## Viewer Pages (SSR)
 
@@ -184,7 +190,6 @@ or internal error detail. An unlisted photo and a missing image object return th
 ```
 /api (exact)      /api/* except /api/auth/*
 /img (exact)      /img/* except the three image GET shapes
-/admin  /admin/*
 ```
 
 Fail closed by design. No fixture data is returned. `/api/auth/login`, `/api/auth/logout`,
@@ -193,6 +198,77 @@ prefixes returns 401. Under `/img`, only the three GET shapes
 `/img/:albumId/cover`, `/img/:albumId/thumb/:photoId`, and `/img/:albumId/preview/:photoId`
 reach the image router; `/img` itself, any other path shape, and any non-GET method fall
 through to the reserved 401 catch-all.
+
+`/admin` is no longer in the reserved-401 list. It is now owned by a dedicated Cloudflare
+Access-protected router mounted **before** the 401 catch-alls. See
+[Admin Surface (`/admin`, Cloudflare Access)](#admin-surface-admin-cloudflare-access) below.
+
+## Admin Surface (`/admin`, Cloudflare Access)
+
+Defined in `src/routes/admin.tsx` and mounted in `src/index.tsx` **before** the
+reserved-401 catch-alls, so the admin router owns every `/admin` and `/admin/*`
+request and nothing falls through to the public viewer page router. `/admin` was
+removed from the reserved-401 set; only `/api` and `/img` remain there.
+
+### Route behavior
+
+| Route | Auth result | Response |
+|---|---|---|
+| `GET /admin` | Verified + allowlisted | `200` minimal SSR page (heading 「管理コンソール」) |
+| `GET /admin` | Any failure | `403 Forbidden` (generic, no-store) |
+| Any other method or `/admin/*` path | Verified + allowlisted | `404 Not Found` (generic, no-store) |
+| Any other method or `/admin/*` path | Any failure | `403 Forbidden` (generic, no-store) |
+
+The `GET /admin` success page contains **no** viewer, album, R2, PhotoPrism, or NAS data.
+All responses under `/admin` use `Cache-Control: no-store`.
+
+### Authentication: Cloudflare Access JWT validation
+
+The Worker validates the Cloudflare Access JWT itself using the `jose` library
+(`createRemoteJWKSet` + `jwtVerify`). It reads **only** the `Cf-Access-Jwt-Assertion`
+request header — there is no `CF_Authorization` fallback.
+
+Verification enforces:
+
+- **Signature** — via the team-domain JWKS endpoint `https://<team-domain>/cdn-cgi/access/certs`
+- **Issuer** — must equal `https://<team-domain>`
+- **Audience** — must match the configured AUD tag
+- **`exp`** — required and must not be expired
+- **`nbf`** — honored when present
+
+### Email allowlist
+
+After JWT verification the `email` claim is normalized (lowercased; rejected if it
+contains any whitespace, surrounding whitespace, or control characters, or lacks a basic
+`local@domain` shape) and compared case-insensitively against the `ADMIN_EMAILS` allowlist.
+The allowlist is comma-separated and trimmed at parse time. Empty entries, trailing commas,
+and malformed addresses all cause the entire allowlist to be rejected fail closed.
+
+### Fail-closed behavior
+
+Every failure class — missing or malformed runtime config, missing or invalid JWT,
+signature/issuer/audience/temporal verification failure, JWKS fetch failure, missing or
+malformed email claim, and non-allowlisted email — returns the **identical generic
+`403 Forbidden`** with `Cache-Control: no-store`. No cause is revealed. No JWT, claim
+value, email address, team domain, audience tag, or JWKS error is ever logged or echoed.
+
+### Runtime configuration (three values)
+
+The three values below are registered at **deploy time as Worker vars/secrets**, not
+in `wrangler.toml` or source. All three are declared as optional on the `Env` interface
+so that a missing or malformed value fails closed to the generic 403 rather than a type
+error.
+
+| Variable | Description | Constraints |
+|---|---|---|
+| `CF_ACCESS_TEAM_DOMAIN` | Cloudflare Access team domain hostname only | Must end in `.cloudflareaccess.com`; no scheme, path, port, or trailing slash (e.g. `<team>.cloudflareaccess.com`) |
+| `CF_ACCESS_AUD` | Cloudflare Access application Audience tag | Non-empty, printable ASCII, max 256 chars |
+| `ADMIN_EMAILS` | Comma-separated administrator email allowlist | Each entry trimmed, normalized, and exact-matched case-insensitively |
+
+Until all three values are configured and a real Cloudflare Access application is created
+and deployed, `/admin` fails closed with `403` for everyone. Creating the Access
+application, registering the secrets, and deploying require separate human authorization.
+See `docs/operations/admin-access.md` for operator setup instructions.
 
 ## D1 Schema (Phase 3, created but not applied)
 
@@ -648,4 +724,4 @@ route uses them yet.
 - Viewer pages: wired and active (`/`, `/albums`, `/albums/:albumId`); no fixture data remains, but without real D1/R2 they render only the login form / fail-closed responses
 - Expired-session cleanup: a daily cron trigger (`0 18 * * *` UTC = 03:00 JST) runs `deleteExpiredSessions` via the worker `scheduled` handler; it needs a real `DB` binding to have effect (failures are swallowed — expired sessions are already rejected at read time)
 - PhotoPrism: no API calls
-- Admin UI: `/admin/*` returns 401
+- Admin authentication boundary: implemented (`/admin` is now Cloudflare Access-gated with Worker-side JWT validation and email allowlist). No admin features are implemented. The Cloudflare Access application, the three Worker config values (`CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, `ADMIN_EMAILS`), and deployment are **not yet done** — `/admin` fails closed with `403` for everyone until those are configured by a human operator (see `docs/operations/admin-access.md`)
