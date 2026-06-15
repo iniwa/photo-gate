@@ -11,6 +11,14 @@ Operable.
 
 ## Current Task
 
+The active Level 3 implementation handoff is:
+
+- `docs/handoffs/2026-06-15-admin-read-only-album-permission-inventory.md`
+- Add separate read-only, keyset-paginated album and permission inventories
+  behind the existing admin Access boundary.
+- Exclude PhotoPrism identifiers, transform settings, passwords, sessions, R2
+  data, joins, and every mutation operation.
+
 The second Level 3 implementation handoff is reviewed and complete:
 
 - DONE: read-only, keyset-paginated `GET /admin/users` inventory behind the
