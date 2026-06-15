@@ -1,5 +1,16 @@
 # Autonomy Contract
 
+## Workflow Scope
+
+This document defines available project authority and human-approval
+boundaries. It does not assign every permitted action to every agent.
+
+- Codex decides scope, creates handoffs, reviews results, and decides delivery.
+- Claude Code implements and verifies the active handoff.
+- Claude Code may commit, push, deploy, mutate production, or archive a handoff
+  only when the active handoff explicitly authorizes that action.
+- Human approval requirements in this document always apply.
+
 ## Approved Defaults
 
 Fable may adopt and implement these without asking:

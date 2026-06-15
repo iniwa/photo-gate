@@ -2,8 +2,8 @@
 
 ## Mission
 
-Autonomously complete `photo-gate` into a secure, deployable, and operable
-private photo-sharing gateway while preserving all architecture, privacy, and
+Complete `photo-gate` as a secure, deployable, and operable private
+photo-sharing gateway while preserving all architecture, privacy, and
 data-safety invariants.
 
 Continue from the current repository state. Do not restart or replace working
@@ -24,60 +24,41 @@ When instructions conflict, use this order:
 7. Historical `photo-gate-design.md` and archived handoffs.
 
 Specific implementation constraints in an active handoff apply to its task.
-The lifecycle authorization in this file supersedes old handoff boilerplate
-that says not to commit, push, deploy, or archive automatically.
+Permissions in this file and `docs/fable/autonomy-contract.md` define what may
+be authorized; they do not implicitly authorize Claude Code to commit, push,
+deploy, mutate production, or archive a handoff.
 
-## Required Startup Sequence
+## Codex Planning Sequence
 
-1. Read `AGENTS.md`, this file, and all files under `docs/fable/`.
+1. Read `AGENTS.md`, this file, relevant files under `docs/fable/`, and
+   `docs/operations/operator-actions.md`.
 2. Inspect Git status and do not discard existing changes.
 3. Inspect the active handoff, if present.
 4. Verify that `docs/fable/current-state.md` still matches the code.
-5. Select the highest-priority unblocked work:
-   - active handoff first;
-   - then the next incomplete roadmap item for the current completion level.
-6. Record the selected task and acceptance criteria in
-   `docs/fable/progress.md`.
+5. Review completed Claude Code work before selecting new work.
+6. Select and scope the highest-priority unblocked task.
+7. Create a concrete active handoff under `docs/handoffs/` for Claude Code.
 
-## Autonomous Work Loop
+## Codex And Claude Code Work Loop
 
 For each task:
 
-1. Inspect relevant code, tests, decisions, and contracts.
-2. Make the smallest coherent implementation plan.
-3. Implement with focused tests.
-4. Run component verification.
-5. Self-review for security, regressions, missing tests, and documentation drift.
-6. Fix findings and rerun verification.
-7. Update decisions and Fable state documents when behavior or status changes.
-8. Commit one logical change.
-9. If an active handoff is complete, archive it in a separate commit.
-10. Push to the canonical Gitea remote when configured and credentials exist.
-11. Observe mirrored GitHub CI and permitted deployment results.
-12. Repair failures before selecting new feature work.
-13. Repeat until the current completion level is achieved or a stop condition
-    is reached.
+1. Codex inspects relevant code, tests, decisions, contracts, and project state.
+2. Codex writes a scoped handoff with acceptance criteria, allowed files,
+   constraints, non-goals, and verification.
+3. Claude Code implements only the handoff, runs verification, self-reviews,
+   and reports results and questions.
+4. Codex reviews the report and diff for security, regressions, missing tests,
+   documentation drift, and scope compliance.
+5. Claude Code performs requested corrections through the same handoff, or
+   Codex creates a follow-up handoff when scope changes.
+6. Codex decides completion, updates durable project state, commits and
+   delivers when appropriate, and archives the reviewed handoff.
+7. CI and permitted deployment failures are repaired before unrelated feature
+   work is selected.
 
-## Model And Subagent Delegation
-
-The main session runs Fable 5. Conserve its tokens for high-leverage work:
-
-- The main session owns design, task decomposition, specification writing,
-  security audit, review, verification judgment, and commit decisions.
-- Delegate routine implementation and test writing to Opus or Sonnet
-  subagents, giving each a precise, self-contained specification that includes
-  the relevant security invariants and file boundaries.
-- Especially difficult, security-critical, or ambiguous implementation may be
-  done directly in the main session.
-- Review every subagent change in the main session against the specification
-  and the security invariants before commit. The main session remains fully
-  responsible for the result; subagent output is never trusted unreviewed.
-
-## Delivery Authorization
-
-Pushing verified commits on `main` to the canonical Gitea remote is explicitly
-authorized and should happen automatically after each committed work unit
-(human instruction, 2026-06-11).
+Small, documentation-only, or design-sensitive changes may be completed
+directly by Codex when a separate implementation handoff would add no value.
 
 ## Completion Target
 
@@ -103,8 +84,9 @@ Default decision principles:
 - versioned, observable, and rollback-capable delivery;
 - reuse existing architecture before adding dependencies.
 
-Use the approved defaults in `docs/fable/autonomy-contract.md`. Do not stop just
-because multiple reasonable implementation options exist.
+Use the approved defaults in `docs/fable/autonomy-contract.md`. Codex should not
+stop just because multiple reasonable implementation options exist. Claude Code
+must return design ambiguity to Codex instead of silently changing the handoff.
 
 ## Progress Persistence
 
@@ -134,6 +116,6 @@ Stop and request human action only when required by
 - the same blocking problem remains after three repair attempts;
 - a paid external service or material recurring cost must be introduced.
 
-When stopping, leave the repository verified and commit all safe completed work.
-Document the exact blocker, evidence, attempted repairs, and requested human
-action in `docs/fable/progress.md`.
+When stopping, leave the repository in a reviewable state. Document the exact
+blocker, evidence, attempted repairs, and requested human action in the Claude
+Code report and, when appropriate, `docs/fable/progress.md`.

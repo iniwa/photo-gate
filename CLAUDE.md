@@ -2,39 +2,56 @@
 
 ## Purpose
 
-This repository is prepared for long-running autonomous implementation with
-Claude Code / Fable.
+This file defines Claude Code execution rules for `photo-gate`.
 
-Start with `FABLE.md`. It defines the execution loop, authority, stop
-conditions, completion levels, and document precedence.
+The normal workflow is that Codex creates a scoped handoff under
+`docs/handoffs/`, then Claude Code implements and verifies that handoff. Treat
+`AGENTS.md` as the Codex-side source of design intent, handoff rules, and review
+criteria.
 
 ## Required Reading
 
 Before editing:
 
-1. `FABLE.md`
-2. `AGENTS.md`
-3. `docs/fable/project-context.md`
-4. `docs/fable/current-state.md`
-5. `docs/fable/roadmap.md`
-6. `docs/fable/progress.md`
-7. Any active handoff directly under `docs/handoffs/`
+1. `AGENTS.md`
+2. `CLAUDE.md`
+3. The active handoff directly under `docs/handoffs/`
+4. The files and decisions named by that handoff
 
-Read relevant decisions and archived handoffs only as needed.
+Read `FABLE.md`, relevant `docs/fable/` state, and
+`docs/operations/operator-actions.md` when the handoff requires broader project
+or operational context. Archived handoffs and `photo-gate-design.md` are
+historical references only.
 
-## Working Mode
+If no active handoff exists, or multiple active handoffs make the task
+ambiguous, stop and ask Codex before editing.
 
-- Continue autonomously until a stop condition in
-  `docs/fable/autonomy-contract.md` is reached.
-- Choose the highest-priority unblocked roadmap item.
-- Prefer completing the active handoff first.
-- Record meaningful design choices in `docs/decisions/`.
-- Keep `docs/fable/current-state.md`, `docs/fable/roadmap.md`, and
-  `docs/fable/progress.md` current.
-- Implement, test, self-review, commit, push, observe CI/deployment, and repair
-  failures before moving to the next task.
-- Respond in Japanese when communicating with the user. Code and durable agent
-  documentation should use clear English and ASCII by default.
+## Execution Rules
+
+- Implement only the active handoff's goal and acceptance criteria.
+- Stay within `Files To Edit`. If another file must change, stop and explain why
+  before editing it.
+- Preserve the handoff's constraints and non-goals.
+- Prefer existing patterns and the smallest coherent change.
+- Run the requested verification and any narrowly necessary checks discovered
+  during implementation.
+- Self-review for security regressions, missing failure paths, unrelated
+  changes, and documentation drift.
+- Do not independently select roadmap work or continue into a follow-up task.
+- Do not commit, push, deploy, mutate production, rotate credentials, or
+  archive the handoff unless the active handoff explicitly authorizes it.
+- Respond in Japanese when communicating with the user. Use clear English and
+  ASCII for code and durable agent documentation by default.
+
+Stop and report to Codex when:
+
+- the handoff is ambiguous or conflicts with `AGENTS.md` or a security invariant;
+- implementation requires files or behavior outside the handoff;
+- a documented architecture or responsibility boundary must change;
+- secrets, credentials, local configuration, or a human-approved operation are
+  required;
+- a possible production, security, privacy, or data-integrity incident is found;
+- the same blocking problem remains after three repair attempts.
 
 ## Safety Summary
 
@@ -43,16 +60,28 @@ Read relevant decisions and archived handoffs only as needed.
   membership.
 - Never perform destructive migration, persistent-data deletion, R2 deletion,
   resource deletion, or public-access changes without human approval.
-- When authentication or authorization is uncertain, fail closed.
-- Stop after three failed repair attempts for the same blocking problem.
-
-## Delivery Summary
-
-- Gitea is the canonical repository; GitHub is the mirror and CI/CD platform.
-- Commit and push verified changes without asking when credentials already
-  exist.
-- Docker: build and publish versioned multi-arch images; update only the
-  existing human-created Portainer stack through its dedicated update path.
-- Workers: deployment is allowed after required initial human login; additive
-  D1 migrations are allowed; destructive migrations are not.
 - Never print, generate into tracked files, or commit secret values.
+- When authentication, authorization, object membership, or data integrity is
+  uncertain, fail closed.
+
+## Environment
+
+- Working repository: `D:/Git/photo-gate` on Windows 11 Home Sub PC.
+- Workers: Node.js 22, TypeScript, Hono, D1, and private R2.
+- Docker sync: Python 3.12; runtime target Raspberry Pi 4 (`linux/arm64`).
+- Gitea is canonical; GitHub is the mirror and CI/CD platform.
+- Portainer manages the existing Docker stack.
+
+Do not assume that permission to edit code also grants permission to operate
+Cloudflare, Portainer, Gitea, GitHub, PhotoPrism, NAS, or production data.
+
+## Expected Report
+
+At completion or when blocked, report:
+
+- changed files;
+- concise implementation summary;
+- verification commands and results;
+- skipped or blocked checks with exact reasons;
+- unexpected findings or out-of-scope changes;
+- design or follow-up questions for Codex.
