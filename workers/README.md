@@ -28,6 +28,8 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 | Image delivery | `GET /img/:albumId/{cover,thumb/:photoId,preview/:photoId}` | D1 + R2 |
 | Admin surface | `GET /admin` | Cloudflare Access JWT + email allowlist |
 | Admin user inventory | `GET /admin/users` | D1 (read-only; no `password_hash`) |
+| Admin album inventory | `GET /admin/albums` | D1 (read-only; no `photoprism_album_uid`, transform settings, or `strip_exif`) |
+| Admin permission inventory | `GET /admin/permissions` | D1 (read-only; no JOIN; no `password_hash`, `display_name`, or `title`) |
 | Everything else under `/api`, `/img` | always `401` | — |
 | `/admin/*` (non-GET or unknown path) | authenticated `404` (behind Access guard) | — |
 
@@ -215,15 +217,47 @@ removed from the reserved-401 set; only `/api` and `/img` remain there.
 
 | Route | Auth result | Response |
 |---|---|---|
-| `GET /admin` | Verified + allowlisted | `200` minimal SSR page (heading 「管理コンソール」; link to `/admin/users`) |
+| `GET /admin` | Verified + allowlisted | `200` minimal SSR page (heading 「管理コンソール」; links to `/admin/users`, `/admin/albums`, `/admin/permissions`) |
 | `GET /admin` | Any failure | `403 Forbidden` (generic, no-store) |
 | `GET /admin/users` | Verified + allowlisted | `200` read-only user inventory (keyset-paginated; no `password_hash`) |
 | `GET /admin/users?after=<id>` | Verified + allowlisted | `200` next page; `400` on invalid/repeated cursor |
 | `GET /admin/users` | Any failure | `403 Forbidden` (generic, no-store) |
+| `GET /admin/albums` | Verified + allowlisted | `200` read-only album inventory (keyset-paginated; forbidden columns absent) |
+| `GET /admin/albums?after=<id>` | Verified + allowlisted | `200` next page; `400` on invalid/repeated cursor |
+| `GET /admin/albums` | Any failure | `403 Forbidden` (generic, no-store) |
+| `GET /admin/permissions` | Verified + allowlisted | `200` read-only permission inventory (composite keyset-paginated; no JOIN) |
+| `GET /admin/permissions?after_album=<a>&after_user=<u>` | Verified + allowlisted | `200` next page; `400` on incomplete/invalid/repeated cursor params |
+| `GET /admin/permissions` | Any failure | `403 Forbidden` (generic, no-store) |
 | Any other method or `/admin/*` path | Verified + allowlisted | `404 Not Found` (generic, no-store) |
 | Any other method or `/admin/*` path | Any failure | `403 Forbidden` (generic, no-store) |
 
-The `GET /admin` and `GET /admin/users` pages contain **no** `password_hash`, session,
+### Admin album inventory — approved columns
+
+`GET /admin/albums` selects **7 explicit columns** from the `albums` table. The following are **never** selected, returned, rendered, logged, or exposed:
+
+| Forbidden column | Reason |
+|---|---|
+| `photoprism_album_uid` | PhotoPrism internal identifier — must never be surfaced |
+| `thumb_long_edge`, `thumb_format`, `thumb_quality` | Internal transform settings |
+| `preview_long_edge`, `preview_format`, `preview_quality` | Internal transform settings |
+| `strip_exif` | Internal transform setting |
+
+Approved columns: `id`, `title`, `enabled`, `expires_at`, `download_enabled`, `created_at`, `updated_at`.
+
+### Admin permission inventory — approved columns
+
+`GET /admin/permissions` selects **3 explicit columns** from `album_permissions` only. There is **no JOIN** to `users` or `albums`. The following are **never** selected, returned, rendered, logged, or exposed:
+
+| Forbidden data | Reason |
+|---|---|
+| `password_hash` | User credential — must never be surfaced |
+| `display_name` | User PII — not needed for the permission inventory |
+| `title` (album) | Not joined — no album metadata is included |
+| `photoprism_album_uid` | PhotoPrism internal identifier — must never be surfaced |
+
+Approved columns: `album_id`, `user_id`, `created_at`.
+
+The `GET /admin` page and all inventory pages contain **no** `password_hash`, session,
 PhotoPrism, R2, NAS, or private metadata. The Access administrator email is never
 displayed or logged. All responses under `/admin` use `Cache-Control: no-store`.
 
@@ -731,3 +765,5 @@ route uses them yet.
 - PhotoPrism: no API calls
 - Admin authentication boundary: implemented (`/admin` is now Cloudflare Access-gated with Worker-side JWT validation and email allowlist). The Cloudflare Access application, the three Worker config values (`CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, `ADMIN_EMAILS`), and deployment are **not yet done** — `/admin` fails closed with `403` for everyone until those are configured by a human operator (see `docs/operations/admin-access.md`)
 - Admin user inventory: implemented (`GET /admin/users`). Reads the D1 `users` table with 7 explicit columns; `password_hash` is never selected, returned, rendered, logged, or exposed. Keyset-paginated (50 per page). Requires a real `DB` binding to function; without one, D1 calls fail closed with `500`.
+- Admin album inventory: implemented (`GET /admin/albums`). Reads 7 explicit columns from the D1 `albums` table; `photoprism_album_uid`, all transform settings, and `strip_exif` are never selected, returned, rendered, logged, or exposed. Keyset-paginated (50 per page). Requires a real `DB` binding; without one, D1 calls fail closed with `500`.
+- Admin permission inventory: implemented (`GET /admin/permissions`). Reads 3 explicit columns from `album_permissions` only; no JOIN to `users` or `albums`; `password_hash`, `display_name`, `title`, and `photoprism_album_uid` are never selected, returned, rendered, logged, or exposed. Composite keyset-paginated (50 per page, `?after_album=<a>&after_user=<u>`). Requires a real `DB` binding; without one, D1 calls fail closed with `500`.
