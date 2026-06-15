@@ -23,9 +23,12 @@ The first Level 3 implementation handoff is reviewed and complete:
 - DONE: `/admin` Worker-side Cloudflare Access JWT verification, strict
   `*.cloudflareaccess.com` JWKS origin validation, admin email allowlist,
   minimal protected SSR page, fail-closed tests, and operator documentation.
-- PENDING HUMAN/DELIVERY: create the path-scoped Cloudflare Access application,
-  register `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, and `ADMIN_EMAILS`, deploy,
-  and perform the documented production smoke checks.
+- DONE: commit `e72de73` passed workers-ci and deployed the admin boundary plus
+  user inventory; production `/admin` and `/admin/users` both return the
+  expected fail-closed 403 with `Cache-Control: no-store`.
+- PENDING HUMAN: create the path-scoped Cloudflare Access application, register
+  `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, and `ADMIN_EMAILS`, and perform the
+  documented authenticated production smoke checks.
 - Admin CRUD, sync operations, audit UI, and cleanup remain unimplemented.
 
 Recent Level 2 execution:
@@ -86,7 +89,8 @@ procedures.
   Workers CI gates production dependencies with `npm audit --omit=dev`; the
   Wrangler dev-only advisories remain explicitly tracked until upstream adopts
   the fixed esbuild release.
-  Live remains version `131a0632`.
+  Live includes CI-deployed commit `e72de73`; unauthenticated admin smoke checks
+  return the expected 403/no-store while Access configuration is absent.
 - Docker: sync `0.2.1` reports 183 tests green and is published multi-arch;
   the targeted daemon regression suite independently passed 19 tests on
   Windows (2026-06-15). Production Pi remains on `0.2.0` pending the
@@ -130,7 +134,7 @@ action list and full status snapshot.
 
 ## Next Priority
 
-Complete the operator's sync `0.2.1` Portainer update and configure/deploy the
-new `/admin` Access boundary. The next local implementation priority is a
-similarly read-only admin album/permission inventory. Complete Level 2 rollback
+Complete the operator's sync `0.2.1` Portainer update and configure the deployed
+`/admin` Access boundary. The next local implementation priority is a similarly
+read-only admin album/permission inventory. Complete Level 2 rollback
 verification when production access and token scope permit.

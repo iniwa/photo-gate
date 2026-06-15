@@ -12,7 +12,7 @@ thumbnail grid, and preview display (2026-06-12).
 ## Production Topology
 
 - Workers viewer: https://photo-gate.iniwaiwana.workers.dev
-  (manual deploy version `131a0632`; cron 18:00 UTC session cleanup).
+  (CI-deployed commit `e72de73`; cron 18:00 UTC session cleanup).
 - D1 `photo-gate` (APAC, id `de77cb73-497a-4a41-bd1c-151fd907be3f`),
   2 migrations applied. One user, one album, one permission row (real
   identifiers live only in D1/Portainer, never in the repo).
@@ -60,10 +60,10 @@ thumbnail grid, and preview display (2026-06-12).
   version rollback remains blocked on optional local token scope; Docker
   rollback requires an intentional production stack operation.
 - Level 3: `/admin` Worker-side Cloudflare Access JWT validation plus admin
-  email allowlist is implemented and locally verified. The operator must create
-  the path-scoped Access application, register the three Worker values, and
-  deploy before the production admin surface is protected and usable. A
-  read-only, keyset-paginated user inventory is also implemented locally;
+  email allowlist and the read-only, keyset-paginated user inventory are
+  deployed. The operator must create the path-scoped Access application and
+  register the three Worker values before the production admin surface is
+  usable; until then `/admin` and `/admin/users` fail closed with 403. User
   mutation operations, album/permission administration, dry-run cleanup, and
   final hardening remain unimplemented.
 
@@ -72,7 +72,8 @@ thumbnail grid, and preview display (2026-06-12).
 - Workers: 894 tests / 24 files, lint, typecheck, build, audit green
   in the last production baseline (2026-06-12). The reviewed `/admin`
   authentication foundation and read-only user inventory pass lint, typecheck,
-  build, and 1029 tests / 27 files locally (2026-06-15); deployment is pending.
+  build, and 1029 tests / 27 files locally and in CI (2026-06-15). Production
+  smoke confirms both admin routes fail closed with 403/no-store without config.
 - Docker: 183 tests reported green for sync `0.2.1`; the targeted daemon
   regression suite independently passed 19 tests on Windows (2026-06-15).
 - Live security posture verified 2026-06-11/12: unauthenticated pages
