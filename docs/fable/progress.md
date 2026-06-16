@@ -38,6 +38,10 @@ The first Level 3 implementation handoff is reviewed and complete:
 - DONE: commit `e72de73` passed workers-ci and deployed the admin boundary plus
   user inventory; production `/admin` and `/admin/users` both return the
   expected fail-closed 403 with `Cache-Control: no-store`.
+- DONE: commit `127c887` passed workers-ci and deployed the read-only album and
+  permission inventories; production `/admin/albums` and `/admin/permissions`
+  both return the expected fail-closed 403 with `Cache-Control: no-store` while
+  Access configuration is absent.
 - PENDING HUMAN: create the path-scoped Cloudflare Access application, register
   `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, and `ADMIN_EMAILS`, and perform the
   documented authenticated production smoke checks.
@@ -102,7 +106,7 @@ procedures.
   dependency audit with `npm audit --omit=dev --audit-level=high` reports 0
   vulnerabilities. Workers CI gates production dependencies only until upstream
   Wrangler/Miniflare adopt fixed transitive releases.
-  Live includes CI-deployed commit `e72de73`; unauthenticated admin smoke checks
+  Live includes CI-deployed commit `127c887`; unauthenticated admin smoke checks
   return the expected 403/no-store while Access configuration is absent.
 - Docker: sync `0.2.1` reports 183 tests green and is published multi-arch;
   the targeted daemon regression suite independently passed 19 tests on

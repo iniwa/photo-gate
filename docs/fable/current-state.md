@@ -12,7 +12,7 @@ thumbnail grid, and preview display (2026-06-12).
 ## Production Topology
 
 - Workers viewer: https://photo-gate.iniwaiwana.workers.dev
-  (CI-deployed commit `e72de73`; cron 18:00 UTC session cleanup).
+  (CI-deployed commit `127c887`; cron 18:00 UTC session cleanup).
 - D1 `photo-gate` (APAC, id `de77cb73-497a-4a41-bd1c-151fd907be3f`),
   2 migrations applied. One user, one album, one permission row (real
   identifiers live only in D1/Portainer, never in the repo).
@@ -74,10 +74,9 @@ thumbnail grid, and preview display (2026-06-12).
   authentication foundation plus read-only user, album, and permission
   inventories pass lint, typecheck, build, and 1155 tests / 29 files locally
   (2026-06-16). Production audit is clean; full `npm audit` remains blocked by
-  devDependency advisories in Wrangler/Miniflare. Production smoke has confirmed
-  deployed `/admin` and `/admin/users` fail closed with 403/no-store without
-  config; album/permission inventories are not deployed until the new commit
-  reaches Workers CI.
+  devDependency advisories in Wrangler/Miniflare. Workers CI checks and deploy
+  succeeded for commit `127c887`; production smoke confirms `/admin/albums` and
+  `/admin/permissions` fail closed with 403/no-store without config.
 - Docker: 183 tests reported green for sync `0.2.1`; the targeted daemon
   regression suite independently passed 19 tests on Windows (2026-06-15).
 - Live security posture verified 2026-06-11/12: unauthenticated pages
