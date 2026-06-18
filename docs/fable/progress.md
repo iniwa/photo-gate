@@ -11,14 +11,17 @@ Operable.
 
 ## Current Task
 
-The active Level 3 implementation handoff is:
+There is no active implementation handoff.
 
-- `docs/handoffs/2026-06-18-admin-permission-grant-revoke.md`
-- Add the first narrow admin mutation workflow: idempotent permission grant and
-  revoke behind the existing Access guard.
-- Require exact same-origin POSTs, strict URL-encoded form validation, bound D1
-  statements, sanitized no-store failures, and no disclosure of user/album
-  existence.
+The fourth Level 3 implementation handoff is reviewed and complete:
+
+- DONE: idempotent `POST /admin/permissions/grant` and
+  `POST /admin/permissions/revoke` behind the existing Access guard.
+- Both mutations require an exact same-origin POST, strict URL-encoded
+  two-field input, parameterized D1 statements, and sanitized no-store
+  failures without disclosing user or album existence.
+- Codex review fixed the grant clock/serialization failure path so it also
+  returns the fixed no-store 500 response before repository use.
 
 The third Level 3 implementation handoff is reviewed and complete:
 
@@ -106,13 +109,13 @@ procedures.
 
 - Workers: 894 tests / 24 files, lint, typecheck, build, audit green
   in the production baseline (2026-06-12). The reviewed `/admin`
-  authentication foundation plus read-only user, album, and permission
-  inventories pass lint, typecheck, build, and 1155 tests / 29 files locally
-  (2026-06-16). `npm audit` reports four high-severity advisories through
-  devDependencies (`wrangler -> esbuild`, `miniflare -> ws`); production
-  dependency audit with `npm audit --omit=dev --audit-level=high` reports 0
-  vulnerabilities. Workers CI gates production dependencies only until upstream
-  Wrangler/Miniflare adopt fixed transitive releases.
+  authentication foundation, read-only inventories, and permission mutations
+  pass lint, typecheck, build, and 1238 tests / 29 files locally (2026-06-18).
+  `npm audit` reports four advisories (1 low / 3 high) through devDependencies
+  (`wrangler -> esbuild/miniflare -> ws`); production dependency audit with
+  `npm audit --omit=dev --audit-level=high` reports 0 vulnerabilities. Workers
+  CI gates production dependencies only until upstream Wrangler/Miniflare adopt
+  fixed transitive releases.
   Live includes CI-deployed commit `127c887`; unauthenticated admin smoke checks
   return the expected 403/no-store while Access configuration is absent.
 - Docker: sync `0.2.1` reports 183 tests green and is published multi-arch;
@@ -161,5 +164,5 @@ action list and full status snapshot.
 Complete the operator's sync `0.2.1` Portainer update and configure the deployed
 `/admin` Access boundary. Complete Level 2 rollback verification when production
 access and token scope permit. The next local Level 3 implementation priority
-should be selected from the remaining admin roadmap after those operator
-actions are either completed or explicitly deferred.
+should be selected from user or album administration, sync administration, or
+operational audit information.
