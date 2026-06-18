@@ -296,3 +296,280 @@ describe('AdminPermissionRepository.listPermissions error sanitization', () => {
     expect((err as Error).message).not.toContain(sensitiveToken)
   })
 })
+
+// ---------------------------------------------------------------------------
+// grantPermission — SQL structure
+// ---------------------------------------------------------------------------
+
+const GRANT_ALBUM_ID = 'album-grant-001'
+const GRANT_USER_ID = 'user-grant-001'
+const GRANT_CREATED_AT = '2026-06-18T00:00:00.000Z'
+
+async function issueGrant() {
+  const { db, queries } = makeMockDb([{}])
+  await new AdminPermissionRepository(db).grantPermission(GRANT_ALBUM_ID, GRANT_USER_ID, GRANT_CREATED_AT)
+  return queries
+}
+
+describe('AdminPermissionRepository.grantPermission SQL structure', () => {
+  it('SQL contains INSERT INTO album_permissions', async () => {
+    const queries = await issueGrant()
+    expect(queries[0]?.sql).toContain('INSERT INTO album_permissions')
+  })
+
+  it('SQL contains ON CONFLICT(album_id, user_id) DO NOTHING', async () => {
+    const queries = await issueGrant()
+    expect(queries[0]?.sql).toContain('ON CONFLICT(album_id, user_id) DO NOTHING')
+  })
+
+  it('SQL does NOT contain SELECT', async () => {
+    const queries = await issueGrant()
+    expect(queries[0]?.sql).not.toMatch(/\bSELECT\b/i)
+  })
+
+  it('SQL does NOT contain JOIN', async () => {
+    const queries = await issueGrant()
+    expect(queries[0]?.sql).not.toContain(' JOIN ')
+  })
+
+  it('params are exactly [albumId, userId, createdAt] in order', async () => {
+    const queries = await issueGrant()
+    expect(queries[0]?.params).toEqual([GRANT_ALBUM_ID, GRANT_USER_ID, GRANT_CREATED_AT])
+  })
+
+  it('SQL does not contain the literal albumId value', async () => {
+    const queries = await issueGrant()
+    expect(queries[0]?.sql).not.toContain(GRANT_ALBUM_ID)
+  })
+
+  it('SQL does not contain the literal userId value', async () => {
+    const queries = await issueGrant()
+    expect(queries[0]?.sql).not.toContain(GRANT_USER_ID)
+  })
+
+  it('SQL does not contain the literal createdAt value', async () => {
+    const queries = await issueGrant()
+    expect(queries[0]?.sql).not.toContain(GRANT_CREATED_AT)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// grantPermission — success
+// ---------------------------------------------------------------------------
+
+describe('AdminPermissionRepository.grantPermission success', () => {
+  it('default runResult {success:true} → resolves without throw', async () => {
+    const { db } = makeMockDb([{}])
+    await expect(
+      new AdminPermissionRepository(db).grantPermission(GRANT_ALBUM_ID, GRANT_USER_ID, GRANT_CREATED_AT),
+    ).resolves.toBeUndefined()
+  })
+
+  it('re-grant (ON CONFLICT no-op) is also a success', async () => {
+    const { db } = makeMockDb([{}])
+    await expect(
+      new AdminPermissionRepository(db).grantPermission(GRANT_ALBUM_ID, GRANT_USER_ID, GRANT_CREATED_AT),
+    ).resolves.toBeUndefined()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// grantPermission — validation before D1
+// ---------------------------------------------------------------------------
+
+describe('AdminPermissionRepository.grantPermission validation before D1', () => {
+  it('invalid albumId → rejects with database operation failed, D1 not touched', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminPermissionRepository(db).grantPermission('!bad!', GRANT_USER_ID, GRANT_CREATED_AT),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+
+  it('invalid userId → rejects with database operation failed, D1 not touched', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminPermissionRepository(db).grantPermission(GRANT_ALBUM_ID, '!bad!', GRANT_CREATED_AT),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+
+  it('non-canonical createdAt → rejects with database operation failed, D1 not touched', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminPermissionRepository(db).grantPermission(GRANT_ALBUM_ID, GRANT_USER_ID, '2026-06-15'),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// grantPermission — error sanitization
+// ---------------------------------------------------------------------------
+
+describe('AdminPermissionRepository.grantPermission error sanitization', () => {
+  it('run() throws → rejects with database operation failed', async () => {
+    const { db } = makeMockDb([{ throws: new Error('secret-token-grant-xyz') }])
+    await expect(
+      new AdminPermissionRepository(db).grantPermission(GRANT_ALBUM_ID, GRANT_USER_ID, GRANT_CREATED_AT),
+    ).rejects.toThrow('database operation failed')
+  })
+
+  it('run() throws → error message does not contain the sensitive token', async () => {
+    const sensitiveToken = 'secret-token-grant-xyz'
+    const { db } = makeMockDb([{ throws: new Error(sensitiveToken) }])
+    const err = await new AdminPermissionRepository(db)
+      .grantPermission(GRANT_ALBUM_ID, GRANT_USER_ID, GRANT_CREATED_AT)
+      .catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(Error)
+    expect((err as Error).message).not.toContain(sensitiveToken)
+  })
+
+  it('runResult {success:false} → rejects with database operation failed', async () => {
+    const { db } = makeMockDb([{ runResult: { success: false } }])
+    await expect(
+      new AdminPermissionRepository(db).grantPermission(GRANT_ALBUM_ID, GRANT_USER_ID, GRANT_CREATED_AT),
+    ).rejects.toThrow('database operation failed')
+  })
+
+  it('runResult null → rejects with database operation failed', async () => {
+    const { db } = makeMockDb([{ runResult: null }])
+    await expect(
+      new AdminPermissionRepository(db).grantPermission(GRANT_ALBUM_ID, GRANT_USER_ID, GRANT_CREATED_AT),
+    ).rejects.toThrow('database operation failed')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// revokePermission — SQL structure
+// ---------------------------------------------------------------------------
+
+const REVOKE_ALBUM_ID = 'album-revoke-001'
+const REVOKE_USER_ID = 'user-revoke-001'
+
+async function issueRevoke() {
+  const { db, queries } = makeMockDb([{}])
+  await new AdminPermissionRepository(db).revokePermission(REVOKE_ALBUM_ID, REVOKE_USER_ID)
+  return queries
+}
+
+describe('AdminPermissionRepository.revokePermission SQL structure', () => {
+  it('SQL contains DELETE FROM album_permissions', async () => {
+    const queries = await issueRevoke()
+    expect(queries[0]?.sql).toContain('DELETE FROM album_permissions')
+  })
+
+  it('SQL contains WHERE album_id = ? AND user_id = ?', async () => {
+    const queries = await issueRevoke()
+    expect(queries[0]?.sql).toContain('WHERE album_id = ? AND user_id = ?')
+  })
+
+  it('SQL does NOT contain SELECT', async () => {
+    const queries = await issueRevoke()
+    expect(queries[0]?.sql).not.toMatch(/\bSELECT\b/i)
+  })
+
+  it('SQL does NOT contain JOIN', async () => {
+    const queries = await issueRevoke()
+    expect(queries[0]?.sql).not.toContain(' JOIN ')
+  })
+
+  it('SQL does NOT contain INSERT', async () => {
+    const queries = await issueRevoke()
+    expect(queries[0]?.sql).not.toMatch(/\bINSERT\b/i)
+  })
+
+  it('params are exactly [albumId, userId]', async () => {
+    const queries = await issueRevoke()
+    expect(queries[0]?.params).toEqual([REVOKE_ALBUM_ID, REVOKE_USER_ID])
+  })
+
+  it('SQL does not contain the literal albumId value', async () => {
+    const queries = await issueRevoke()
+    expect(queries[0]?.sql).not.toContain(REVOKE_ALBUM_ID)
+  })
+
+  it('SQL does not contain the literal userId value', async () => {
+    const queries = await issueRevoke()
+    expect(queries[0]?.sql).not.toContain(REVOKE_USER_ID)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// revokePermission — success
+// ---------------------------------------------------------------------------
+
+describe('AdminPermissionRepository.revokePermission success', () => {
+  it('default runResult {success:true} → resolves without throw', async () => {
+    const { db } = makeMockDb([{}])
+    await expect(
+      new AdminPermissionRepository(db).revokePermission(REVOKE_ALBUM_ID, REVOKE_USER_ID),
+    ).resolves.toBeUndefined()
+  })
+
+  it('revoking an absent pair is also a success (idempotent)', async () => {
+    const { db } = makeMockDb([{}])
+    await expect(
+      new AdminPermissionRepository(db).revokePermission(REVOKE_ALBUM_ID, REVOKE_USER_ID),
+    ).resolves.toBeUndefined()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// revokePermission — validation before D1
+// ---------------------------------------------------------------------------
+
+describe('AdminPermissionRepository.revokePermission validation before D1', () => {
+  it('invalid albumId → rejects with database operation failed, D1 not touched', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminPermissionRepository(db).revokePermission('!bad!', REVOKE_USER_ID),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+
+  it('invalid userId → rejects with database operation failed, D1 not touched', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminPermissionRepository(db).revokePermission(REVOKE_ALBUM_ID, '!bad!'),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// revokePermission — error sanitization
+// ---------------------------------------------------------------------------
+
+describe('AdminPermissionRepository.revokePermission error sanitization', () => {
+  it('run() throws → rejects with database operation failed', async () => {
+    const { db } = makeMockDb([{ throws: new Error('secret-token-revoke-xyz') }])
+    await expect(
+      new AdminPermissionRepository(db).revokePermission(REVOKE_ALBUM_ID, REVOKE_USER_ID),
+    ).rejects.toThrow('database operation failed')
+  })
+
+  it('run() throws → error message does not contain the sensitive token', async () => {
+    const sensitiveToken = 'secret-token-revoke-xyz'
+    const { db } = makeMockDb([{ throws: new Error(sensitiveToken) }])
+    const err = await new AdminPermissionRepository(db)
+      .revokePermission(REVOKE_ALBUM_ID, REVOKE_USER_ID)
+      .catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(Error)
+    expect((err as Error).message).not.toContain(sensitiveToken)
+  })
+
+  it('runResult {success:false} → rejects with database operation failed', async () => {
+    const { db } = makeMockDb([{ runResult: { success: false } }])
+    await expect(
+      new AdminPermissionRepository(db).revokePermission(REVOKE_ALBUM_ID, REVOKE_USER_ID),
+    ).rejects.toThrow('database operation failed')
+  })
+
+  it('runResult null → rejects with database operation failed', async () => {
+    const { db } = makeMockDb([{ runResult: null }])
+    await expect(
+      new AdminPermissionRepository(db).revokePermission(REVOKE_ALBUM_ID, REVOKE_USER_ID),
+    ).rejects.toThrow('database operation failed')
+  })
+})

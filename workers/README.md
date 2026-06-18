@@ -30,6 +30,8 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 | Admin user inventory | `GET /admin/users` | D1 (read-only; no `password_hash`) |
 | Admin album inventory | `GET /admin/albums` | D1 (read-only; no `photoprism_album_uid`, transform settings, or `strip_exif`) |
 | Admin permission inventory | `GET /admin/permissions` | D1 (read-only; no JOIN; no `password_hash`, `display_name`, or `title`) |
+| Admin permission grant | `POST /admin/permissions/grant` | D1 (insert; idempotent ON CONFLICT DO NOTHING) |
+| Admin permission revoke | `POST /admin/permissions/revoke` | D1 (delete; idempotent on absent pair) |
 | Everything else under `/api`, `/img` | always `401` | — |
 | `/admin/*` (non-GET or unknown path) | authenticated `404` (behind Access guard) | — |
 
@@ -228,6 +230,16 @@ removed from the reserved-401 set; only `/api` and `/img` remain there.
 | `GET /admin/permissions` | Verified + allowlisted | `200` read-only permission inventory (composite keyset-paginated; no JOIN) |
 | `GET /admin/permissions?after_album=<a>&after_user=<u>` | Verified + allowlisted | `200` next page; `400` on incomplete/invalid/repeated cursor params |
 | `GET /admin/permissions` | Any failure | `403 Forbidden` (generic, no-store) |
+| `POST /admin/permissions/grant` | Verified + allowlisted + same-origin + form body | `303` to `/admin/permissions` (idempotent grant) |
+| `POST /admin/permissions/grant` | Any auth failure | `403 Forbidden` (generic, no-store) |
+| `POST /admin/permissions/grant` | Missing/mismatched Origin | `403 Forbidden` (same-origin check) |
+| `POST /admin/permissions/grant` | Wrong Content-Type | `400 Bad Request` (no-store) |
+| `POST /admin/permissions/grant` | Invalid/missing/extra/repeated fields | `400 Bad Request` (no-store) |
+| `POST /admin/permissions/revoke` | Verified + allowlisted + same-origin + form body | `303` to `/admin/permissions` (idempotent revoke) |
+| `POST /admin/permissions/revoke` | Any auth failure | `403 Forbidden` (generic, no-store) |
+| `POST /admin/permissions/revoke` | Missing/mismatched Origin | `403 Forbidden` (same-origin check) |
+| `POST /admin/permissions/revoke` | Wrong Content-Type | `400 Bad Request` (no-store) |
+| `POST /admin/permissions/revoke` | Invalid/missing/extra/repeated fields | `400 Bad Request` (no-store) |
 | Any other method or `/admin/*` path | Verified + allowlisted | `404 Not Found` (generic, no-store) |
 | Any other method or `/admin/*` path | Any failure | `403 Forbidden` (generic, no-store) |
 
@@ -767,3 +779,4 @@ route uses them yet.
 - Admin user inventory: implemented (`GET /admin/users`). Reads the D1 `users` table with 7 explicit columns; `password_hash` is never selected, returned, rendered, logged, or exposed. Keyset-paginated (50 per page). Requires a real `DB` binding to function; without one, D1 calls fail closed with `500`.
 - Admin album inventory: implemented (`GET /admin/albums`). Reads 7 explicit columns from the D1 `albums` table; `photoprism_album_uid`, all transform settings, and `strip_exif` are never selected, returned, rendered, logged, or exposed. Keyset-paginated (50 per page). Requires a real `DB` binding; without one, D1 calls fail closed with `500`.
 - Admin permission inventory: implemented (`GET /admin/permissions`). Reads 3 explicit columns from `album_permissions` only; no JOIN to `users` or `albums`; `password_hash`, `display_name`, `title`, and `photoprism_album_uid` are never selected, returned, rendered, logged, or exposed. Composite keyset-paginated (50 per page, `?after_album=<a>&after_user=<u>`). Requires a real `DB` binding; without one, D1 calls fail closed with `500`.
+- Admin permission mutations: implemented (`POST /admin/permissions/grant`, `POST /admin/permissions/revoke`). Strict same-origin, exact form Content-Type, two-field validated body. Idempotent: re-granting is a no-op (ON CONFLICT DO NOTHING); revoking an absent pair is a no-op (zero rows deleted). Both require a real `DB` binding; without one, D1 calls fail closed with `500`.

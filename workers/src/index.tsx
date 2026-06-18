@@ -70,6 +70,7 @@ app.route('/admin', createAdminRoutes(resolveAdminAuth, (env) => ({
   userRepo: new AdminUserRepository(env.DB),
   albumRepo: new AdminAlbumRepository(env.DB),
   permissionRepo: new AdminPermissionRepository(env.DB),
+  clock: () => new Date(),
 })))
 
 // Reserved routes fail closed with 401 regardless of auth state.

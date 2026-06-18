@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import type { MiddlewareHandler } from 'hono'
+import type { Context, MiddlewareHandler } from 'hono'
 import type { Env } from '../types/env.js'
 import type { AdminAuthConfig } from '../types/admin-auth.js'
 import type { AdminUserPage } from '../types/admin-user.js'
@@ -7,14 +7,72 @@ import type { AdminAlbumPage } from '../types/admin-album.js'
 import type { AdminPermissionPage } from '../types/admin-permission.js'
 import { Layout } from '../templates/layout.js'
 import { requireAdmin } from '../middleware/require-admin.js'
+import { forbiddenResponse } from '../middleware/auth-response.js'
 import { isValidId } from '../services/repository-validation.js'
 
 type AdminEnv = { Bindings: Env }
+type AdminContext = Context<AdminEnv>
 
 export interface AdminRouteDeps {
   userRepo: { listUsers(afterUserId?: string): Promise<AdminUserPage> }
   albumRepo: { listAlbums(afterAlbumId?: string): Promise<AdminAlbumPage> }
-  permissionRepo: { listPermissions(after?: { albumId: string; userId: string }): Promise<AdminPermissionPage> }
+  permissionRepo: {
+    listPermissions(after?: { albumId: string; userId: string }): Promise<AdminPermissionPage>
+    grantPermission(albumId: string, userId: string, createdAt: string): Promise<void>
+    revokePermission(albumId: string, userId: string): Promise<void>
+  }
+  clock: () => Date
+}
+
+/**
+ * Strict same-origin guard for admin mutations. Unlike the viewer login (which
+ * tolerates a missing Origin), every admin mutation requires an Origin header
+ * that exactly equals the request URL origin. An absent, literal `null`,
+ * malformed, or mismatched Origin fails closed. The request URL origin is
+ * recomputed per request; nothing is interpolated.
+ */
+function isSameOrigin(c: AdminContext): boolean {
+  const origin = c.req.header('Origin')
+  if (origin === undefined || origin === 'null') return false
+  let requestOrigin: string
+  try {
+    requestOrigin = new URL(c.req.url).origin
+  } catch {
+    return false
+  }
+  return origin === requestOrigin
+}
+
+/** A request body Content-Type that is exactly the URL-encoded form type (optional charset). */
+function isFormContentType(contentType: string | undefined): boolean {
+  if (contentType === undefined) return false
+  const base = contentType.split(';', 1)[0]?.trim().toLowerCase()
+  return base === 'application/x-www-form-urlencoded'
+}
+
+/**
+ * Parse and strictly validate an admin mutation body. Returns the two validated
+ * IDs, or `null` for any ambiguity. Uses `{ all: true }` so a repeated field
+ * arrives as an array and is rejected. Requires exactly two keys, both single
+ * string values named `albumId` and `userId`, each passing the canonical ID
+ * rule. Missing, repeated, file-valued, additional, or invalid fields all yield
+ * `null`. Input is never reflected and no repository or clock is touched here.
+ */
+async function parseMutationFields(
+  c: AdminContext,
+): Promise<{ albumId: string; userId: string } | null> {
+  let body: Record<string, string | File | (string | File)[]>
+  try {
+    body = await c.req.parseBody({ all: true })
+  } catch {
+    return null
+  }
+  if (Object.keys(body).length !== 2) return null
+  const albumId = body['albumId']
+  const userId = body['userId']
+  if (typeof albumId !== 'string' || typeof userId !== 'string') return null
+  if (!isValidId(albumId) || !isValidId(userId)) return null
+  return { albumId, userId }
 }
 
 /**
@@ -140,6 +198,65 @@ export function createAdminRoutes(
 
     c.header('Cache-Control', 'no-store')
     return c.html(<AdminPermissionsPage page={page} />)
+  })
+
+  // First admin mutations. Both POST routes run AFTER the admin guard (mounted
+  // on '*' above), then enforce, in order and before any clock or repository
+  // call: strict same-origin, exact form Content-Type, and an exact two-field
+  // url-encoded body of valid IDs. Each failure class returns a fixed, no-store,
+  // bodyless-or-generic response and never reflects input, reveals a cause, or
+  // discloses whether the album or user exists. Success is 303 to the inventory.
+  admin.post('/permissions/grant', async (c) => {
+    if (!isSameOrigin(c)) return forbiddenResponse(c)
+    if (!isFormContentType(c.req.header('Content-Type'))) {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Bad Request', 400)
+    }
+    const fields = await parseMutationFields(c)
+    if (fields === null) {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Bad Request', 400)
+    }
+
+    try {
+      const deps = depsFromEnv(c.env)
+      // Clock is read only after the request is fully validated. Clock or
+      // timestamp serialization failures use the same fixed response as D1
+      // failures so every admin outcome remains non-cacheable and sanitized.
+      const createdAt = deps.clock().toISOString()
+      await deps.permissionRepo.grantPermission(fields.albumId, fields.userId, createdAt)
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+
+    c.header('Cache-Control', 'no-store')
+    c.header('Location', '/admin/permissions')
+    return c.body(null, 303)
+  })
+
+  admin.post('/permissions/revoke', async (c) => {
+    if (!isSameOrigin(c)) return forbiddenResponse(c)
+    if (!isFormContentType(c.req.header('Content-Type'))) {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Bad Request', 400)
+    }
+    const fields = await parseMutationFields(c)
+    if (fields === null) {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Bad Request', 400)
+    }
+
+    try {
+      await depsFromEnv(c.env).permissionRepo.revokePermission(fields.albumId, fields.userId)
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+
+    c.header('Cache-Control', 'no-store')
+    c.header('Location', '/admin/permissions')
+    return c.body(null, 303)
   })
 
   // Any other method/path under /admin stays behind the guard and returns a
@@ -303,6 +420,18 @@ function AdminPermissionsPage({ page }: { page: AdminPermissionPage }) {
         ← 管理コンソールへ
       </a>
       <h1>権限一覧</h1>
+      <form class="admin-form" method="post" action="/admin/permissions/grant">
+        <h2>権限を付与</h2>
+        <label>
+          アルバムID
+          <input type="text" name="albumId" required />
+        </label>
+        <label>
+          ユーザーID
+          <input type="text" name="userId" required />
+        </label>
+        <button type="submit">付与</button>
+      </form>
       {permissions.length === 0 ? (
         <p class="empty-note">権限がありません</p>
       ) : (
@@ -312,6 +441,7 @@ function AdminPermissionsPage({ page }: { page: AdminPermissionPage }) {
               <th>アルバムID</th>
               <th>ユーザーID</th>
               <th>作成日時</th>
+              <th>操作</th>
             </tr>
           </thead>
           <tbody>
@@ -320,6 +450,13 @@ function AdminPermissionsPage({ page }: { page: AdminPermissionPage }) {
                 <td>{p.album_id}</td>
                 <td>{p.user_id}</td>
                 <td>{p.created_at}</td>
+                <td>
+                  <form method="post" action="/admin/permissions/revoke">
+                    <input type="hidden" name="albumId" value={p.album_id} />
+                    <input type="hidden" name="userId" value={p.user_id} />
+                    <button type="submit">取り消し</button>
+                  </form>
+                </td>
               </tr>
             ))}
           </tbody>

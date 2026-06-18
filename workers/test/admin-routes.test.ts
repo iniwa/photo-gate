@@ -106,30 +106,82 @@ function makeThrowingAlbumRepo(): { listAlbums(): Promise<AdminAlbumPage> } {
   }
 }
 
-function makeEmptyPermissionRepo(): { listPermissions(): Promise<AdminPermissionPage> } {
-  return { listPermissions: async () => ({ permissions: [], hasMore: false }) }
+type PermissionRepo = {
+  listPermissions(after?: { albumId: string; userId: string }): Promise<AdminPermissionPage>
+  grantPermission(albumId: string, userId: string, createdAt: string): Promise<void>
+  revokePermission(albumId: string, userId: string): Promise<void>
+}
+
+function makeEmptyPermissionRepo(): PermissionRepo {
+  return {
+    listPermissions: async () => ({ permissions: [], hasMore: false }),
+    grantPermission: async () => {},
+    revokePermission: async () => {},
+  }
 }
 
 function makePermissionRepo(
   permissions: AdminPermissionSummary[],
   hasMore = false,
-): { listPermissions(): Promise<AdminPermissionPage> } {
-  return { listPermissions: async () => ({ permissions, hasMore }) }
+): PermissionRepo {
+  return {
+    listPermissions: async () => ({ permissions, hasMore }),
+    grantPermission: async () => {},
+    revokePermission: async () => {},
+  }
 }
 
-function makeThrowingPermissionRepo(): { listPermissions(): Promise<AdminPermissionPage> } {
+function makeThrowingPermissionRepo(): PermissionRepo {
   return {
     listPermissions: async () => {
       throw new Error('D1 exploded')
     },
+    grantPermission: async () => {},
+    revokePermission: async () => {},
   }
+}
+
+type MutationPermissionRepo = PermissionRepo & {
+  grantCalls: { albumId: string; userId: string; createdAt: string }[]
+  revokeCalls: { albumId: string; userId: string }[]
+}
+
+function makeMutationPermissionRepo(): MutationPermissionRepo {
+  const grantCalls: { albumId: string; userId: string; createdAt: string }[] = []
+  const revokeCalls: { albumId: string; userId: string }[] = []
+  return {
+    grantCalls,
+    revokeCalls,
+    listPermissions: async () => ({ permissions: [], hasMore: false }),
+    grantPermission: async (albumId, userId, createdAt) => {
+      grantCalls.push({ albumId, userId, createdAt })
+    },
+    revokePermission: async (albumId, userId) => {
+      revokeCalls.push({ albumId, userId })
+    },
+  }
+}
+
+function makeThrowingMutationPermissionRepo(): PermissionRepo {
+  return {
+    listPermissions: async () => ({ permissions: [], hasMore: false }),
+    grantPermission: async () => { throw new Error('D1 exploded') },
+    revokePermission: async () => { throw new Error('D1 exploded') },
+  }
+}
+
+function makeClockSpy() {
+  let callCount = 0
+  const clock = () => { callCount++; return new Date(NOW_TS) }
+  return { clock, getCallCount: () => callCount }
 }
 
 function makeApp(
   resolveAuth: ResolveAuth,
   userRepo?: { listUsers(afterUserId?: string): Promise<AdminUserPage> },
   albumRepo?: { listAlbums(afterAlbumId?: string): Promise<AdminAlbumPage> },
-  permissionRepo?: { listPermissions(after?: { albumId: string; userId: string }): Promise<AdminPermissionPage> },
+  permissionRepo?: PermissionRepo,
+  clock?: () => Date,
 ): Hono {
   const app = new Hono()
   app.route(
@@ -138,6 +190,7 @@ function makeApp(
       userRepo: userRepo ?? makeEmptyUserRepo(),
       albumRepo: albumRepo ?? makeEmptyAlbumRepo(),
       permissionRepo: permissionRepo ?? makeEmptyPermissionRepo(),
+      clock: clock ?? (() => new Date(NOW_TS)),
     })),
   )
   return app
@@ -1071,5 +1124,567 @@ describe('parseAdminAllowlist', () => {
 
   it('contains a non-email entry → null', () => {
     expect(parseAdminAllowlist('a@b.com,notanemail')).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST helpers
+// ---------------------------------------------------------------------------
+
+const VALID_ALBUM_ID = 'album-sample-001'
+const VALID_USER_ID = 'user-sample-001'
+const VALID_FORM_BODY = `albumId=${VALID_ALBUM_ID}&userId=${VALID_USER_ID}`
+const VALID_ORIGIN = 'http://localhost'
+
+function makeValidPostOptions() {
+  return {
+    token: VALID_TOKEN as string | null,
+    origin: VALID_ORIGIN as string | undefined,
+    contentType: 'application/x-www-form-urlencoded' as string | undefined,
+    body: VALID_FORM_BODY as string | undefined,
+  }
+}
+
+async function postAdmin(
+  app: Hono,
+  path: string,
+  options: {
+    token?: string | null
+    origin?: string | undefined
+    contentType?: string | undefined
+    body?: string | undefined
+    extraHeaders?: Record<string, string>
+  } = {},
+): Promise<Response> {
+  const { token = VALID_TOKEN, origin, contentType, body, extraHeaders = {} } = options
+  const headers: Record<string, string> = { ...extraHeaders }
+  if (token !== null) {
+    headers['Cf-Access-Jwt-Assertion'] = token
+  }
+  if (origin !== undefined) {
+    headers['Origin'] = origin
+  }
+  if (contentType !== undefined) {
+    headers['Content-Type'] = contentType
+  }
+  return Promise.resolve(
+    app.request(
+      path,
+      { method: 'POST', headers, body: body ?? null },
+      {} as unknown as Parameters<typeof app.request>[2],
+    ),
+  )
+}
+
+// ---------------------------------------------------------------------------
+// POST /admin/permissions/grant — guard, same-origin, content-type, body
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: POST /admin/permissions/grant guard', () => {
+  it('no token → 403 Forbidden no-store, grant not called', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    const res = await postAdmin(app, '/admin/permissions/grant', {
+      ...makeValidPostOptions(),
+      token: null,
+    })
+    await assertForbidden(res)
+    expect(repo.grantCalls).toHaveLength(0)
+  })
+
+  it('non-allowlisted email → 403, grant not called', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(() => ({
+      verifier: async () => ({ email: 'other@example.com' }),
+      allowlist: new Set([ADMIN_EMAIL]),
+    }), undefined, undefined, repo)
+    const res = await postAdmin(app, '/admin/permissions/grant', makeValidPostOptions())
+    await assertForbidden(res)
+    expect(repo.grantCalls).toHaveLength(0)
+  })
+
+  it('Origin absent → 403, grant not called', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    const res = await postAdmin(app, '/admin/permissions/grant', {
+      ...makeValidPostOptions(),
+      origin: undefined,
+    })
+    await assertForbidden(res)
+    expect(repo.grantCalls).toHaveLength(0)
+  })
+
+  it('Origin = literal "null" → 403, grant not called', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    const res = await postAdmin(app, '/admin/permissions/grant', {
+      ...makeValidPostOptions(),
+      origin: 'null',
+    })
+    await assertForbidden(res)
+    expect(repo.grantCalls).toHaveLength(0)
+  })
+
+  it('Origin mismatched → 403, grant not called', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    const res = await postAdmin(app, '/admin/permissions/grant', {
+      ...makeValidPostOptions(),
+      origin: 'https://evil.example',
+    })
+    await assertForbidden(res)
+    expect(repo.grantCalls).toHaveLength(0)
+  })
+})
+
+describe('admin-routes: POST /admin/permissions/grant content-type validation', () => {
+  it('Content-Type missing → 400 no-store, grant not called', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    const res = await postAdmin(app, '/admin/permissions/grant', {
+      ...makeValidPostOptions(),
+      contentType: undefined,
+    })
+    expect(res.status).toBe(400)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(repo.grantCalls).toHaveLength(0)
+  })
+
+  it('Content-Type application/json → 400, grant not called', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    const res = await postAdmin(app, '/admin/permissions/grant', {
+      ...makeValidPostOptions(),
+      contentType: 'application/json',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.grantCalls).toHaveLength(0)
+  })
+
+  it('Content-Type with charset → accepted (not 400)', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    const res = await postAdmin(app, '/admin/permissions/grant', {
+      ...makeValidPostOptions(),
+      contentType: 'application/x-www-form-urlencoded; charset=utf-8',
+    })
+    expect(res.status).not.toBe(400)
+  })
+})
+
+describe('admin-routes: POST /admin/permissions/grant body validation', () => {
+  it('Body missing albumId → 400, grant not called', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    const res = await postAdmin(app, '/admin/permissions/grant', {
+      ...makeValidPostOptions(),
+      body: 'userId=user-sample-001',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.grantCalls).toHaveLength(0)
+  })
+
+  it('Body missing userId → 400, grant not called', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    const res = await postAdmin(app, '/admin/permissions/grant', {
+      ...makeValidPostOptions(),
+      body: 'albumId=album-sample-001',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.grantCalls).toHaveLength(0)
+  })
+
+  it('Body with extra field → 400, grant not called', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    const res = await postAdmin(app, '/admin/permissions/grant', {
+      ...makeValidPostOptions(),
+      body: 'albumId=album-sample-001&userId=user-sample-001&role=admin',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.grantCalls).toHaveLength(0)
+  })
+
+  it('Body with repeated albumId → 400, grant not called', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    const res = await postAdmin(app, '/admin/permissions/grant', {
+      ...makeValidPostOptions(),
+      body: 'albumId=album-a&albumId=album-b&userId=user-sample-001',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.grantCalls).toHaveLength(0)
+  })
+
+  it('Body with invalid albumId → 400, grant not called', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    const res = await postAdmin(app, '/admin/permissions/grant', {
+      ...makeValidPostOptions(),
+      body: 'albumId=!bad!&userId=user-sample-001',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.grantCalls).toHaveLength(0)
+  })
+
+  it('Clock not called when body is invalid', async () => {
+    const spy = makeClockSpy()
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo, spy.clock)
+    await postAdmin(app, '/admin/permissions/grant', {
+      ...makeValidPostOptions(),
+      body: 'albumId=!bad!&userId=user-sample-001',
+    })
+    expect(spy.getCallCount()).toBe(0)
+  })
+})
+
+describe('admin-routes: POST /admin/permissions/grant success', () => {
+  it('valid grant → 303 with Location /admin/permissions and no-store', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    const res = await postAdmin(app, '/admin/permissions/grant', makeValidPostOptions())
+    expect(res.status).toBe(303)
+    expect(res.headers.get('location')).toBe('/admin/permissions')
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('valid grant → empty body', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    const res = await postAdmin(app, '/admin/permissions/grant', makeValidPostOptions())
+    const body = await res.text()
+    expect(body).toBe('')
+  })
+
+  it('valid grant → grantPermission called once with correct args', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    await postAdmin(app, '/admin/permissions/grant', makeValidPostOptions())
+    expect(repo.grantCalls).toHaveLength(1)
+    expect(repo.grantCalls[0]).toEqual({
+      albumId: VALID_ALBUM_ID,
+      userId: VALID_USER_ID,
+      createdAt: NOW_TS,
+    })
+  })
+
+  it('valid grant → revokePermission NOT called', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    await postAdmin(app, '/admin/permissions/grant', makeValidPostOptions())
+    expect(repo.revokeCalls).toHaveLength(0)
+  })
+
+  it('repo throws → 500 no-store', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, makeThrowingMutationPermissionRepo())
+    const res = await postAdmin(app, '/admin/permissions/grant', makeValidPostOptions())
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('clock throws → fixed 500 no-store without calling repo', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo, () => {
+      throw new Error('clock detail must not escape')
+    })
+    const res = await postAdmin(app, '/admin/permissions/grant', makeValidPostOptions())
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await res.text()).toBe('Internal Server Error')
+    expect(repo.grantCalls).toHaveLength(0)
+  })
+
+  it('invalid clock date → fixed 500 no-store without calling repo', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo, () => new Date(Number.NaN))
+    const res = await postAdmin(app, '/admin/permissions/grant', makeValidPostOptions())
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await res.text()).toBe('Internal Server Error')
+    expect(repo.grantCalls).toHaveLength(0)
+  })
+
+  it('repo throws → generic body, no detail', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, makeThrowingMutationPermissionRepo())
+    const res = await postAdmin(app, '/admin/permissions/grant', makeValidPostOptions())
+    const body = await res.text()
+    expect(body).toBe('Internal Server Error')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /admin/permissions/revoke — guard, same-origin, content-type, body
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: POST /admin/permissions/revoke guard', () => {
+  it('no token → 403 Forbidden no-store, revoke not called', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    const res = await postAdmin(app, '/admin/permissions/revoke', {
+      ...makeValidPostOptions(),
+      token: null,
+    })
+    await assertForbidden(res)
+    expect(repo.revokeCalls).toHaveLength(0)
+  })
+
+  it('non-allowlisted email → 403, revoke not called', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(() => ({
+      verifier: async () => ({ email: 'other@example.com' }),
+      allowlist: new Set([ADMIN_EMAIL]),
+    }), undefined, undefined, repo)
+    const res = await postAdmin(app, '/admin/permissions/revoke', makeValidPostOptions())
+    await assertForbidden(res)
+    expect(repo.revokeCalls).toHaveLength(0)
+  })
+
+  it('Origin absent → 403, revoke not called', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    const res = await postAdmin(app, '/admin/permissions/revoke', {
+      ...makeValidPostOptions(),
+      origin: undefined,
+    })
+    await assertForbidden(res)
+    expect(repo.revokeCalls).toHaveLength(0)
+  })
+
+  it('Origin = literal "null" → 403, revoke not called', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    const res = await postAdmin(app, '/admin/permissions/revoke', {
+      ...makeValidPostOptions(),
+      origin: 'null',
+    })
+    await assertForbidden(res)
+    expect(repo.revokeCalls).toHaveLength(0)
+  })
+
+  it('Origin mismatched → 403, revoke not called', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    const res = await postAdmin(app, '/admin/permissions/revoke', {
+      ...makeValidPostOptions(),
+      origin: 'https://evil.example',
+    })
+    await assertForbidden(res)
+    expect(repo.revokeCalls).toHaveLength(0)
+  })
+})
+
+describe('admin-routes: POST /admin/permissions/revoke content-type validation', () => {
+  it('Content-Type missing → 400 no-store, revoke not called', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    const res = await postAdmin(app, '/admin/permissions/revoke', {
+      ...makeValidPostOptions(),
+      contentType: undefined,
+    })
+    expect(res.status).toBe(400)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(repo.revokeCalls).toHaveLength(0)
+  })
+
+  it('Content-Type application/json → 400, revoke not called', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    const res = await postAdmin(app, '/admin/permissions/revoke', {
+      ...makeValidPostOptions(),
+      contentType: 'application/json',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.revokeCalls).toHaveLength(0)
+  })
+
+  it('Content-Type with charset → accepted (not 400)', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    const res = await postAdmin(app, '/admin/permissions/revoke', {
+      ...makeValidPostOptions(),
+      contentType: 'application/x-www-form-urlencoded; charset=utf-8',
+    })
+    expect(res.status).not.toBe(400)
+  })
+})
+
+describe('admin-routes: POST /admin/permissions/revoke body validation', () => {
+  it('Body missing albumId → 400, revoke not called', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    const res = await postAdmin(app, '/admin/permissions/revoke', {
+      ...makeValidPostOptions(),
+      body: 'userId=user-sample-001',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.revokeCalls).toHaveLength(0)
+  })
+
+  it('Body missing userId → 400, revoke not called', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    const res = await postAdmin(app, '/admin/permissions/revoke', {
+      ...makeValidPostOptions(),
+      body: 'albumId=album-sample-001',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.revokeCalls).toHaveLength(0)
+  })
+
+  it('Body with extra field → 400, revoke not called', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    const res = await postAdmin(app, '/admin/permissions/revoke', {
+      ...makeValidPostOptions(),
+      body: 'albumId=album-sample-001&userId=user-sample-001&role=admin',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.revokeCalls).toHaveLength(0)
+  })
+
+  it('Body with repeated albumId → 400, revoke not called', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    const res = await postAdmin(app, '/admin/permissions/revoke', {
+      ...makeValidPostOptions(),
+      body: 'albumId=album-a&albumId=album-b&userId=user-sample-001',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.revokeCalls).toHaveLength(0)
+  })
+
+  it('Body with invalid albumId → 400, revoke not called', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    const res = await postAdmin(app, '/admin/permissions/revoke', {
+      ...makeValidPostOptions(),
+      body: 'albumId=!bad!&userId=user-sample-001',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.revokeCalls).toHaveLength(0)
+  })
+
+  it('Clock not called when body is invalid (revoke)', async () => {
+    const spy = makeClockSpy()
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo, spy.clock)
+    await postAdmin(app, '/admin/permissions/revoke', {
+      ...makeValidPostOptions(),
+      body: 'albumId=!bad!&userId=user-sample-001',
+    })
+    expect(spy.getCallCount()).toBe(0)
+  })
+})
+
+describe('admin-routes: POST /admin/permissions/revoke success', () => {
+  it('valid revoke → 303 with Location /admin/permissions and no-store', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    const res = await postAdmin(app, '/admin/permissions/revoke', makeValidPostOptions())
+    expect(res.status).toBe(303)
+    expect(res.headers.get('location')).toBe('/admin/permissions')
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('valid revoke → empty body', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    const res = await postAdmin(app, '/admin/permissions/revoke', makeValidPostOptions())
+    const body = await res.text()
+    expect(body).toBe('')
+  })
+
+  it('valid revoke → revokePermission called once with correct args', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    await postAdmin(app, '/admin/permissions/revoke', makeValidPostOptions())
+    expect(repo.revokeCalls).toHaveLength(1)
+    expect(repo.revokeCalls[0]).toEqual({ albumId: VALID_ALBUM_ID, userId: VALID_USER_ID })
+  })
+
+  it('valid revoke → clock NOT called', async () => {
+    const spy = makeClockSpy()
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo, spy.clock)
+    await postAdmin(app, '/admin/permissions/revoke', makeValidPostOptions())
+    expect(spy.getCallCount()).toBe(0)
+  })
+
+  it('repo throws → 500 no-store', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, makeThrowingMutationPermissionRepo())
+    const res = await postAdmin(app, '/admin/permissions/revoke', makeValidPostOptions())
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('repo throws → generic body, no detail', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, makeThrowingMutationPermissionRepo())
+    const res = await postAdmin(app, '/admin/permissions/revoke', makeValidPostOptions())
+    const body = await res.text()
+    expect(body).toBe('Internal Server Error')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// GET /admin/permissions — grant form rendering
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: GET /admin/permissions grant form rendering', () => {
+  it('body contains action="/admin/permissions/grant"', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, makeEmptyPermissionRepo())
+    const res = await getAdmin(app, { path: '/admin/permissions' })
+    const body = await res.text()
+    expect(body).toContain('action="/admin/permissions/grant"')
+  })
+
+  it('body contains input name="albumId" for grant form', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, makeEmptyPermissionRepo())
+    const res = await getAdmin(app, { path: '/admin/permissions' })
+    const body = await res.text()
+    expect(body).toContain('name="albumId"')
+  })
+
+  it('body contains input name="userId" for grant form', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, makeEmptyPermissionRepo())
+    const res = await getAdmin(app, { path: '/admin/permissions' })
+    const body = await res.text()
+    expect(body).toContain('name="userId"')
+  })
+
+  it('body contains action="/admin/permissions/revoke" when permission row present', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, makePermissionRepo([SAMPLE_PERM]))
+    const res = await getAdmin(app, { path: '/admin/permissions' })
+    const body = await res.text()
+    expect(body).toContain('action="/admin/permissions/revoke"')
+  })
+
+  it('revoke form contains row album_id as hidden value', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, makePermissionRepo([SAMPLE_PERM]))
+    const res = await getAdmin(app, { path: '/admin/permissions' })
+    const body = await res.text()
+    expect(body).toContain(`value="${SAMPLE_PERM.album_id}"`)
+  })
+
+  it('revoke form contains row user_id as hidden value', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, makePermissionRepo([SAMPLE_PERM]))
+    const res = await getAdmin(app, { path: '/admin/permissions' })
+    const body = await res.text()
+    expect(body).toContain(`value="${SAMPLE_PERM.user_id}"`)
+  })
+
+  it('revoke form does NOT contain created_at as an input name', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, makePermissionRepo([SAMPLE_PERM]))
+    const res = await getAdmin(app, { path: '/admin/permissions' })
+    const body = await res.text()
+    expect(body).not.toContain('name="created_at"')
+  })
+
+  it('操作 column header present when permissions exist', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, makePermissionRepo([SAMPLE_PERM]))
+    const res = await getAdmin(app, { path: '/admin/permissions' })
+    const body = await res.text()
+    expect(body).toContain('操作')
   })
 })

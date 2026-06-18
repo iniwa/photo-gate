@@ -7,6 +7,7 @@ export interface StmtConfig {
   first?: unknown
   allRows?: unknown[]
   allResult?: unknown
+  runResult?: unknown
   throws?: Error
 }
 
@@ -33,6 +34,7 @@ class MockStatement {
   async run(): Promise<D1Result> {
     this.capture.push({ sql: this.sql, params: this.boundParams })
     if (this.config.throws) throw this.config.throws
+    if (this.config.runResult !== undefined) return this.config.runResult as D1Result
     return { success: true } as unknown as D1Result
   }
 
