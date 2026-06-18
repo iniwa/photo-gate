@@ -12,7 +12,7 @@ thumbnail grid, and preview display (2026-06-12).
 ## Production Topology
 
 - Workers viewer: https://photo-gate.iniwaiwana.workers.dev
-  (CI-deployed commit `127c887`; cron 18:00 UTC session cleanup).
+  (CI-deployed commit `2e12f08`; cron 18:00 UTC session cleanup).
 - D1 `photo-gate` (APAC, id `de77cb73-497a-4a41-bd1c-151fd907be3f`),
   2 migrations applied. One user, one album, one permission row (real
   identifiers live only in D1/Portainer, never in the repo).
@@ -61,11 +61,11 @@ thumbnail grid, and preview display (2026-06-12).
   rollback requires an intentional production stack operation.
 - Level 3: `/admin` Worker-side Cloudflare Access JWT validation plus admin
   email allowlist and the read-only, keyset-paginated user, album, and
-  permission inventories are implemented. Idempotent permission grant/revoke
-  mutations are reviewed locally and await CI deployment. The operator must
-  create the path-scoped Access application and register the three Worker values
-  before the production admin surface is usable; until then deployed admin
-  routes fail closed with 403. User and album mutation operations, sync
+  permission inventories and idempotent permission grant/revoke mutations are
+  implemented and deployed. The operator must create the path-scoped Access
+  application and register the three Worker values before the production admin
+  surface is usable; until then deployed admin routes fail closed with 403.
+  User and album mutation operations, sync
   administration, dry-run cleanup, and final hardening remain unimplemented.
 
 ## Verification Baseline
@@ -75,9 +75,9 @@ thumbnail grid, and preview display (2026-06-12).
   authentication foundation, read-only inventories, and permission mutations
   pass lint, typecheck, build, and 1238 tests / 29 files locally (2026-06-18).
   Production audit is clean; full `npm audit` remains blocked by devDependency
-  advisories in Wrangler/Miniflare. The last confirmed deployed admin baseline
-  is commit `127c887`; production smoke confirms `/admin/albums` and
-  `/admin/permissions` fail closed with 403/no-store without config.
+  advisories in Wrangler/Miniflare. Workers CI checks and deploy succeeded for
+  commit `2e12f08`; production smoke confirms the permission inventory plus
+  grant/revoke POST routes fail closed with 403/no-store without config.
 - Docker: 183 tests reported green for sync `0.2.1`; the targeted daemon
   regression suite independently passed 19 tests on Windows (2026-06-15).
 - Live security posture verified 2026-06-11/12: unauthenticated pages

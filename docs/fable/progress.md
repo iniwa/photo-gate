@@ -22,6 +22,9 @@ The fourth Level 3 implementation handoff is reviewed and complete:
   failures without disclosing user or album existence.
 - Codex review fixed the grant clock/serialization failure path so it also
   returns the fixed no-store 500 response before repository use.
+- DONE: commit `2e12f08` passed workers-ci and deployed the mutations;
+  unauthenticated GET/grant/revoke production smoke checks all returned the
+  expected 403 with `Cache-Control: no-store`, without performing a D1 mutation.
 
 The third Level 3 implementation handoff is reviewed and complete:
 
@@ -116,7 +119,7 @@ procedures.
   `npm audit --omit=dev --audit-level=high` reports 0 vulnerabilities. Workers
   CI gates production dependencies only until upstream Wrangler/Miniflare adopt
   fixed transitive releases.
-  Live includes CI-deployed commit `127c887`; unauthenticated admin smoke checks
+  Live includes CI-deployed commit `2e12f08`; unauthenticated admin smoke checks
   return the expected 403/no-store while Access configuration is absent.
 - Docker: sync `0.2.1` reports 183 tests green and is published multi-arch;
   the targeted daemon regression suite independently passed 19 tests on
