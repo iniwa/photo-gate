@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-06-16.
+Last updated: 2026-06-18.
 
 ## Current Completion Level
 
@@ -11,7 +11,14 @@ Operable.
 
 ## Current Task
 
-There is no active implementation handoff.
+The active Level 3 implementation handoff is:
+
+- `docs/handoffs/2026-06-18-admin-permission-grant-revoke.md`
+- Add the first narrow admin mutation workflow: idempotent permission grant and
+  revoke behind the existing Access guard.
+- Require exact same-origin POSTs, strict URL-encoded form validation, bound D1
+  statements, sanitized no-store failures, and no disclosure of user/album
+  existence.
 
 The third Level 3 implementation handoff is reviewed and complete:
 
