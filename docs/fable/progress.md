@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-06-18.
+Last updated: 2026-06-19.
 
 ## Current Completion Level
 
@@ -11,7 +11,14 @@ Operable.
 
 ## Current Task
 
-There is no active implementation handoff.
+The active Level 3 implementation handoff is:
+
+- `docs/handoffs/2026-06-19-admin-album-enable-disable.md`
+- Add idempotent album enable/disable controls behind the existing admin
+  Access boundary.
+- Change only `albums.enabled` and `updated_at`; retain permissions and all R2
+  data, disclose neither album existence nor prior state, and reuse the strict
+  same-origin POST contract.
 
 The fourth Level 3 implementation handoff is reviewed and complete:
 
