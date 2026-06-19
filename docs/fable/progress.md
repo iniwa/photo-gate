@@ -11,14 +11,19 @@ Operable.
 
 ## Current Task
 
-The active Level 3 implementation handoff is:
+There is no active implementation handoff.
 
-- `docs/handoffs/2026-06-19-admin-album-enable-disable.md`
-- Add idempotent album enable/disable controls behind the existing admin
-  Access boundary.
-- Change only `albums.enabled` and `updated_at`; retain permissions and all R2
-  data, disclose neither album existence nor prior state, and reuse the strict
-  same-origin POST contract.
+The fifth Level 3 implementation handoff is reviewed and complete:
+
+- DONE: idempotent `POST /admin/albums/enable` and
+  `POST /admin/albums/disable` behind the existing Access guard.
+- The single parameterized UPDATE changes only `albums.enabled` and
+  `updated_at`; same-state and unknown IDs are successful no-ops, while
+  permissions and all R2 data remain untouched.
+- Codex review tightened the shared admin mutation Content-Type check so only
+  the URL-encoded media type with an optional single `charset` parameter is
+  accepted.
+- DONE: implementation commit `1c4974c`; delivery verification is pending.
 
 The fourth Level 3 implementation handoff is reviewed and complete:
 
@@ -119,10 +124,11 @@ procedures.
 
 - Workers: 894 tests / 24 files, lint, typecheck, build, audit green
   in the production baseline (2026-06-12). The reviewed `/admin`
-  authentication foundation, read-only inventories, and permission mutations
-  pass lint, typecheck, build, and 1238 tests / 29 files locally (2026-06-18).
-  `npm audit` reports four advisories (1 low / 3 high) through devDependencies
-  (`wrangler -> esbuild/miniflare -> ws`); production dependency audit with
+  authentication foundation, read-only inventories, permission mutations, and
+  album enable/disable controls pass lint, typecheck, build, and 1317 tests /
+  29 files locally (2026-06-19). `npm audit` reports five advisories (1 low /
+  4 high) through devDependencies (`wrangler -> esbuild/miniflare ->
+  undici/ws`); production dependency audit with
   `npm audit --omit=dev --audit-level=high` reports 0 vulnerabilities. Workers
   CI gates production dependencies only until upstream Wrangler/Miniflare adopt
   fixed transitive releases.
@@ -174,5 +180,6 @@ action list and full status snapshot.
 Complete the operator's sync `0.2.1` Portainer update and configure the deployed
 `/admin` Access boundary. Complete Level 2 rollback verification when production
 access and token scope permit. The next local Level 3 implementation priority
-should be selected from user or album administration, sync administration, or
+should be selected from user administration, broader album administration,
+sync administration, or
 operational audit information.

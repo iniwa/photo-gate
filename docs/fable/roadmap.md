@@ -130,8 +130,9 @@ This is a priority-ordered plan. Update status as implementation progresses.
       (Read-only, keyset-paginated user inventory implemented and reviewed
       2026-06-15. Read-only, keyset-paginated album and permission inventories
       implemented and reviewed 2026-06-16. Idempotent permission grant/revoke
-      implemented and reviewed 2026-06-18. User and album mutation operations
-      remain.)
+      implemented and reviewed 2026-06-18. Idempotent album enable/disable
+      controls implemented and reviewed 2026-06-19. User mutations and broader
+      album mutation operations remain.)
 - [ ] Implement sync request/status administration.
 - [ ] Add operational audit information without sensitive-data leakage.
 
