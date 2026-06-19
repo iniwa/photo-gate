@@ -15,7 +15,10 @@ type AdminContext = Context<AdminEnv>
 
 export interface AdminRouteDeps {
   userRepo: { listUsers(afterUserId?: string): Promise<AdminUserPage> }
-  albumRepo: { listAlbums(afterAlbumId?: string): Promise<AdminAlbumPage> }
+  albumRepo: {
+    listAlbums(afterAlbumId?: string): Promise<AdminAlbumPage>
+    setAlbumEnabled(albumId: string, enabled: number, updatedAt: string): Promise<void>
+  }
   permissionRepo: {
     listPermissions(after?: { albumId: string; userId: string }): Promise<AdminPermissionPage>
     grantPermission(albumId: string, userId: string, createdAt: string): Promise<void>
@@ -46,8 +49,13 @@ function isSameOrigin(c: AdminContext): boolean {
 /** A request body Content-Type that is exactly the URL-encoded form type (optional charset). */
 function isFormContentType(contentType: string | undefined): boolean {
   if (contentType === undefined) return false
-  const base = contentType.split(';', 1)[0]?.trim().toLowerCase()
-  return base === 'application/x-www-form-urlencoded'
+  const parts = contentType.split(';')
+  if (parts[0]?.trim().toLowerCase() !== 'application/x-www-form-urlencoded') {
+    return false
+  }
+  if (parts.length === 1) return true
+  if (parts.length !== 2) return false
+  return /^charset\s*=\s*(?:"[^"]+"|[a-z0-9._-]+)$/i.test(parts[1]!.trim())
 }
 
 /**
@@ -73,6 +81,30 @@ async function parseMutationFields(
   if (typeof albumId !== 'string' || typeof userId !== 'string') return null
   if (!isValidId(albumId) || !isValidId(userId)) return null
   return { albumId, userId }
+}
+
+/**
+ * Parse and strictly validate a single-field admin album mutation body. Returns
+ * the one validated ID, or `null` for any ambiguity. Same strictness as
+ * `parseMutationFields` but for exactly one key `albumId`: a repeated field
+ * arrives as an array (rejected), and any extra/missing/file-valued/invalid
+ * field yields `null`. Input is never reflected and no repository or clock is
+ * touched here.
+ */
+async function parseAlbumIdField(
+  c: AdminContext,
+): Promise<{ albumId: string } | null> {
+  let body: Record<string, string | File | (string | File)[]>
+  try {
+    body = await c.req.parseBody({ all: true })
+  } catch {
+    return null
+  }
+  if (Object.keys(body).length !== 1) return null
+  const albumId = body['albumId']
+  if (typeof albumId !== 'string') return null
+  if (!isValidId(albumId)) return null
+  return { albumId }
 }
 
 /**
@@ -259,6 +291,51 @@ export function createAdminRoutes(
     return c.body(null, 303)
   })
 
+  // Album enable/disable. Reuses the permission-mutation security contract:
+  // guard (above) -> strict same-origin -> exact form Content-Type -> exactly
+  // one valid `albumId` -> clock (only after validation) -> single idempotent
+  // UPDATE. Enable binds 1, disable binds 0; nothing else differs. Each failure
+  // class returns the same fixed, no-store response and never reflects input,
+  // reveals a cause, or discloses whether the album exists or changed state.
+  // Disabling never touches permission rows.
+  const handleSetEnabled = async (c: AdminContext, enabled: 0 | 1): Promise<Response> => {
+    if (!isSameOrigin(c)) return forbiddenResponse(c)
+    if (!isFormContentType(c.req.header('Content-Type'))) {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Bad Request', 400)
+    }
+    const fields = await parseAlbumIdField(c)
+    if (fields === null) {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Bad Request', 400)
+    }
+
+    const deps = depsFromEnv(c.env)
+    // Clock is read only after the request is fully validated; a throwing clock
+    // or an invalid date (toISOString RangeError) fails closed before any repo.
+    let updatedAt: string
+    try {
+      updatedAt = deps.clock().toISOString()
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+
+    try {
+      await deps.albumRepo.setAlbumEnabled(fields.albumId, enabled, updatedAt)
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+
+    c.header('Cache-Control', 'no-store')
+    c.header('Location', '/admin/albums')
+    return c.body(null, 303)
+  }
+
+  admin.post('/albums/enable', (c) => handleSetEnabled(c, 1))
+  admin.post('/albums/disable', (c) => handleSetEnabled(c, 0))
+
   // Any other method/path under /admin stays behind the guard and returns a
   // generic authenticated 404 — never the viewer router, never any data.
   admin.all('*', (c) => {
@@ -378,6 +455,7 @@ function AdminAlbumsPage({ page }: { page: AdminAlbumPage }) {
               <th>ダウンロード</th>
               <th>作成日時</th>
               <th>更新日時</th>
+              <th>操作</th>
             </tr>
           </thead>
           <tbody>
@@ -390,6 +468,19 @@ function AdminAlbumsPage({ page }: { page: AdminAlbumPage }) {
                 <td>{a.download_enabled === 1 ? '許可' : '不可'}</td>
                 <td>{a.created_at}</td>
                 <td>{a.updated_at}</td>
+                <td>
+                  {a.enabled === 1 ? (
+                    <form method="post" action="/admin/albums/disable">
+                      <input type="hidden" name="albumId" value={a.id} />
+                      <button type="submit">無効化</button>
+                    </form>
+                  ) : (
+                    <form method="post" action="/admin/albums/enable">
+                      <input type="hidden" name="albumId" value={a.id} />
+                      <button type="submit">有効化</button>
+                    </form>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

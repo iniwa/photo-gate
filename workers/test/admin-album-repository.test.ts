@@ -362,3 +362,193 @@ describe('AdminAlbumRepository.listAlbums error sanitization', () => {
     expect((err as Error).message).not.toContain(sensitiveToken)
   })
 })
+
+// ---------------------------------------------------------------------------
+// setAlbumEnabled — SQL structure
+// ---------------------------------------------------------------------------
+
+const SET_ALBUM_ID = 'album-set-001'
+const SET_UPDATED_AT = '2026-06-19T00:00:00.000Z'
+
+async function issueSetEnabled(enabled: 0 | 1 = 1) {
+  const { db, queries } = makeMockDb([{}])
+  await new AdminAlbumRepository(db).setAlbumEnabled(SET_ALBUM_ID, enabled, SET_UPDATED_AT)
+  return queries
+}
+
+describe('AdminAlbumRepository.setAlbumEnabled SQL structure', () => {
+  it('SQL contains UPDATE albums', async () => {
+    const queries = await issueSetEnabled()
+    expect(queries[0]?.sql).toContain('UPDATE albums')
+  })
+
+  it('SQL contains SET enabled = ?, updated_at = ?', async () => {
+    const queries = await issueSetEnabled()
+    expect(queries[0]?.sql).toContain('SET enabled = ?, updated_at = ?')
+  })
+
+  it('SQL contains WHERE id = ? AND enabled <> ?', async () => {
+    const queries = await issueSetEnabled()
+    expect(queries[0]?.sql).toContain('WHERE id = ? AND enabled <> ?')
+  })
+
+  it('SQL does NOT contain SELECT', async () => {
+    const queries = await issueSetEnabled()
+    expect(queries[0]?.sql).not.toMatch(/\bSELECT\b/)
+  })
+
+  it('SQL does NOT contain JOIN', async () => {
+    const queries = await issueSetEnabled()
+    expect(queries[0]?.sql).not.toContain(' JOIN ')
+  })
+
+  it('SQL does NOT contain INSERT', async () => {
+    const queries = await issueSetEnabled()
+    expect(queries[0]?.sql).not.toMatch(/\bINSERT\b/)
+  })
+
+  it('SQL does NOT contain DELETE', async () => {
+    const queries = await issueSetEnabled()
+    expect(queries[0]?.sql).not.toMatch(/\bDELETE\b/)
+  })
+
+  it('SQL does NOT contain title', async () => {
+    const queries = await issueSetEnabled()
+    expect(queries[0]?.sql).not.toContain('title')
+  })
+
+  it('SQL does NOT contain download_enabled', async () => {
+    const queries = await issueSetEnabled()
+    expect(queries[0]?.sql).not.toContain('download_enabled')
+  })
+
+  it('SQL does NOT contain photoprism_album_uid', async () => {
+    const queries = await issueSetEnabled()
+    expect(queries[0]?.sql).not.toContain('photoprism_album_uid')
+  })
+
+  it('SQL does NOT contain strip_exif', async () => {
+    const queries = await issueSetEnabled()
+    expect(queries[0]?.sql).not.toContain('strip_exif')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// setAlbumEnabled — params
+// ---------------------------------------------------------------------------
+
+describe('AdminAlbumRepository.setAlbumEnabled params', () => {
+  it('enable: params are exactly [1, updatedAt, albumId, 1] in order', async () => {
+    const queries = await issueSetEnabled(1)
+    expect(queries[0]?.params).toEqual([1, SET_UPDATED_AT, SET_ALBUM_ID, 1])
+  })
+
+  it('disable: params are exactly [0, updatedAt, albumId, 0] in order', async () => {
+    const queries = await issueSetEnabled(0)
+    expect(queries[0]?.params).toEqual([0, SET_UPDATED_AT, SET_ALBUM_ID, 0])
+  })
+
+  it('SQL does not contain the literal albumId value', async () => {
+    const queries = await issueSetEnabled()
+    expect(queries[0]?.sql).not.toContain(SET_ALBUM_ID)
+  })
+
+  it('SQL does not contain the literal updatedAt value', async () => {
+    const queries = await issueSetEnabled()
+    expect(queries[0]?.sql).not.toContain(SET_UPDATED_AT)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// setAlbumEnabled — success
+// ---------------------------------------------------------------------------
+
+describe('AdminAlbumRepository.setAlbumEnabled success', () => {
+  it('default {success:true} → resolves without throw', async () => {
+    const { db } = makeMockDb([{}])
+    await expect(
+      new AdminAlbumRepository(db).setAlbumEnabled(SET_ALBUM_ID, 1, SET_UPDATED_AT),
+    ).resolves.toBeUndefined()
+  })
+
+  it('already enabled (same state) is a no-op success', async () => {
+    const { db } = makeMockDb([{}])
+    await expect(
+      new AdminAlbumRepository(db).setAlbumEnabled(SET_ALBUM_ID, 1, SET_UPDATED_AT),
+    ).resolves.toBeUndefined()
+  })
+
+  it('unknown album id is a no-op success', async () => {
+    const { db } = makeMockDb([{}])
+    await expect(
+      new AdminAlbumRepository(db).setAlbumEnabled(SET_ALBUM_ID, 1, SET_UPDATED_AT),
+    ).resolves.toBeUndefined()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// setAlbumEnabled — validation before D1
+// ---------------------------------------------------------------------------
+
+describe('AdminAlbumRepository.setAlbumEnabled validation before D1', () => {
+  it('invalid albumId → rejects with database operation failed, D1 not touched', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminAlbumRepository(db).setAlbumEnabled('!bad!', 1, SET_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+
+  it('enabled = 2 (not 0 or 1) → rejects with database operation failed, D1 not touched', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminAlbumRepository(db).setAlbumEnabled(SET_ALBUM_ID, 2, SET_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+
+  it('non-canonical updatedAt → rejects with database operation failed, D1 not touched', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminAlbumRepository(db).setAlbumEnabled(SET_ALBUM_ID, 1, '2026-06-19'),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// setAlbumEnabled — error sanitization
+// ---------------------------------------------------------------------------
+
+describe('AdminAlbumRepository.setAlbumEnabled error sanitization', () => {
+  it('run() throws → rejects with database operation failed', async () => {
+    const { db } = makeMockDb([{ throws: new Error('secret-token-album-xyz') }])
+    await expect(
+      new AdminAlbumRepository(db).setAlbumEnabled(SET_ALBUM_ID, 1, SET_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+  })
+
+  it('run() throws → error message does not contain the sensitive token', async () => {
+    const sensitiveToken = 'secret-token-album-xyz'
+    const { db } = makeMockDb([{ throws: new Error(sensitiveToken) }])
+    const err = await new AdminAlbumRepository(db)
+      .setAlbumEnabled(SET_ALBUM_ID, 1, SET_UPDATED_AT)
+      .catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(Error)
+    expect((err as Error).message).not.toContain(sensitiveToken)
+  })
+
+  it('runResult {success:false} → rejects with database operation failed', async () => {
+    const { db } = makeMockDb([{ runResult: { success: false } }])
+    await expect(
+      new AdminAlbumRepository(db).setAlbumEnabled(SET_ALBUM_ID, 1, SET_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+  })
+
+  it('runResult null → rejects with database operation failed', async () => {
+    const { db } = makeMockDb([{ runResult: null }])
+    await expect(
+      new AdminAlbumRepository(db).setAlbumEnabled(SET_ALBUM_ID, 1, SET_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+  })
+})

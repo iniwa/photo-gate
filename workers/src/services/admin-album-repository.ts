@@ -67,6 +67,19 @@ const LIST_SQL_WITH_CURSOR = `
   ORDER BY id ASC
   LIMIT ?`
 
+// Idempotent, non-disclosing enabled-state transition. The `enabled <> ?`
+// predicate means an album already in the requested state (or an unknown id)
+// matches zero rows and is left untouched — including updated_at — yet still
+// reports success. Only `enabled` and `updated_at` are written; permissions,
+// transform settings, expiry, download, and source identity are never touched.
+// All four values are bound parameters; nothing is interpolated. No SELECT runs
+// first and no affected-row count is inspected, so existence and prior state
+// are never disclosed.
+const SET_ENABLED_SQL = `
+  UPDATE albums
+  SET enabled = ?, updated_at = ?
+  WHERE id = ? AND enabled <> ?`
+
 export class AdminAlbumRepository {
   constructor(private readonly db: D1Database) {}
 
@@ -105,5 +118,34 @@ export class AdminAlbumRepository {
     const albums = parsed.slice(0, ADMIN_ALBUMS_PAGE_SIZE)
 
     return { albums, hasMore }
+  }
+
+  /**
+   * Idempotently set an album's enabled state.
+   *
+   * The album ID, the numeric enabled flag (exactly 0 or 1), and the canonical
+   * UTC timestamp are validated before any SQL is prepared (defense in depth;
+   * the route validates too). The single parameterized UPDATE only changes a row
+   * whose `enabled` differs from the requested value, so re-applying the current
+   * state — or targeting an unknown album — affects zero rows, leaves
+   * `updated_at` unchanged, and is still a successful no-op. Preparation,
+   * binding, execution, a missing/malformed result, or an unsuccessful result
+   * all surface as the same sanitized database operation failure — never an
+   * existence, prior-state, or cause signal.
+   */
+  async setAlbumEnabled(albumId: string, enabled: number, updatedAt: string): Promise<void> {
+    if (!isValidId(albumId)) throw databaseOperationError()
+    if (enabled !== 0 && enabled !== 1) throw databaseOperationError()
+    if (!isCanonicalUtcTimestamp(updatedAt)) throw databaseOperationError()
+
+    let result: D1Result
+    try {
+      result = await this.db.prepare(SET_ENABLED_SQL).bind(enabled, updatedAt, albumId, enabled).run()
+    } catch {
+      throw databaseOperationError()
+    }
+    if (result === null || typeof result !== 'object' || result.success !== true) {
+      throw databaseOperationError()
+    }
   }
 }

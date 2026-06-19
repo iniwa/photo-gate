@@ -87,22 +87,54 @@ function makeThrowingUserRepo(): { listUsers(): Promise<AdminUserPage> } {
   }
 }
 
-function makeEmptyAlbumRepo(): { listAlbums(): Promise<AdminAlbumPage> } {
-  return { listAlbums: async () => ({ albums: [], hasMore: false }) }
+type AlbumRepo = {
+  listAlbums(afterAlbumId?: string): Promise<AdminAlbumPage>
+  setAlbumEnabled(albumId: string, enabled: number, updatedAt: string): Promise<void>
+}
+
+type MutationAlbumRepo = AlbumRepo & {
+  calls: { albumId: string; enabled: number; updatedAt: string }[]
+}
+
+function makeEmptyAlbumRepo(): AlbumRepo {
+  return {
+    listAlbums: async () => ({ albums: [], hasMore: false }),
+    setAlbumEnabled: async () => {},
+  }
 }
 
 function makeAlbumRepo(
   albums: AdminAlbumSummary[],
   hasMore = false,
-): { listAlbums(): Promise<AdminAlbumPage> } {
-  return { listAlbums: async () => ({ albums, hasMore }) }
+): AlbumRepo {
+  return {
+    listAlbums: async () => ({ albums, hasMore }),
+    setAlbumEnabled: async () => {},
+  }
 }
 
-function makeThrowingAlbumRepo(): { listAlbums(): Promise<AdminAlbumPage> } {
+function makeThrowingAlbumRepo(): AlbumRepo {
   return {
     listAlbums: async () => {
       throw new Error('D1 exploded')
     },
+    setAlbumEnabled: async () => {},
+  }
+}
+
+function makeMutationAlbumRepo(): MutationAlbumRepo {
+  const calls: { albumId: string; enabled: number; updatedAt: string }[] = []
+  return {
+    calls,
+    listAlbums: async () => ({ albums: [], hasMore: false }),
+    setAlbumEnabled: async (albumId, enabled, updatedAt) => { calls.push({ albumId, enabled, updatedAt }) },
+  }
+}
+
+function makeThrowingSetEnabledAlbumRepo(): AlbumRepo {
+  return {
+    listAlbums: async () => ({ albums: [], hasMore: false }),
+    setAlbumEnabled: async () => { throw new Error('D1 exploded') },
   }
 }
 
@@ -179,7 +211,7 @@ function makeClockSpy() {
 function makeApp(
   resolveAuth: ResolveAuth,
   userRepo?: { listUsers(afterUserId?: string): Promise<AdminUserPage> },
-  albumRepo?: { listAlbums(afterAlbumId?: string): Promise<AdminAlbumPage> },
+  albumRepo?: AlbumRepo,
   permissionRepo?: PermissionRepo,
   clock?: () => Date,
 ): Hono {
@@ -847,6 +879,89 @@ describe('admin-routes: GET /admin/albums auth preserved', () => {
 })
 
 // ---------------------------------------------------------------------------
+// GET /admin/albums — form rendering
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: GET /admin/albums form rendering', () => {
+  it('enabled album → body contains action="/admin/albums/disable"', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM]))
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const body = await res.text()
+    expect(body).toContain('action="/admin/albums/disable"')
+  })
+
+  it('enabled album → body contains hidden albumId input with row id', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM]))
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const body = await res.text()
+    expect(body).toContain(`value="${SAMPLE_ALBUM.id}"`)
+  })
+
+  it('enabled album → body does NOT contain action="/admin/albums/enable"', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM]))
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const body = await res.text()
+    expect(body).not.toContain('action="/admin/albums/enable"')
+  })
+
+  it('disabled album → body contains action="/admin/albums/enable"', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM_2]))
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const body = await res.text()
+    expect(body).toContain('action="/admin/albums/enable"')
+  })
+
+  it('disabled album → body contains hidden albumId input with row id', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM_2]))
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const body = await res.text()
+    expect(body).toContain(`value="${SAMPLE_ALBUM_2.id}"`)
+  })
+
+  it('disabled album → body does NOT contain action="/admin/albums/disable"', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM_2]))
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const body = await res.text()
+    expect(body).not.toContain('action="/admin/albums/disable"')
+  })
+
+  it('body contains name="albumId" for the operation form', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM]))
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const body = await res.text()
+    expect(body).toContain('name="albumId"')
+  })
+
+  it('body does NOT contain name="enabled" (no enabled input in form)', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM]))
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const body = await res.text()
+    expect(body).not.toContain('name="enabled"')
+  })
+
+  it('操作 column header present', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM]))
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const body = await res.text()
+    expect(body).toContain('操作')
+  })
+
+  it('body does NOT contain photoprism_album_uid', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM]))
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const body = await res.text()
+    expect(body).not.toContain('photoprism_album_uid')
+  })
+
+  it('body does NOT contain strip_exif', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM]))
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const body = await res.text()
+    expect(body).not.toContain('strip_exif')
+  })
+})
+
+// ---------------------------------------------------------------------------
 // GET /admin/permissions — success
 // ---------------------------------------------------------------------------
 
@@ -1134,6 +1249,7 @@ describe('parseAdminAllowlist', () => {
 const VALID_ALBUM_ID = 'album-sample-001'
 const VALID_USER_ID = 'user-sample-001'
 const VALID_FORM_BODY = `albumId=${VALID_ALBUM_ID}&userId=${VALID_USER_ID}`
+const VALID_ALBUM_BODY = `albumId=${VALID_ALBUM_ID}`
 const VALID_ORIGIN = 'http://localhost'
 
 function makeValidPostOptions() {
@@ -1142,6 +1258,15 @@ function makeValidPostOptions() {
     origin: VALID_ORIGIN as string | undefined,
     contentType: 'application/x-www-form-urlencoded' as string | undefined,
     body: VALID_FORM_BODY as string | undefined,
+  }
+}
+
+function makeValidAlbumPostOptions() {
+  return {
+    token: VALID_TOKEN as string | null,
+    origin: VALID_ORIGIN as string | undefined,
+    contentType: 'application/x-www-form-urlencoded' as string | undefined,
+    body: VALID_ALBUM_BODY as string | undefined,
   }
 }
 
@@ -1269,6 +1394,17 @@ describe('admin-routes: POST /admin/permissions/grant content-type validation', 
       contentType: 'application/x-www-form-urlencoded; charset=utf-8',
     })
     expect(res.status).not.toBe(400)
+  })
+
+  it('Content-Type with a non-charset parameter → 400, grant not called', async () => {
+    const repo = makeMutationPermissionRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, repo)
+    const res = await postAdmin(app, '/admin/permissions/grant', {
+      ...makeValidPostOptions(),
+      contentType: 'application/x-www-form-urlencoded; boundary=unexpected',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.grantCalls).toHaveLength(0)
   })
 })
 
@@ -1686,5 +1822,471 @@ describe('admin-routes: GET /admin/permissions grant form rendering', () => {
     const res = await getAdmin(app, { path: '/admin/permissions' })
     const body = await res.text()
     expect(body).toContain('操作')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /admin/albums/enable — guard, same-origin, content-type, body
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: POST /admin/albums/enable guard', () => {
+  it('no token → 403 Forbidden no-store, setAlbumEnabled NOT called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/enable', {
+      ...makeValidAlbumPostOptions(),
+      token: null,
+    })
+    await assertForbidden(res)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('non-allowlisted email → 403, setAlbumEnabled not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(() => ({
+      verifier: async () => ({ email: 'other@example.com' }),
+      allowlist: new Set([ADMIN_EMAIL]),
+    }), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/enable', makeValidAlbumPostOptions())
+    await assertForbidden(res)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('Origin absent → 403, setAlbumEnabled not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/enable', {
+      ...makeValidAlbumPostOptions(),
+      origin: undefined,
+    })
+    await assertForbidden(res)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('Origin = literal "null" → 403, setAlbumEnabled not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/enable', {
+      ...makeValidAlbumPostOptions(),
+      origin: 'null',
+    })
+    await assertForbidden(res)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('Origin mismatched → 403, setAlbumEnabled not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/enable', {
+      ...makeValidAlbumPostOptions(),
+      origin: 'https://evil.example',
+    })
+    await assertForbidden(res)
+    expect(repo.calls).toHaveLength(0)
+  })
+})
+
+describe('admin-routes: POST /admin/albums/enable content-type validation', () => {
+  it('Content-Type missing → 400 no-store, setAlbumEnabled not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/enable', {
+      ...makeValidAlbumPostOptions(),
+      contentType: undefined,
+    })
+    expect(res.status).toBe(400)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('Content-Type application/json → 400, setAlbumEnabled not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/enable', {
+      ...makeValidAlbumPostOptions(),
+      contentType: 'application/json',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('Content-Type with charset → accepted (not 400)', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/enable', {
+      ...makeValidAlbumPostOptions(),
+      contentType: 'application/x-www-form-urlencoded; charset=utf-8',
+    })
+    expect(res.status).not.toBe(400)
+  })
+
+  it('Content-Type with an extra parameter → 400, setAlbumEnabled not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/enable', {
+      ...makeValidAlbumPostOptions(),
+      contentType: 'application/x-www-form-urlencoded; charset=utf-8; foo=bar',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.calls).toHaveLength(0)
+  })
+})
+
+describe('admin-routes: POST /admin/albums/enable body validation', () => {
+  it('empty body → 400 no-store, setAlbumEnabled not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/enable', {
+      ...makeValidAlbumPostOptions(),
+      body: '',
+    })
+    expect(res.status).toBe(400)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('extra field → 400, setAlbumEnabled not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/enable', {
+      ...makeValidAlbumPostOptions(),
+      body: 'albumId=album-sample-001&foo=bar',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('repeated albumId → 400, setAlbumEnabled not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/enable', {
+      ...makeValidAlbumPostOptions(),
+      body: 'albumId=album-a&albumId=album-b',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('invalid albumId → 400, setAlbumEnabled not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/enable', {
+      ...makeValidAlbumPostOptions(),
+      body: 'albumId=!bad!',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('empty albumId value → 400, setAlbumEnabled not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/enable', {
+      ...makeValidAlbumPostOptions(),
+      body: 'albumId=',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('clock not called when body is invalid', async () => {
+    const spy = makeClockSpy()
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo, undefined, spy.clock)
+    await postAdmin(app, '/admin/albums/enable', {
+      ...makeValidAlbumPostOptions(),
+      body: 'albumId=!bad!',
+    })
+    expect(spy.getCallCount()).toBe(0)
+  })
+})
+
+describe('admin-routes: POST /admin/albums/enable success', () => {
+  it('valid → 303 with Location /admin/albums and no-store', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/enable', makeValidAlbumPostOptions())
+    expect(res.status).toBe(303)
+    expect(res.headers.get('location')).toBe('/admin/albums')
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('valid → empty body', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/enable', makeValidAlbumPostOptions())
+    const body = await res.text()
+    expect(body).toBe('')
+  })
+
+  it('valid → setAlbumEnabled called once with (album-sample-001, 1, NOW_TS)', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    await postAdmin(app, '/admin/albums/enable', makeValidAlbumPostOptions())
+    expect(repo.calls).toHaveLength(1)
+    expect(repo.calls[0]).toEqual({ albumId: VALID_ALBUM_ID, enabled: 1, updatedAt: NOW_TS })
+  })
+
+  it('clock throws → 500 no-store, setAlbumEnabled NOT called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo, undefined, () => {
+      throw new Error('clock detail must not escape')
+    })
+    const res = await postAdmin(app, '/admin/albums/enable', makeValidAlbumPostOptions())
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await res.text()).toBe('Internal Server Error')
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('clock returns NaN date → 500 no-store, setAlbumEnabled NOT called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo, undefined, () => new Date(Number.NaN))
+    const res = await postAdmin(app, '/admin/albums/enable', makeValidAlbumPostOptions())
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await res.text()).toBe('Internal Server Error')
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('repo throws → 500 no-store, generic body', async () => {
+    const app = makeApp(goodAuth(), undefined, makeThrowingSetEnabledAlbumRepo())
+    const res = await postAdmin(app, '/admin/albums/enable', makeValidAlbumPostOptions())
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await res.text()).toBe('Internal Server Error')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /admin/albums/disable — guard, same-origin, content-type, body
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: POST /admin/albums/disable guard', () => {
+  it('no token → 403 Forbidden no-store, setAlbumEnabled NOT called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/disable', {
+      ...makeValidAlbumPostOptions(),
+      token: null,
+    })
+    await assertForbidden(res)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('non-allowlisted email → 403, setAlbumEnabled not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(() => ({
+      verifier: async () => ({ email: 'other@example.com' }),
+      allowlist: new Set([ADMIN_EMAIL]),
+    }), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/disable', makeValidAlbumPostOptions())
+    await assertForbidden(res)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('Origin absent → 403, setAlbumEnabled not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/disable', {
+      ...makeValidAlbumPostOptions(),
+      origin: undefined,
+    })
+    await assertForbidden(res)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('Origin = literal "null" → 403, setAlbumEnabled not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/disable', {
+      ...makeValidAlbumPostOptions(),
+      origin: 'null',
+    })
+    await assertForbidden(res)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('Origin mismatched → 403, setAlbumEnabled not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/disable', {
+      ...makeValidAlbumPostOptions(),
+      origin: 'https://evil.example',
+    })
+    await assertForbidden(res)
+    expect(repo.calls).toHaveLength(0)
+  })
+})
+
+describe('admin-routes: POST /admin/albums/disable content-type validation', () => {
+  it('Content-Type missing → 400 no-store, setAlbumEnabled not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/disable', {
+      ...makeValidAlbumPostOptions(),
+      contentType: undefined,
+    })
+    expect(res.status).toBe(400)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('Content-Type application/json → 400, setAlbumEnabled not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/disable', {
+      ...makeValidAlbumPostOptions(),
+      contentType: 'application/json',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('Content-Type with charset → accepted (not 400)', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/disable', {
+      ...makeValidAlbumPostOptions(),
+      contentType: 'application/x-www-form-urlencoded; charset=utf-8',
+    })
+    expect(res.status).not.toBe(400)
+  })
+
+  it('Content-Type with a non-charset parameter → 400, setAlbumEnabled not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/disable', {
+      ...makeValidAlbumPostOptions(),
+      contentType: 'application/x-www-form-urlencoded; boundary=unexpected',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.calls).toHaveLength(0)
+  })
+})
+
+describe('admin-routes: POST /admin/albums/disable body validation', () => {
+  it('empty body → 400 no-store, setAlbumEnabled not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/disable', {
+      ...makeValidAlbumPostOptions(),
+      body: '',
+    })
+    expect(res.status).toBe(400)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('extra field → 400, setAlbumEnabled not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/disable', {
+      ...makeValidAlbumPostOptions(),
+      body: 'albumId=album-sample-001&foo=bar',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('repeated albumId → 400, setAlbumEnabled not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/disable', {
+      ...makeValidAlbumPostOptions(),
+      body: 'albumId=album-a&albumId=album-b',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('invalid albumId → 400, setAlbumEnabled not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/disable', {
+      ...makeValidAlbumPostOptions(),
+      body: 'albumId=!bad!',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('empty albumId value → 400, setAlbumEnabled not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/disable', {
+      ...makeValidAlbumPostOptions(),
+      body: 'albumId=',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('clock not called when body is invalid', async () => {
+    const spy = makeClockSpy()
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo, undefined, spy.clock)
+    await postAdmin(app, '/admin/albums/disable', {
+      ...makeValidAlbumPostOptions(),
+      body: 'albumId=!bad!',
+    })
+    expect(spy.getCallCount()).toBe(0)
+  })
+})
+
+describe('admin-routes: POST /admin/albums/disable success', () => {
+  it('valid → 303 with Location /admin/albums and no-store', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/disable', makeValidAlbumPostOptions())
+    expect(res.status).toBe(303)
+    expect(res.headers.get('location')).toBe('/admin/albums')
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('valid → empty body', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/disable', makeValidAlbumPostOptions())
+    const body = await res.text()
+    expect(body).toBe('')
+  })
+
+  it('valid → setAlbumEnabled called once with (album-sample-001, 0, NOW_TS)', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    await postAdmin(app, '/admin/albums/disable', makeValidAlbumPostOptions())
+    expect(repo.calls).toHaveLength(1)
+    expect(repo.calls[0]).toEqual({ albumId: VALID_ALBUM_ID, enabled: 0, updatedAt: NOW_TS })
+  })
+
+  it('clock throws → 500 no-store, setAlbumEnabled NOT called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo, undefined, () => {
+      throw new Error('clock detail must not escape')
+    })
+    const res = await postAdmin(app, '/admin/albums/disable', makeValidAlbumPostOptions())
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await res.text()).toBe('Internal Server Error')
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('clock returns NaN date → 500 no-store, setAlbumEnabled NOT called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo, undefined, () => new Date(Number.NaN))
+    const res = await postAdmin(app, '/admin/albums/disable', makeValidAlbumPostOptions())
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await res.text()).toBe('Internal Server Error')
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('repo throws → 500 no-store, generic body', async () => {
+    const app = makeApp(goodAuth(), undefined, makeThrowingSetEnabledAlbumRepo())
+    const res = await postAdmin(app, '/admin/albums/disable', makeValidAlbumPostOptions())
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await res.text()).toBe('Internal Server Error')
   })
 })
