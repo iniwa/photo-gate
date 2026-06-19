@@ -12,7 +12,7 @@ thumbnail grid, and preview display (2026-06-12).
 ## Production Topology
 
 - Workers viewer: https://photo-gate.iniwaiwana.workers.dev
-  (CI-deployed commit `2e12f08`; cron 18:00 UTC session cleanup).
+  (CI-deployed commit `729dc72`; cron 18:00 UTC session cleanup).
 - D1 `photo-gate` (APAC, id `de77cb73-497a-4a41-bd1c-151fd907be3f`),
   2 migrations applied. One user, one album, one permission row (real
   identifiers live only in D1/Portainer, never in the repo).
@@ -62,8 +62,8 @@ thumbnail grid, and preview display (2026-06-12).
 - Level 3: `/admin` Worker-side Cloudflare Access JWT validation plus admin
   email allowlist and the read-only, keyset-paginated user, album, and
   permission inventories and idempotent permission grant/revoke mutations are
-  implemented and deployed. Idempotent album enable/disable controls are
-  implemented and reviewed locally. The operator must create the path-scoped Access
+  implemented and deployed. Idempotent album enable/disable controls are also
+  implemented and deployed. The operator must create the path-scoped Access
   application and register the three Worker values before the production admin
   surface is usable; until then deployed admin routes fail closed with 403.
   User mutations and broader album mutation operations, sync
@@ -78,8 +78,8 @@ thumbnail grid, and preview display (2026-06-12).
   29 files locally (2026-06-19).
   Production audit is clean; full `npm audit` remains blocked by devDependency
   advisories in Wrangler/Miniflare. Workers CI checks and deploy succeeded for
-  commit `2e12f08`; production smoke confirms the permission inventory plus
-  grant/revoke POST routes fail closed with 403/no-store without config.
+  commit `729dc72`; production smoke confirms the album inventory plus
+  enable/disable POST routes fail closed with 403/no-store without config.
 - Docker: 183 tests reported green for sync `0.2.1`; the targeted daemon
   regression suite independently passed 19 tests on Windows (2026-06-15).
 - Live security posture verified 2026-06-11/12: unauthenticated pages
