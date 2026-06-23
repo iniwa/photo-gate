@@ -11,16 +11,18 @@ Operable.
 
 ## Current Task
 
-The active Level 3 implementation handoff is:
+There is no active implementation handoff.
 
-- `docs/handoffs/2026-06-23-admin-user-enable-disable.md`
-- Add idempotent viewer-user enable/disable controls behind the existing admin
-  Access boundary.
-- Change only `users.enabled` and `updated_at`; preserve passwords, lockout
-  state, sessions, permissions, albums, and R2 data.
-- Existing sessions become unusable while the user is disabled through the
-  existing `u.enabled = 1` checks. Retained unexpired sessions may become usable
-  again after re-enable; session revocation is explicitly outside this task.
+The sixth Level 3 implementation handoff is reviewed and complete:
+
+- DONE: idempotent `POST /admin/users/enable` and
+  `POST /admin/users/disable` behind the existing Access guard.
+- The single parameterized UPDATE changes only `users.enabled` and
+  `updated_at`; same-state and unknown IDs are successful no-ops.
+- Passwords, lockout state, sessions, permissions, albums, and R2 data remain
+  untouched. Existing sessions fail while disabled through `u.enabled = 1`;
+  an unexpired retained session may work again after re-enable.
+- DONE: implementation commit `63ec185`; delivery verification is pending.
 
 The fifth Level 3 implementation handoff is reviewed and complete:
 
@@ -139,8 +141,8 @@ procedures.
 - Workers: 894 tests / 24 files, lint, typecheck, build, audit green
   in the production baseline (2026-06-12). The reviewed `/admin`
   authentication foundation, read-only inventories, permission mutations, and
-  album enable/disable controls pass lint, typecheck, build, and 1317 tests /
-  29 files locally (2026-06-19). `npm audit` reports five advisories (1 low /
+  album and user enable/disable controls pass lint, typecheck, build, and 1403
+  tests / 29 files locally (2026-06-23). `npm audit` reports five advisories (1 low /
   4 high) through devDependencies (`wrangler -> esbuild/miniflare ->
   undici/ws`); production dependency audit with
   `npm audit --omit=dev --audit-level=high` reports 0 vulnerabilities. Workers
@@ -191,8 +193,7 @@ action list and full status snapshot.
 
 ## Next Priority
 
-Implement and review the active admin user enable/disable handoff. Configure the
-deployed `/admin` Access boundary. Complete Level 2 rollback verification when
-production access and token scope permit. After the active handoff, select the
-next Level 3 priority from broader user/album administration, sync
-administration, or operational audit information.
+Configure the deployed `/admin` Access boundary. Complete Level 2 rollback
+verification when production access and token scope permit. Select the next
+Level 3 priority from broader user/album administration, sync administration,
+or operational audit information.

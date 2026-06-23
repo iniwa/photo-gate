@@ -62,10 +62,12 @@ thumbnail grid, and preview display (2026-06-12).
   email allowlist and the read-only, keyset-paginated user, album, and
   permission inventories and idempotent permission grant/revoke mutations are
   implemented and deployed. Idempotent album enable/disable controls are also
-  implemented and deployed. The operator must create the path-scoped Access
+  implemented and deployed. Idempotent user enable/disable controls are
+  implemented and reviewed locally. The operator must create the path-scoped
+  Access
   application and register the three Worker values before the production admin
   surface is usable; until then deployed admin routes fail closed with 403.
-  User mutations and broader album mutation operations, sync
+  Broader user and album mutation operations, sync
   administration, dry-run cleanup, and final hardening remain unimplemented.
 
 ## Verification Baseline
@@ -73,8 +75,8 @@ thumbnail grid, and preview display (2026-06-12).
 - Workers: 894 tests / 24 files, lint, typecheck, build, audit green
   in the last production baseline (2026-06-12). The reviewed `/admin`
   authentication foundation, read-only inventories, permission mutations, and
-  album enable/disable controls pass lint, typecheck, build, and 1317 tests /
-  29 files locally (2026-06-19).
+  album and user enable/disable controls pass lint, typecheck, build, and 1403
+  tests / 29 files locally (2026-06-23).
   Production audit is clean; full `npm audit` remains blocked by devDependency
   advisories in Wrangler/Miniflare. Workers CI checks and deploy succeeded for
   commit `729dc72`; production smoke confirms the album inventory plus
