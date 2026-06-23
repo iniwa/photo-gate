@@ -68,22 +68,54 @@ const SAMPLE_PERM_2: AdminPermissionSummary = {
   created_at: NOW_TS,
 }
 
-function makeEmptyUserRepo(): { listUsers(): Promise<AdminUserPage> } {
-  return { listUsers: async () => ({ users: [], hasMore: false }) }
+type UserRepo = {
+  listUsers(afterUserId?: string): Promise<AdminUserPage>
+  setUserEnabled(userId: string, enabled: number, updatedAt: string): Promise<void>
+}
+
+type MutationUserRepo = UserRepo & {
+  calls: { userId: string; enabled: number; updatedAt: string }[]
+}
+
+function makeEmptyUserRepo(): UserRepo {
+  return {
+    listUsers: async () => ({ users: [], hasMore: false }),
+    setUserEnabled: async () => {},
+  }
 }
 
 function makeUserRepo(
   users: AdminUserSummary[],
   hasMore = false,
-): { listUsers(): Promise<AdminUserPage> } {
-  return { listUsers: async () => ({ users, hasMore }) }
+): UserRepo {
+  return {
+    listUsers: async () => ({ users, hasMore }),
+    setUserEnabled: async () => {},
+  }
 }
 
-function makeThrowingUserRepo(): { listUsers(): Promise<AdminUserPage> } {
+function makeThrowingUserRepo(): UserRepo {
   return {
     listUsers: async () => {
       throw new Error('D1 exploded')
     },
+    setUserEnabled: async () => {},
+  }
+}
+
+function makeMutationUserRepo(): MutationUserRepo {
+  const calls: { userId: string; enabled: number; updatedAt: string }[] = []
+  return {
+    calls,
+    listUsers: async () => ({ users: [], hasMore: false }),
+    setUserEnabled: async (userId, enabled, updatedAt) => { calls.push({ userId, enabled, updatedAt }) },
+  }
+}
+
+function makeThrowingSetEnabledUserRepo(): UserRepo {
+  return {
+    listUsers: async () => ({ users: [], hasMore: false }),
+    setUserEnabled: async () => { throw new Error('D1 exploded') },
   }
 }
 
@@ -210,7 +242,7 @@ function makeClockSpy() {
 
 function makeApp(
   resolveAuth: ResolveAuth,
-  userRepo?: { listUsers(afterUserId?: string): Promise<AdminUserPage> },
+  userRepo?: UserRepo,
   albumRepo?: AlbumRepo,
   permissionRepo?: PermissionRepo,
   clock?: () => Date,
@@ -1250,6 +1282,7 @@ const VALID_ALBUM_ID = 'album-sample-001'
 const VALID_USER_ID = 'user-sample-001'
 const VALID_FORM_BODY = `albumId=${VALID_ALBUM_ID}&userId=${VALID_USER_ID}`
 const VALID_ALBUM_BODY = `albumId=${VALID_ALBUM_ID}`
+const VALID_USER_BODY = `userId=${VALID_USER_ID}`
 const VALID_ORIGIN = 'http://localhost'
 
 function makeValidPostOptions() {
@@ -1267,6 +1300,15 @@ function makeValidAlbumPostOptions() {
     origin: VALID_ORIGIN as string | undefined,
     contentType: 'application/x-www-form-urlencoded' as string | undefined,
     body: VALID_ALBUM_BODY as string | undefined,
+  }
+}
+
+function makeValidUserPostOptions() {
+  return {
+    token: VALID_TOKEN as string | null,
+    origin: VALID_ORIGIN as string | undefined,
+    contentType: 'application/x-www-form-urlencoded' as string | undefined,
+    body: VALID_USER_BODY as string | undefined,
   }
 }
 
@@ -2288,5 +2330,572 @@ describe('admin-routes: POST /admin/albums/disable success', () => {
     expect(res.status).toBe(500)
     expect(res.headers.get('cache-control')).toBe('no-store')
     expect(await res.text()).toBe('Internal Server Error')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /admin/users/enable — guard, same-origin, content-type, body
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: POST /admin/users/enable guard', () => {
+  it('no token → 403 Forbidden no-store, setUserEnabled NOT called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/enable', {
+      ...makeValidUserPostOptions(),
+      token: null,
+    })
+    await assertForbidden(res)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('non-allowlisted email → 403, setUserEnabled not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(() => ({
+      verifier: async () => ({ email: 'other@example.com' }),
+      allowlist: new Set([ADMIN_EMAIL]),
+    }), repo)
+    const res = await postAdmin(app, '/admin/users/enable', makeValidUserPostOptions())
+    await assertForbidden(res)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('Origin absent → 403, setUserEnabled not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/enable', {
+      ...makeValidUserPostOptions(),
+      origin: undefined,
+    })
+    await assertForbidden(res)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('Origin = literal "null" → 403, setUserEnabled not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/enable', {
+      ...makeValidUserPostOptions(),
+      origin: 'null',
+    })
+    await assertForbidden(res)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('Origin mismatched → 403, setUserEnabled not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/enable', {
+      ...makeValidUserPostOptions(),
+      origin: 'https://evil.example',
+    })
+    await assertForbidden(res)
+    expect(repo.calls).toHaveLength(0)
+  })
+})
+
+describe('admin-routes: POST /admin/users/enable content-type validation', () => {
+  it('Content-Type missing → 400 no-store, setUserEnabled not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/enable', {
+      ...makeValidUserPostOptions(),
+      contentType: undefined,
+    })
+    expect(res.status).toBe(400)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('Content-Type application/json → 400, setUserEnabled not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/enable', {
+      ...makeValidUserPostOptions(),
+      contentType: 'application/json',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('Content-Type with charset → accepted (not 400)', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/enable', {
+      ...makeValidUserPostOptions(),
+      contentType: 'application/x-www-form-urlencoded; charset=utf-8',
+    })
+    expect(res.status).not.toBe(400)
+  })
+
+  it('Content-Type with an extra parameter → 400, setUserEnabled not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/enable', {
+      ...makeValidUserPostOptions(),
+      contentType: 'application/x-www-form-urlencoded; charset=utf-8; foo=bar',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.calls).toHaveLength(0)
+  })
+})
+
+describe('admin-routes: POST /admin/users/enable body validation', () => {
+  it('empty body → 400 no-store, setUserEnabled not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/enable', {
+      ...makeValidUserPostOptions(),
+      body: '',
+    })
+    expect(res.status).toBe(400)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('extra field → 400, setUserEnabled not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/enable', {
+      ...makeValidUserPostOptions(),
+      body: 'userId=user-sample-001&foo=bar',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('repeated userId → 400, setUserEnabled not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/enable', {
+      ...makeValidUserPostOptions(),
+      body: 'userId=user-a&userId=user-b',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('invalid userId → 400, setUserEnabled not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/enable', {
+      ...makeValidUserPostOptions(),
+      body: 'userId=!bad!',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('empty userId value → 400, setUserEnabled not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/enable', {
+      ...makeValidUserPostOptions(),
+      body: 'userId=',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('albumId field (wrong name) → 400, setUserEnabled not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/enable', {
+      ...makeValidUserPostOptions(),
+      body: 'albumId=album-sample-001',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('clock not called when body is invalid', async () => {
+    const spy = makeClockSpy()
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo, undefined, undefined, spy.clock)
+    await postAdmin(app, '/admin/users/enable', {
+      ...makeValidUserPostOptions(),
+      body: 'userId=!bad!',
+    })
+    expect(spy.getCallCount()).toBe(0)
+  })
+})
+
+describe('admin-routes: POST /admin/users/enable success', () => {
+  it('valid → 303 with Location /admin/users and no-store', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/enable', makeValidUserPostOptions())
+    expect(res.status).toBe(303)
+    expect(res.headers.get('location')).toBe('/admin/users')
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('valid → empty body', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/enable', makeValidUserPostOptions())
+    const body = await res.text()
+    expect(body).toBe('')
+  })
+
+  it('valid → setUserEnabled called once with (user-sample-001, 1, NOW_TS)', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    await postAdmin(app, '/admin/users/enable', makeValidUserPostOptions())
+    expect(repo.calls).toHaveLength(1)
+    expect(repo.calls[0]).toEqual({ userId: VALID_USER_ID, enabled: 1, updatedAt: NOW_TS })
+  })
+
+  it('clock throws → 500 no-store, setUserEnabled NOT called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo, undefined, undefined, () => {
+      throw new Error('clock detail must not escape')
+    })
+    const res = await postAdmin(app, '/admin/users/enable', makeValidUserPostOptions())
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await res.text()).toBe('Internal Server Error')
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('clock returns NaN date → 500 no-store, setUserEnabled NOT called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo, undefined, undefined, () => new Date(Number.NaN))
+    const res = await postAdmin(app, '/admin/users/enable', makeValidUserPostOptions())
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await res.text()).toBe('Internal Server Error')
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('repo throws → 500 no-store, generic body', async () => {
+    const app = makeApp(goodAuth(), makeThrowingSetEnabledUserRepo())
+    const res = await postAdmin(app, '/admin/users/enable', makeValidUserPostOptions())
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await res.text()).toBe('Internal Server Error')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /admin/users/disable — guard, same-origin, content-type, body
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: POST /admin/users/disable guard', () => {
+  it('no token → 403 Forbidden no-store, setUserEnabled NOT called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/disable', {
+      ...makeValidUserPostOptions(),
+      token: null,
+    })
+    await assertForbidden(res)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('non-allowlisted email → 403, setUserEnabled not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(() => ({
+      verifier: async () => ({ email: 'other@example.com' }),
+      allowlist: new Set([ADMIN_EMAIL]),
+    }), repo)
+    const res = await postAdmin(app, '/admin/users/disable', makeValidUserPostOptions())
+    await assertForbidden(res)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('Origin absent → 403, setUserEnabled not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/disable', {
+      ...makeValidUserPostOptions(),
+      origin: undefined,
+    })
+    await assertForbidden(res)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('Origin = literal "null" → 403, setUserEnabled not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/disable', {
+      ...makeValidUserPostOptions(),
+      origin: 'null',
+    })
+    await assertForbidden(res)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('Origin mismatched → 403, setUserEnabled not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/disable', {
+      ...makeValidUserPostOptions(),
+      origin: 'https://evil.example',
+    })
+    await assertForbidden(res)
+    expect(repo.calls).toHaveLength(0)
+  })
+})
+
+describe('admin-routes: POST /admin/users/disable content-type validation', () => {
+  it('Content-Type missing → 400 no-store, setUserEnabled not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/disable', {
+      ...makeValidUserPostOptions(),
+      contentType: undefined,
+    })
+    expect(res.status).toBe(400)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('Content-Type application/json → 400, setUserEnabled not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/disable', {
+      ...makeValidUserPostOptions(),
+      contentType: 'application/json',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('Content-Type with charset → accepted (not 400)', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/disable', {
+      ...makeValidUserPostOptions(),
+      contentType: 'application/x-www-form-urlencoded; charset=utf-8',
+    })
+    expect(res.status).not.toBe(400)
+  })
+
+  it('Content-Type with a non-charset parameter → 400, setUserEnabled not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/disable', {
+      ...makeValidUserPostOptions(),
+      contentType: 'application/x-www-form-urlencoded; boundary=unexpected',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.calls).toHaveLength(0)
+  })
+})
+
+describe('admin-routes: POST /admin/users/disable body validation', () => {
+  it('empty body → 400 no-store, setUserEnabled not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/disable', {
+      ...makeValidUserPostOptions(),
+      body: '',
+    })
+    expect(res.status).toBe(400)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('extra field → 400, setUserEnabled not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/disable', {
+      ...makeValidUserPostOptions(),
+      body: 'userId=user-sample-001&foo=bar',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('repeated userId → 400, setUserEnabled not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/disable', {
+      ...makeValidUserPostOptions(),
+      body: 'userId=user-a&userId=user-b',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('invalid userId → 400, setUserEnabled not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/disable', {
+      ...makeValidUserPostOptions(),
+      body: 'userId=!bad!',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('empty userId value → 400, setUserEnabled not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/disable', {
+      ...makeValidUserPostOptions(),
+      body: 'userId=',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('clock not called when body is invalid', async () => {
+    const spy = makeClockSpy()
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo, undefined, undefined, spy.clock)
+    await postAdmin(app, '/admin/users/disable', {
+      ...makeValidUserPostOptions(),
+      body: 'userId=!bad!',
+    })
+    expect(spy.getCallCount()).toBe(0)
+  })
+})
+
+describe('admin-routes: POST /admin/users/disable success', () => {
+  it('valid → 303 with Location /admin/users and no-store', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/disable', makeValidUserPostOptions())
+    expect(res.status).toBe(303)
+    expect(res.headers.get('location')).toBe('/admin/users')
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('valid → empty body', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/disable', makeValidUserPostOptions())
+    const body = await res.text()
+    expect(body).toBe('')
+  })
+
+  it('valid → setUserEnabled called once with (user-sample-001, 0, NOW_TS)', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    await postAdmin(app, '/admin/users/disable', makeValidUserPostOptions())
+    expect(repo.calls).toHaveLength(1)
+    expect(repo.calls[0]).toEqual({ userId: VALID_USER_ID, enabled: 0, updatedAt: NOW_TS })
+  })
+
+  it('clock throws → 500 no-store, setUserEnabled NOT called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo, undefined, undefined, () => {
+      throw new Error('clock detail must not escape')
+    })
+    const res = await postAdmin(app, '/admin/users/disable', makeValidUserPostOptions())
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await res.text()).toBe('Internal Server Error')
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('clock returns NaN date → 500 no-store, setUserEnabled NOT called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo, undefined, undefined, () => new Date(Number.NaN))
+    const res = await postAdmin(app, '/admin/users/disable', makeValidUserPostOptions())
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await res.text()).toBe('Internal Server Error')
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('repo throws → 500 no-store, generic body', async () => {
+    const app = makeApp(goodAuth(), makeThrowingSetEnabledUserRepo())
+    const res = await postAdmin(app, '/admin/users/disable', makeValidUserPostOptions())
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await res.text()).toBe('Internal Server Error')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// GET /admin/users — form rendering (enable/disable)
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: GET /admin/users form rendering', () => {
+  it('enabled user → body contains action="/admin/users/disable"', async () => {
+    const app = makeApp(goodAuth(), makeUserRepo([SAMPLE_USER]))
+    const res = await getAdmin(app, { path: '/admin/users' })
+    const body = await res.text()
+    expect(body).toContain('action="/admin/users/disable"')
+  })
+
+  it('enabled user → body contains hidden userId input with row id', async () => {
+    const app = makeApp(goodAuth(), makeUserRepo([SAMPLE_USER]))
+    const res = await getAdmin(app, { path: '/admin/users' })
+    const body = await res.text()
+    expect(body).toContain(`value="${SAMPLE_USER.id}"`)
+  })
+
+  it('enabled user → body does NOT contain action="/admin/users/enable"', async () => {
+    const app = makeApp(goodAuth(), makeUserRepo([SAMPLE_USER]))
+    const res = await getAdmin(app, { path: '/admin/users' })
+    const body = await res.text()
+    expect(body).not.toContain('action="/admin/users/enable"')
+  })
+
+  it('disabled user → body contains action="/admin/users/enable"', async () => {
+    const app = makeApp(goodAuth(), makeUserRepo([SAMPLE_USER_2]))
+    const res = await getAdmin(app, { path: '/admin/users' })
+    const body = await res.text()
+    expect(body).toContain('action="/admin/users/enable"')
+  })
+
+  it('disabled user → body contains hidden userId input with row id', async () => {
+    const app = makeApp(goodAuth(), makeUserRepo([SAMPLE_USER_2]))
+    const res = await getAdmin(app, { path: '/admin/users' })
+    const body = await res.text()
+    expect(body).toContain(`value="${SAMPLE_USER_2.id}"`)
+  })
+
+  it('disabled user → body does NOT contain action="/admin/users/disable"', async () => {
+    const app = makeApp(goodAuth(), makeUserRepo([SAMPLE_USER_2]))
+    const res = await getAdmin(app, { path: '/admin/users' })
+    const body = await res.text()
+    expect(body).not.toContain('action="/admin/users/disable"')
+  })
+
+  it('body contains name="userId" for the operation form', async () => {
+    const app = makeApp(goodAuth(), makeUserRepo([SAMPLE_USER]))
+    const res = await getAdmin(app, { path: '/admin/users' })
+    const body = await res.text()
+    expect(body).toContain('name="userId"')
+  })
+
+  it('body does NOT contain name="enabled" (no enabled input in form)', async () => {
+    const app = makeApp(goodAuth(), makeUserRepo([SAMPLE_USER]))
+    const res = await getAdmin(app, { path: '/admin/users' })
+    const body = await res.text()
+    expect(body).not.toContain('name="enabled"')
+  })
+
+  it('操作 column header present', async () => {
+    const app = makeApp(goodAuth(), makeUserRepo([SAMPLE_USER]))
+    const res = await getAdmin(app, { path: '/admin/users' })
+    const body = await res.text()
+    expect(body).toContain('操作')
+  })
+
+  it('body does NOT contain password_hash in any form', async () => {
+    const app = makeApp(goodAuth(), makeUserRepo([SAMPLE_USER]))
+    const res = await getAdmin(app, { path: '/admin/users' })
+    const body = await res.text()
+    expect(body).not.toContain('password_hash')
+  })
+
+  it('body does NOT contain name="password_hash"', async () => {
+    const app = makeApp(goodAuth(), makeUserRepo([SAMPLE_USER]))
+    const res = await getAdmin(app, { path: '/admin/users' })
+    const body = await res.text()
+    expect(body).not.toContain('name="password_hash"')
+  })
+
+  it('body does NOT contain name="albumId" (userId-only form)', async () => {
+    const app = makeApp(goodAuth(), makeUserRepo([SAMPLE_USER]))
+    const res = await getAdmin(app, { path: '/admin/users' })
+    const body = await res.text()
+    expect(body).not.toContain('name="albumId"')
   })
 })

@@ -67,6 +67,11 @@ const LIST_SQL_WITH_CURSOR = `
   ORDER BY id ASC
   LIMIT ?`
 
+const SET_USER_ENABLED_SQL = `
+  UPDATE users
+  SET enabled = ?, updated_at = ?
+  WHERE id = ? AND enabled <> ?`
+
 export class AdminUserRepository {
   constructor(private readonly db: D1Database) {}
 
@@ -105,5 +110,21 @@ export class AdminUserRepository {
     const users = parsed.slice(0, ADMIN_USERS_PAGE_SIZE)
 
     return { users, hasMore }
+  }
+
+  async setUserEnabled(userId: string, enabled: number, updatedAt: string): Promise<void> {
+    if (!isValidId(userId)) throw databaseOperationError()
+    if (enabled !== 0 && enabled !== 1) throw databaseOperationError()
+    if (!isCanonicalUtcTimestamp(updatedAt)) throw databaseOperationError()
+
+    let result: D1Result
+    try {
+      result = await this.db.prepare(SET_USER_ENABLED_SQL).bind(enabled, updatedAt, userId, enabled).run()
+    } catch {
+      throw databaseOperationError()
+    }
+    if (result === null || typeof result !== 'object' || result.success !== true) {
+      throw databaseOperationError()
+    }
   }
 }

@@ -250,6 +250,16 @@ removed from the reserved-401 set; only `/api` and `/img` remain there.
 | `POST /admin/albums/disable` | Missing/mismatched Origin | `403 Forbidden` (same-origin check) |
 | `POST /admin/albums/disable` | Wrong Content-Type | `400 Bad Request` (no-store) |
 | `POST /admin/albums/disable` | Invalid/missing/extra/repeated field | `400 Bad Request` (no-store) |
+| `POST /admin/users/enable` | Verified + allowlisted + same-origin + form body | `303` to `/admin/users` (idempotent enable) |
+| `POST /admin/users/enable` | Any auth failure | `403 Forbidden` (generic, no-store) |
+| `POST /admin/users/enable` | Missing/mismatched Origin | `403 Forbidden` (same-origin check) |
+| `POST /admin/users/enable` | Wrong Content-Type | `400 Bad Request` (no-store) |
+| `POST /admin/users/enable` | Invalid/missing/extra/repeated field | `400 Bad Request` (no-store) |
+| `POST /admin/users/disable` | Verified + allowlisted + same-origin + form body | `303` to `/admin/users` (idempotent disable) |
+| `POST /admin/users/disable` | Any auth failure | `403 Forbidden` (generic, no-store) |
+| `POST /admin/users/disable` | Missing/mismatched Origin | `403 Forbidden` (same-origin check) |
+| `POST /admin/users/disable` | Wrong Content-Type | `400 Bad Request` (no-store) |
+| `POST /admin/users/disable` | Invalid/missing/extra/repeated field | `400 Bad Request` (no-store) |
 | Any other method or `/admin/*` path | Verified + allowlisted | `404 Not Found` (generic, no-store) |
 | Any other method or `/admin/*` path | Any failure | `403 Forbidden` (generic, no-store) |
 
@@ -791,3 +801,4 @@ route uses them yet.
 - Admin permission inventory: implemented (`GET /admin/permissions`). Reads 3 explicit columns from `album_permissions` only; no JOIN to `users` or `albums`; `password_hash`, `display_name`, `title`, and `photoprism_album_uid` are never selected, returned, rendered, logged, or exposed. Composite keyset-paginated (50 per page, `?after_album=<a>&after_user=<u>`). Requires a real `DB` binding; without one, D1 calls fail closed with `500`.
 - Admin permission mutations: implemented (`POST /admin/permissions/grant`, `POST /admin/permissions/revoke`). Strict same-origin, exact form Content-Type, two-field validated body. Idempotent: re-granting is a no-op (ON CONFLICT DO NOTHING); revoking an absent pair is a no-op (zero rows deleted). Both require a real `DB` binding; without one, D1 calls fail closed with `500`.
 - Admin album state controls: implemented (`POST /admin/albums/enable`, `POST /admin/albums/disable`). Strict same-origin, exact form Content-Type, single-field validated body (`albumId`). Idempotent: enabling an already-enabled album or disabling an already-disabled album affects zero rows and leaves `updated_at` unchanged. Disabling removes the album from the viewer album list, album detail, and image authorization (which require `enabled = 1`) without deleting permissions or R2 data. Both require a real `DB` binding; without one, D1 calls fail closed with `500`.
+- Admin user state controls: implemented (`POST /admin/users/enable`, `POST /admin/users/disable`). Strict same-origin, exact form Content-Type, single-field validated body (`userId`). Idempotent: re-enabling an already-enabled user or disabling an already-disabled user affects zero rows and leaves `updated_at` unchanged. Disabling a user blocks login (auth requires `enabled = 1`) and makes existing sessions unusable on their next request (session lookup requires `u.enabled = 1`), without deleting session rows or permission rows. Re-enabling may restore an unexpired retained session without creating a new one; lockout counters and `locked_until` are not reset. Only `enabled` and `updated_at` are written; `password_hash`, `display_name`, `fail_count`, `locked_until`, `created_at`, and all album/permission/R2 data are never touched. Both require a real `DB` binding; without one, D1 calls fail closed with `500`.

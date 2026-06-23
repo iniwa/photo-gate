@@ -363,3 +363,224 @@ describe('AdminUserRepository.listUsers error sanitization', () => {
     expect(msg).not.toContain(VALID_ROW.display_name)
   })
 })
+
+// ---------------------------------------------------------------------------
+// setUserEnabled — SQL structure
+// ---------------------------------------------------------------------------
+
+const VALID_USER_ID = 'user-abc-001'
+const VALID_UPDATED_AT = '2026-06-23T00:00:00.000Z'
+
+describe('AdminUserRepository.setUserEnabled SQL structure', () => {
+  async function issueEnable() {
+    const { db, queries } = makeMockDb([{}])
+    await new AdminUserRepository(db).setUserEnabled(VALID_USER_ID, 1, VALID_UPDATED_AT)
+    return queries
+  }
+
+  it('uses UPDATE users (single table)', async () => {
+    const queries = await issueEnable()
+    expect(queries[0]?.sql).toMatch(/UPDATE\s+users/i)
+  })
+
+  it('sets enabled in SET clause', async () => {
+    const queries = await issueEnable()
+    expect(queries[0]?.sql).toContain('enabled')
+  })
+
+  it('sets updated_at in SET clause', async () => {
+    const queries = await issueEnable()
+    expect(queries[0]?.sql).toContain('updated_at')
+  })
+
+  it('WHERE clause contains id = ?', async () => {
+    const queries = await issueEnable()
+    expect(queries[0]?.sql).toContain('id = ?')
+  })
+
+  it('WHERE clause contains enabled <> ? (idempotency predicate)', async () => {
+    const queries = await issueEnable()
+    expect(queries[0]?.sql).toContain('enabled <> ?')
+  })
+
+  it('SQL does NOT contain SELECT', async () => {
+    const queries = await issueEnable()
+    expect(queries[0]?.sql).not.toMatch(/\bSELECT\b/i)
+  })
+
+  it('SQL does NOT contain INSERT', async () => {
+    const queries = await issueEnable()
+    expect(queries[0]?.sql).not.toMatch(/\bINSERT\b/i)
+  })
+
+  it('SQL does NOT contain DELETE', async () => {
+    const queries = await issueEnable()
+    expect(queries[0]?.sql).not.toMatch(/\bDELETE\b/i)
+  })
+
+  it('SQL does NOT contain JOIN', async () => {
+    const queries = await issueEnable()
+    expect(queries[0]?.sql).not.toMatch(/\bJOIN\b/i)
+  })
+
+  it('SQL does NOT reference sessions', async () => {
+    const queries = await issueEnable()
+    expect(queries[0]?.sql).not.toContain('sessions')
+  })
+
+  it('SQL does NOT reference album_permissions', async () => {
+    const queries = await issueEnable()
+    expect(queries[0]?.sql).not.toContain('album_permissions')
+  })
+
+  it('SQL does NOT contain password_hash', async () => {
+    const queries = await issueEnable()
+    expect(queries[0]?.sql).not.toContain('password_hash')
+  })
+
+  it('SQL does NOT contain display_name', async () => {
+    const queries = await issueEnable()
+    expect(queries[0]?.sql).not.toContain('display_name')
+  })
+
+  it('SQL does NOT contain fail_count', async () => {
+    const queries = await issueEnable()
+    expect(queries[0]?.sql).not.toContain('fail_count')
+  })
+
+  it('SQL does NOT contain locked_until', async () => {
+    const queries = await issueEnable()
+    expect(queries[0]?.sql).not.toContain('locked_until')
+  })
+
+  it('SQL does NOT contain created_at in SET clause (only updated_at is written)', async () => {
+    const queries = await issueEnable()
+    // The SQL should not include created_at anywhere
+    expect(queries[0]?.sql).not.toContain('created_at')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// setUserEnabled — bound parameter order
+// ---------------------------------------------------------------------------
+
+describe('AdminUserRepository.setUserEnabled params', () => {
+  it('enable: binds [1, updatedAt, userId, 1] in that order', async () => {
+    const { db, queries } = makeMockDb([{}])
+    await new AdminUserRepository(db).setUserEnabled(VALID_USER_ID, 1, VALID_UPDATED_AT)
+    expect(queries[0]?.params).toEqual([1, VALID_UPDATED_AT, VALID_USER_ID, 1])
+  })
+
+  it('disable: binds [0, updatedAt, userId, 0] in that order', async () => {
+    const { db, queries } = makeMockDb([{}])
+    await new AdminUserRepository(db).setUserEnabled(VALID_USER_ID, 0, VALID_UPDATED_AT)
+    expect(queries[0]?.params).toEqual([0, VALID_UPDATED_AT, VALID_USER_ID, 0])
+  })
+
+  it('userId is a bound parameter, not an SQL literal', async () => {
+    const { db, queries } = makeMockDb([{}])
+    await new AdminUserRepository(db).setUserEnabled(VALID_USER_ID, 1, VALID_UPDATED_AT)
+    expect(queries[0]?.sql).not.toContain(VALID_USER_ID)
+    expect(queries[0]?.params).toContain(VALID_USER_ID)
+  })
+
+  it('updatedAt is a bound parameter, not an SQL literal', async () => {
+    const { db, queries } = makeMockDb([{}])
+    await new AdminUserRepository(db).setUserEnabled(VALID_USER_ID, 1, VALID_UPDATED_AT)
+    expect(queries[0]?.sql).not.toContain(VALID_UPDATED_AT)
+    expect(queries[0]?.params).toContain(VALID_UPDATED_AT)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// setUserEnabled — success cases
+// ---------------------------------------------------------------------------
+
+describe('AdminUserRepository.setUserEnabled success', () => {
+  it('resolves without throwing on successful run result', async () => {
+    const { db } = makeMockDb([{ runResult: { success: true } }])
+    await expect(new AdminUserRepository(db).setUserEnabled(VALID_USER_ID, 1, VALID_UPDATED_AT)).resolves.toBeUndefined()
+  })
+
+  it('already-same state with zero changed rows is a successful no-op', async () => {
+    const { db } = makeMockDb([{ runResult: { success: true, meta: { changes: 0 } } }])
+    await expect(new AdminUserRepository(db).setUserEnabled(VALID_USER_ID, 1, VALID_UPDATED_AT)).resolves.toBeUndefined()
+  })
+
+  it('unknown user with zero changed rows is a successful no-op', async () => {
+    const { db } = makeMockDb([{ runResult: { success: true, meta: { changes: 0 } } }])
+    await expect(new AdminUserRepository(db).setUserEnabled(VALID_USER_ID, 0, VALID_UPDATED_AT)).resolves.toBeUndefined()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// setUserEnabled — validation before D1
+// ---------------------------------------------------------------------------
+
+describe('AdminUserRepository.setUserEnabled validation before D1', () => {
+  it('invalid userId → throws before D1 is called', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminUserRepository(db).setUserEnabled('!bad!', 1, VALID_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+
+  it('enabled=2 → throws before D1 is called', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminUserRepository(db).setUserEnabled(VALID_USER_ID, 2, VALID_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+
+  it('invalid updatedAt → throws before D1 is called', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminUserRepository(db).setUserEnabled(VALID_USER_ID, 1, 'not-a-date'),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// setUserEnabled — D1 error sanitization
+// ---------------------------------------------------------------------------
+
+describe('AdminUserRepository.setUserEnabled error sanitization', () => {
+  it('D1 throw → "database operation failed"', async () => {
+    const { db } = makeMockDb([{ throws: new Error('D1 error with secret-detail') }])
+    await expect(
+      new AdminUserRepository(db).setUserEnabled(VALID_USER_ID, 1, VALID_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+  })
+
+  it('D1 error message does not contain the sensitive detail from the thrown error', async () => {
+    const sensitiveDetail = 'secret-d1-detail-xyz'
+    const { db } = makeMockDb([{ throws: new Error(`D1 error: ${sensitiveDetail}`) }])
+    const err = await new AdminUserRepository(db).setUserEnabled(VALID_USER_ID, 1, VALID_UPDATED_AT).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(Error)
+    expect((err as Error).message).not.toContain(sensitiveDetail)
+  })
+
+  it('null run result → "database operation failed"', async () => {
+    const { db } = makeMockDb([{ runResult: null }])
+    await expect(
+      new AdminUserRepository(db).setUserEnabled(VALID_USER_ID, 1, VALID_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+  })
+
+  it('run result success=false → "database operation failed"', async () => {
+    const { db } = makeMockDb([{ runResult: { success: false } }])
+    await expect(
+      new AdminUserRepository(db).setUserEnabled(VALID_USER_ID, 1, VALID_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+  })
+
+  it('malformed primitive run result → "database operation failed"', async () => {
+    const { db } = makeMockDb([{ runResult: 'malformed' }])
+    await expect(
+      new AdminUserRepository(db).setUserEnabled(VALID_USER_ID, 1, VALID_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+  })
+})

@@ -14,7 +14,10 @@ type AdminEnv = { Bindings: Env }
 type AdminContext = Context<AdminEnv>
 
 export interface AdminRouteDeps {
-  userRepo: { listUsers(afterUserId?: string): Promise<AdminUserPage> }
+  userRepo: {
+    listUsers(afterUserId?: string): Promise<AdminUserPage>
+    setUserEnabled(userId: string, enabled: number, updatedAt: string): Promise<void>
+  }
   albumRepo: {
     listAlbums(afterAlbumId?: string): Promise<AdminAlbumPage>
     setAlbumEnabled(albumId: string, enabled: number, updatedAt: string): Promise<void>
@@ -105,6 +108,22 @@ async function parseAlbumIdField(
   if (typeof albumId !== 'string') return null
   if (!isValidId(albumId)) return null
   return { albumId }
+}
+
+async function parseUserIdField(
+  c: AdminContext,
+): Promise<{ userId: string } | null> {
+  let body: Record<string, string | File | (string | File)[]>
+  try {
+    body = await c.req.parseBody({ all: true })
+  } catch {
+    return null
+  }
+  if (Object.keys(body).length !== 1) return null
+  const userId = body['userId']
+  if (typeof userId !== 'string') return null
+  if (!isValidId(userId)) return null
+  return { userId }
 }
 
 /**
@@ -336,6 +355,48 @@ export function createAdminRoutes(
   admin.post('/albums/enable', (c) => handleSetEnabled(c, 1))
   admin.post('/albums/disable', (c) => handleSetEnabled(c, 0))
 
+  // User enable/disable. Same security contract as album enable/disable: guard
+  // (above) -> strict same-origin -> exact form Content-Type -> exactly one
+  // valid `userId` -> clock (only after validation) -> single idempotent UPDATE.
+  // Enable binds 1, disable binds 0. Session rows and permission rows are never
+  // touched; lockout state is not reset. Re-enabling may restore an unexpired
+  // retained session without creating a new one.
+  const handleSetUserEnabled = async (c: AdminContext, enabled: 0 | 1): Promise<Response> => {
+    if (!isSameOrigin(c)) return forbiddenResponse(c)
+    if (!isFormContentType(c.req.header('Content-Type'))) {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Bad Request', 400)
+    }
+    const fields = await parseUserIdField(c)
+    if (fields === null) {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Bad Request', 400)
+    }
+
+    const deps = depsFromEnv(c.env)
+    let updatedAt: string
+    try {
+      updatedAt = deps.clock().toISOString()
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+
+    try {
+      await deps.userRepo.setUserEnabled(fields.userId, enabled, updatedAt)
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+
+    c.header('Cache-Control', 'no-store')
+    c.header('Location', '/admin/users')
+    return c.body(null, 303)
+  }
+
+  admin.post('/users/enable', (c) => handleSetUserEnabled(c, 1))
+  admin.post('/users/disable', (c) => handleSetUserEnabled(c, 0))
+
   // Any other method/path under /admin stays behind the guard and returns a
   // generic authenticated 404 — never the viewer router, never any data.
   admin.all('*', (c) => {
@@ -395,6 +456,7 @@ function AdminUsersPage({ page }: { page: AdminUserPage }) {
               <th>ロック</th>
               <th>作成日時</th>
               <th>更新日時</th>
+              <th>操作</th>
             </tr>
           </thead>
           <tbody>
@@ -411,6 +473,19 @@ function AdminUsersPage({ page }: { page: AdminUserPage }) {
                 </td>
                 <td>{u.created_at}</td>
                 <td>{u.updated_at}</td>
+                <td>
+                  {u.enabled === 1 ? (
+                    <form method="post" action="/admin/users/disable">
+                      <input type="hidden" name="userId" value={u.id} />
+                      <button type="submit">無効化</button>
+                    </form>
+                  ) : (
+                    <form method="post" action="/admin/users/enable">
+                      <input type="hidden" name="userId" value={u.id} />
+                      <button type="submit">有効化</button>
+                    </form>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
