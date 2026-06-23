@@ -11,7 +11,16 @@ Operable.
 
 ## Current Task
 
-There is no active implementation handoff.
+The active Level 3 implementation handoff is:
+
+- `docs/handoffs/2026-06-23-admin-user-enable-disable.md`
+- Add idempotent viewer-user enable/disable controls behind the existing admin
+  Access boundary.
+- Change only `users.enabled` and `updated_at`; preserve passwords, lockout
+  state, sessions, permissions, albums, and R2 data.
+- Existing sessions become unusable while the user is disabled through the
+  existing `u.enabled = 1` checks. Retained unexpired sessions may become usable
+  again after re-enable; session revocation is explicitly outside this task.
 
 The fifth Level 3 implementation handoff is reviewed and complete:
 
@@ -95,6 +104,8 @@ Recent Level 2 execution:
 - DONE: sync `0.2.1` implemented, tagged, and published multi-arch. It
   restores the root logger to WARNING so httpx cannot expose PhotoPrism
   preview URLs/tokens while retaining `photo_gate.*` INFO logs.
+- DONE: the operator confirmed the existing Portainer stack is running sync
+  `0.2.1` on 2026-06-23.
 
 Level 2 leftovers: verify Worker version rollback after the local token gains
 the optional Workers Scripts scope; verify Docker rollback and record both
@@ -139,8 +150,8 @@ procedures.
   return the expected 403/no-store while Access configuration is absent.
 - Docker: sync `0.2.1` reports 183 tests green and is published multi-arch;
   the targeted daemon regression suite independently passed 19 tests on
-  Windows (2026-06-15). Production Pi remains on `0.2.0` pending the
-  operator update.
+  Windows (2026-06-15). The operator confirmed the production Pi is running
+  `0.2.1` on 2026-06-23.
 - Live security posture (2026-06-11/12): unauthenticated pages 303 to
   `/`; `/img` + reserved routes 401 `no-store`; cross-origin and
   `Origin: null` POSTs 403; direct R2 refused; no URL/token/EXIF/GPS/XMP
@@ -159,7 +170,7 @@ procedures.
 See `docs/operations/operator-actions.md` for the operator-facing
 action list and full status snapshot.
 
-1. ACTIVE: bump the Portainer stack image to published `0.2.1`. 0.2.1
+1. DONE 2026-06-23: the Portainer stack image is running `0.2.1`. 0.2.1
    fixes a log leak found in production on
    2026-06-15: the 0.2.0 daemon configured the *root* logger at INFO,
    which enabled httpx's `HTTP Request: GET <url>` lines on stdout —
@@ -180,9 +191,8 @@ action list and full status snapshot.
 
 ## Next Priority
 
-Complete the operator's sync `0.2.1` Portainer update and configure the deployed
-`/admin` Access boundary. Complete Level 2 rollback verification when production
-access and token scope permit. The next local Level 3 implementation priority
-should be selected from user administration, broader album administration,
-sync administration, or
-operational audit information.
+Implement and review the active admin user enable/disable handoff. Configure the
+deployed `/admin` Access boundary. Complete Level 2 rollback verification when
+production access and token scope permit. After the active handoff, select the
+next Level 3 priority from broader user/album administration, sync
+administration, or operational audit information.

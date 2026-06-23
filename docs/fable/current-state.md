@@ -1,6 +1,6 @@
 # Current State
 
-Last audited: 2026-06-19.
+Last audited: 2026-06-23.
 
 ## Level
 
@@ -19,13 +19,14 @@ thumbnail grid, and preview display (2026-06-12).
 - R2 `photo-gate`, private. One album: 234 thumbs (640 WebP) + 234
   previews (fit_1920 source, JPEG) + manifest.json, all metadata-free.
 - Sync: Portainer stack `iniwa-photo-gate` on a Raspberry Pi 4 running
-  `ghcr.io/iniwa/photo-gate-sync:0.2.0` with the native sync daemon,
+  `ghcr.io/iniwa/photo-gate-sync:0.2.1` with the native sync daemon,
   healthcheck, and
   `PHOTOPRISM_PREVIEW_SIZE=fit_1920`, scheduled at the default 86400-second
   interval.
-- Sync `0.2.1` is published for `linux/amd64` and `linux/arm64` but is not
-  yet confirmed deployed on the Pi. It fixes an httpx log leak that exposed
-  short-lived PhotoPrism preview URLs/tokens in Portainer logs.
+- Sync `0.2.1` is published for `linux/amd64` and `linux/arm64` and the
+  operator confirmed it is deployed on the Pi on 2026-06-23. It fixes the
+  httpx log leak that exposed short-lived PhotoPrism preview URLs/tokens in
+  Portainer logs.
 - PhotoPrism serves static thumbs up to 1920 px; dynamic previews stay
   disabled by operator choice (Pi load).
 
@@ -54,8 +55,6 @@ thumbnail grid, and preview display (2026-06-12).
 
 ## Missing / Next (see roadmap)
 
-- Operator: update the existing Portainer stack from sync `0.2.0` to `0.2.1`
-  and confirm no `HTTP Request:` lines appear.
 - Level 2: verify and record Worker and Docker rollback procedures. Worker
   version rollback remains blocked on optional local token scope; Docker
   rollback requires an intentional production stack operation.
