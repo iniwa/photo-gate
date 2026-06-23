@@ -124,8 +124,8 @@ This is a priority-ordered plan. Update status as implementation progresses.
       allowlist.
       (Worker-side validation, allowlist, fail-closed tests, and operator
       documentation are implemented, reviewed, and deployed 2026-06-15.
-      Production Access application setup, values, and authenticated smoke
-      verification remain.)
+      The path-scoped Access application, all three Worker values, and
+      authenticated smoke verification are complete as of 2026-06-23.)
 - [ ] Implement user, album, and permission administration.
       (Read-only, keyset-paginated user inventory implemented and reviewed
       2026-06-15. Read-only, keyset-paginated album and permission inventories

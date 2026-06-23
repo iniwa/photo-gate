@@ -14,7 +14,7 @@
 - 値はすべて非シークレット(バージョン ID・タグ・コミット SHA のみ)。
   ユーザー ID・アルバム ID・トークン類は書かないこと。
 
-## Workers (photo-gate.iniwaiwana.workers.dev)
+## Workers (share-photo.iniwach.com)
 
 | 日付 (JST) | バージョン ID | コミット | 方法 | 備考 |
 |---|---|---|---|---|

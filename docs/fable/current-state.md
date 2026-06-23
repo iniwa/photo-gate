@@ -11,8 +11,9 @@ thumbnail grid, and preview display (2026-06-12).
 
 ## Production Topology
 
-- Workers viewer: https://photo-gate.iniwaiwana.workers.dev
-  (CI-deployed commit `729dc72`; cron 18:00 UTC session cleanup).
+- Workers viewer: https://share-photo.iniwach.com
+  (CI-deployed commit `42a7b56`; cron 18:00 UTC session cleanup).
+  The former `photo-gate.iniwaiwana.workers.dev` route is disabled and returns 404.
 - D1 `photo-gate` (APAC, id `de77cb73-497a-4a41-bd1c-151fd907be3f`),
   2 migrations applied. One user, one album, one permission row (real
   identifiers live only in D1/Portainer, never in the repo).
@@ -63,12 +64,12 @@ thumbnail grid, and preview display (2026-06-12).
   permission inventories and idempotent permission grant/revoke mutations are
   implemented and deployed. Idempotent album enable/disable controls are also
   implemented and deployed. Idempotent user enable/disable controls are also
-  implemented and deployed. The operator must create the path-scoped
-  Access
-  application and register the three Worker values before the production admin
-  surface is usable; until then deployed admin routes fail closed with 403.
-  Broader user and album mutation operations, sync
-  administration, dry-run cleanup, and final hardening remain unimplemented.
+  implemented and deployed. The path-scoped Cloudflare Access application is
+  configured, and the three Worker values (`CF_ACCESS_TEAM_DOMAIN`,
+  `CF_ACCESS_AUD`, `ADMIN_EMAILS`) are registered and operator-verified on
+  2026-06-23; the production admin surface is usable. Broader user and album
+  mutation operations, sync administration, dry-run cleanup, and final hardening
+  remain unimplemented.
 
 ## Verification Baseline
 

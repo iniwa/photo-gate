@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-06-19.
+Last updated: 2026-06-23.
 
 ## Current Completion Level
 
@@ -84,9 +84,10 @@ The first Level 3 implementation handoff is reviewed and complete:
   permission inventories; production `/admin/albums` and `/admin/permissions`
   both return the expected fail-closed 403 with `Cache-Control: no-store` while
   Access configuration is absent.
-- PENDING HUMAN: create the path-scoped Cloudflare Access application, register
-  `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, and `ADMIN_EMAILS`, and perform the
-  documented authenticated production smoke checks.
+- DONE 2026-06-23: the path-scoped Cloudflare Access application is configured,
+  `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, and `ADMIN_EMAILS` are registered,
+  and the operator verified an allowlisted authenticated session reaches the
+  admin console at `https://share-photo.iniwach.com/admin`.
 - Admin CRUD, sync operations, audit UI, and cleanup remain unimplemented.
 
 Recent Level 2 execution:
@@ -152,7 +153,9 @@ procedures.
   CI gates production dependencies only until upstream Wrangler/Miniflare adopt
   fixed transitive releases.
   Live includes CI-deployed commit `42a7b56`; unauthenticated admin smoke checks
-  return the expected 403/no-store while Access configuration is absent.
+  return the expected 403/no-store. The operator subsequently configured the
+  Access application, registered all three Worker values, and verified
+  authenticated admin access on 2026-06-23.
 - Docker: sync `0.2.1` reports 183 tests green and is published multi-arch;
   the targeted daemon regression suite independently passed 19 tests on
   Windows (2026-06-15). The operator confirmed the production Pi is running
@@ -196,7 +199,6 @@ action list and full status snapshot.
 
 ## Next Priority
 
-Configure the deployed `/admin` Access boundary. Complete Level 2 rollback
-verification when production access and token scope permit. Select the next
-Level 3 priority from broader user/album administration, sync administration,
-or operational audit information.
+Complete Level 2 rollback verification when production access and token scope
+permit. Select the next Level 3 priority from broader user/album
+administration, sync administration, or operational audit information.

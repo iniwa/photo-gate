@@ -39,10 +39,9 @@ Access が発行した JWT を Worker 自身が検証 (`jose` ライブラリ、
    - **Application domain**: Worker のドメインに `/admin` のパスを付けて
      パス限定にする
      ```
-     Domain:  <your-worker-domain>
+     Domain:  share-photo.iniwach.com
      Path:    /admin
      ```
-     (例: `photo-gate.<account>.workers.dev` の場合、Path を `/admin` に設定)
 
 4. **Next** へ進み、**Identity providers** と **Policies** を設定する
    (最低 1 つのポリシーで管理者のみ通過させる。メール照合は Worker 側でも
@@ -175,7 +174,8 @@ JWKS エラー、allowlist の内容は一切含まれません。ログにも�
 
 1. allowlist に登録された管理者セッションで `GET /admin/anything` にアクセスする
 2. 期待結果: `404 Not Found`、`Cache-Control: no-store`
-   (管理機能は未実装のため、認証済みでも 404 が返る)
+   (未知パスは認証済みでも 404 が返る。実装済み管理機能は
+   `/admin/users`、`/admin/albums`、`/admin/permissions` の各パスにある)
 
 ---
 
@@ -188,5 +188,5 @@ JWKS エラー、allowlist の内容は一切含まれません。ログにも�
   に値が残る形での登録は避ける。
 - Access アプリ作成・シークレット登録・デプロイ操作はエージェントに
   委任せず、オペレーターが直接実施する。
-- `GET /admin` の成功レスポンスには管理機能は未実装である旨のみ表示される。
-  ビューワー/アルバム/R2/PhotoPrism/NAS データは含まれない。
+- `GET /admin` の成功レスポンスには管理コンソールのリンク(ユーザー・アルバム・
+  権限)が表示される。ビューワー/アルバム/R2/PhotoPrism/NAS データは含まれない。

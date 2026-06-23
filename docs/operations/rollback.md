@@ -53,7 +53,7 @@ npx wrangler rollback [<version-id>] # 指定版へ戻す
 
 ### 1.3 ロールバック後の確認
 
-1. `https://photo-gate.iniwaiwana.workers.dev/` がログインフォームを返す
+1. `https://share-photo.iniwach.com/` がログインフォームを返す
 2. 未認証で `/albums` → `/` へ 303
 3. ブラウザでログイン → アルバム一覧 → サムネイル表示
    (curl だけでは不十分。Referrer-Policy 事故の教訓により、ブラウザ

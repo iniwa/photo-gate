@@ -1,4 +1,4 @@
-# オペレーター対応事項と全体進捗 (2026-06-15 更新)
+# オペレーター対応事項と全体進捗 (2026-06-23 更新)
 
 このドキュメントは「人間(オペレーター)が手を動かす必要がある作業」と
 「プロジェクト全体の現在地」を 1 枚にまとめたものです。状態の最終的な
@@ -145,34 +145,37 @@ R2 停止の原因になったため、用途と保管先を明確にしてお�
 | ヘルス/レディネス | ✅ health file + `healthcheck` + Dockerfile HEALTHCHECK |
 | サニタイズ済み運用ログ | ✅ daemon/sync の INFO ログ(URL/トークン/タイトル非出力) |
 | D1/設定のバックアップ・リカバリ手順 | ✅ `backup.md`(D1 export を実地検証・初回ダンプ取得済み) |
-| **本番での 0.2.0 同期成功の確認** | ⏳ **A-1 の R2 キー再発行待ち** |
+| **本番での同期成功の確認** | ✅ 完了。0.2.1 が Pi 上で稼働・234/234 同期確認済み(2026-06-23) |
 | Worker/Docker ロールバック手順の検証記録 | ⏳ 未実施(任意。A-2 後に versions list 確認可) |
 
-### Level 3(Feature Complete): 未着手
+### Level 3(Feature Complete): 進行中
 
-- `/admin` の Cloudflare Access 保護、管理機能(ユーザー/アルバム/権限/
-  同期)、監査情報
+- `/admin` の Cloudflare Access 保護: 実装・デプロイ・Access アプリ設定・
+  3 値登録・オペレーター確認済み (2026-06-23)
+- 管理機能: ユーザー/アルバム/権限の読み取り専用一覧・権限 grant/revoke・
+  アルバム/ユーザー有効化/無効化を実装・デプロイ済み。より広範なユーザー/
+  アルバム操作・同期管理・監査情報は未実装
 - R2 安全クリーンアップ(ADR + dry-run 先行、削除は人間承認まで無効)
 - 最終ハードニング(依存関係・サプライチェーン・GitHub Actions 権限の
   レビュー、SHA pinning 等)
 
 ### 本番トポロジー(現状)
 
-- Workers: https://photo-gate.iniwaiwana.workers.dev(CI デプロイ運用)
+- Workers: https://share-photo.iniwach.com (CI デプロイ運用、カスタムドメイン)
+  旧 `photo-gate.iniwaiwana.workers.dev` ルートは無効化済み (404 を返す)
 - D1 `photo-gate`(APAC)/ R2 `photo-gate`(非公開)
 - Pi 上 Portainer スタック `iniwa-photo-gate`:
-  `ghcr.io/iniwa/photo-gate-sync:0.2.0`(sync-daemon、interval 86400s、
+  `ghcr.io/iniwa/photo-gate-sync:0.2.1`(sync-daemon、interval 86400s、
   preview_size fit_1920)
-- GHCR 公開タグ: `0.1.6`(旧稼働)/ `0.1.7`(スキップ)/ `0.2.0`(現行)
+- GHCR 公開タグ: `0.1.6`(旧稼働)/ `0.1.7`(スキップ)/ `0.2.0`(ログ漏えい修正前)/ `0.2.1`(現行)
+- Cloudflare Access: `/admin` パス限定アプリを設定済み・3 値登録済み・
+  オペレーター動作確認済み (2026-06-23)
 
 ---
 
-## D. 次のエージェント作業(R2 キー復旧後)
+## D. 次のエージェント作業
 
-1. 本番で 0.2.0 同期が成功したことをログ/ブラウザで確認し、
-   `deploy-log.md` の 0.2.0 行に「Pi 稼働開始」を記入。
-2. (A-2 完了時)`wrangler versions list` 疎通確認 → バージョン ID を
+1. (A-2 完了時)`wrangler versions list` 疎通確認 → バージョン ID を
    `deploy-log.md` に追記、ロールバック手順の検証記録を残す。
-3. Level 2 をクローズし、Level 3 の最初の項目(`/admin` の
-   Cloudflare Access 保護)へ着手するか、最終ハードニングのうち
-   非破壊で進められる供給網レビューに入る。
+2. Level 2 ロールバック検証をクローズし、Level 3 の次の項目
+   (より広範なユーザー/アルバム管理・同期管理・監査情報)を Codex と検討する。

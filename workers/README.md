@@ -337,9 +337,9 @@ error.
 | `ADMIN_EMAILS` | Comma-separated administrator email allowlist | Each entry trimmed, normalized, and exact-matched case-insensitively |
 
 Until all three values are configured and a real Cloudflare Access application is created
-and deployed, `/admin` fails closed with `403` for everyone. Creating the Access
-application, registering the secrets, and deploying require separate human authorization.
-See `docs/operations/admin-access.md` for operator setup instructions.
+and deployed, `/admin` fails closed with `403` for everyone. The production Access
+application, secrets, and deployment at `https://share-photo.iniwach.com` are complete
+as of 2026-06-23. See `docs/operations/admin-access.md` for operator setup instructions.
 
 ## D1 Schema (Phase 3, created but not applied)
 
@@ -795,7 +795,7 @@ route uses them yet.
 - Viewer pages: wired and active (`/`, `/albums`, `/albums/:albumId`); no fixture data remains, but without real D1/R2 they render only the login form / fail-closed responses
 - Expired-session cleanup: a daily cron trigger (`0 18 * * *` UTC = 03:00 JST) runs `deleteExpiredSessions` via the worker `scheduled` handler; it needs a real `DB` binding to have effect (failures are swallowed — expired sessions are already rejected at read time)
 - PhotoPrism: no API calls
-- Admin authentication boundary: implemented (`/admin` is now Cloudflare Access-gated with Worker-side JWT validation and email allowlist). The Cloudflare Access application, the three Worker config values (`CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, `ADMIN_EMAILS`), and deployment are **not yet done** — `/admin` fails closed with `403` for everyone until those are configured by a human operator (see `docs/operations/admin-access.md`)
+- Admin authentication boundary: implemented (`/admin` is now Cloudflare Access-gated with Worker-side JWT validation and email allowlist). The Cloudflare Access application, all three Worker config values (`CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, `ADMIN_EMAILS`), and deployment are complete — the production admin surface at `https://share-photo.iniwach.com/admin` is operator-verified as of 2026-06-23 (see `docs/operations/admin-access.md`).
 - Admin user inventory: implemented (`GET /admin/users`). Reads the D1 `users` table with 7 explicit columns; `password_hash` is never selected, returned, rendered, logged, or exposed. Keyset-paginated (50 per page). Requires a real `DB` binding to function; without one, D1 calls fail closed with `500`.
 - Admin album inventory: implemented (`GET /admin/albums`). Reads 7 explicit columns from the D1 `albums` table; `photoprism_album_uid`, all transform settings, and `strip_exif` are never selected, returned, rendered, logged, or exposed. Keyset-paginated (50 per page). Requires a real `DB` binding; without one, D1 calls fail closed with `500`.
 - Admin permission inventory: implemented (`GET /admin/permissions`). Reads 3 explicit columns from `album_permissions` only; no JOIN to `users` or `albums`; `password_hash`, `display_name`, `title`, and `photoprism_album_uid` are never selected, returned, rendered, logged, or exposed. Composite keyset-paginated (50 per page, `?after_album=<a>&after_user=<u>`). Requires a real `DB` binding; without one, D1 calls fail closed with `500`.
