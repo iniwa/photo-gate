@@ -113,9 +113,12 @@ Recent Level 2 execution:
 - DONE: the operator confirmed the existing Portainer stack is running sync
   `0.2.1` on 2026-06-23.
 
-Level 2 leftovers: verify Worker version rollback after the local token gains
-the optional Workers Scripts scope; verify Docker rollback and record both
-procedures.
+Level 2 leftovers: Worker version rollback verified 2026-06-23 — `wrangler rollback`
+with OAuth session, both directions, unauthenticated smoke checks passed.
+Rollback removed the Access secrets; they were re-registered, the AUD was
+corrected from the dashboard value, and authenticated `/admin` was restored on
+version `08e567cf`. Docker image rollback requires a Portainer stack swap
+operation and remains unverified.
 
 ## Last Completed Work (Level 1 closure, 2026-06-11..12)
 
@@ -199,6 +202,6 @@ action list and full status snapshot.
 
 ## Next Priority
 
-Complete Level 2 rollback verification when production access and token scope
-permit. Select the next Level 3 priority from broader user/album
-administration, sync administration, or operational audit information.
+Worker rollback verification is complete (2026-06-23). Select the next priority
+from Docker image rollback verification (Portainer stack swap) or Level 3 broader
+user/album administration, sync administration, or operational audit information.

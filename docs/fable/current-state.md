@@ -12,7 +12,8 @@ thumbnail grid, and preview display (2026-06-12).
 ## Production Topology
 
 - Workers viewer: https://share-photo.iniwach.com
-  (CI-deployed commit `42a7b56`; cron 18:00 UTC session cleanup).
+  (code equivalent to CI-deployed commit `42a7b56`; active version
+  `08e567cf-76a8-4151-8f76-d92783b73af0`; cron 18:00 UTC session cleanup).
   The former `photo-gate.iniwaiwana.workers.dev` route is disabled and returns 404.
 - D1 `photo-gate` (APAC, id `de77cb73-497a-4a41-bd1c-151fd907be3f`),
   2 migrations applied. One user, one album, one permission row (real
@@ -56,9 +57,14 @@ thumbnail grid, and preview display (2026-06-12).
 
 ## Missing / Next (see roadmap)
 
-- Level 2: verify and record Worker and Docker rollback procedures. Worker
-  version rollback remains blocked on optional local token scope; Docker
-  rollback requires an intentional production stack operation.
+- Level 2: Worker version rollback verified 2026-06-23 — `wrangler rollback`
+  (OAuth session) rolled back and restored production between version IDs
+  `0fa7821a` and `495c9ae6`; unauthenticated smoke checks passed both ways.
+  The exercise revealed that rollback did not restore Worker secrets; the
+  three Access secrets were re-registered and production recovered on version
+  `08e567cf`, with authenticated `/admin` confirmed by the operator.
+  Docker rollback requires an intentional Portainer stack swap and remains
+  unverified.
 - Level 3: `/admin` Worker-side Cloudflare Access JWT validation plus admin
   email allowlist and the read-only, keyset-paginated user, album, and
   permission inventories and idempotent permission grant/revoke mutations are

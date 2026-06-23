@@ -23,6 +23,9 @@
 | 2026-06-12 | (未記録)| `c884256` | CI (workers-ci) | CI 自動デプロイの初観測。deploy ジョブ全ステップ実行・スモーク良好。バージョン ID はトークン復旧後に `wrangler deployments list` で補記 |
 | 2026-06-19 | `01c96d15-5565-451f-98ba-f1071decfbcc` | `729dc72` | CI (workers-ci) | 管理アルバム有効化/無効化。checks/deploy 成功、未認証 GET/enable/disable は 403 no-store |
 | 2026-06-23 | `0fa7821a-850f-46d5-bddb-7f2a8c6d009a` | `42a7b56` | CI (workers-ci 再実行) | 管理ユーザー有効化/無効化。Cloudflare token/account 修正後 checks/deploy 成功、未認証 GET/enable/disable は 403 no-store |
+| 2026-06-23 | `0fa7821a-850f-46d5-bddb-7f2a8c6d009a` | `42a7b56` | `wrangler rollback` (OAuth) | ロールバック検証。スモーク全 5 項目合格 |
+| 2026-06-23 | `495c9ae6-3cf5-4a04-a8f0-d93017468811` | `42a7b56` 相当 | `wrangler rollback` (OAuth) | ロールバック検証後リストア。スモーク全 5 項目合格。その後シークレット復旧版に更新 |
+| 2026-06-23 | `08e567cf-76a8-4151-8f76-d92783b73af0` | `42a7b56` 相当 | Dashboard / `wrangler secret put` | ロールバックで消失した Access シークレット 3 件を復旧。AUD をダッシュボード値で再登録し、管理コンソール復旧確認済み。本番はこの版で稼働中 |
 
 ## Docker sync (ghcr.io/iniwa/photo-gate-sync)
 

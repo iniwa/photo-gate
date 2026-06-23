@@ -43,22 +43,64 @@ npx wrangler versions list           # 版数と作成日時の一覧
 npx wrangler rollback [<version-id>] # 指定版へ戻す
 ```
 
-> **検証状況 (2026-06-12)**: この経路は未検証です。`versions list` /
-> `rollback` / ローカル `wrangler deploy` には API トークンの
-> **Account → Workers Scripts → Edit** 権限が必要で、現在のローカル
-> トークンは D1 権限のみのため 403 になります。必要になったら
-> ダッシュボードでトークンに権限を追加するか、`wrangler login` の
-> OAuth セッションで実行してください。通常は 1.1 の git ベース手順
-> (CI がデプロイ)を優先します。
+> **検証済み (2026-06-23)**: `wrangler rollback <version-id> --name photo-gate --yes`
+> で指定バージョンへの即時切り替えを本番で確認済み(往復・スモーク全合格)。
+> `versions list` と `rollback` には OAuth セッション、または
+> Workers Scripts Edit 権限付きトークンが必要。ローカルトークンは D1 権限のみ
+> のため、実行は `wrangler login` の OAuth セッションを使用した。
+> 通常は 1.1 の git ベース手順(CI がデプロイ)を優先する。
+
+> **警告: `wrangler rollback` はシークレット(secrets)を復元しない。**
+> Cloudflare はロールバック先バージョンのスクリプトコードのみを適用し、
+> シークレット/変数は「connected resource」として扱われるため巻き戻されない。
+> シークレットを持たないバージョンへロールバックすると、それ以降のバージョンへ
+> 復帰してもシークレットは消えたままになる。ロールバック後は必ず 1.3 の
+> シークレット確認手順を実行すること。
 
 ### 1.3 ロールバック後の確認
 
-1. `https://share-photo.iniwach.com/` がログインフォームを返す
+**A. シークレット確認(必須・最初に実施)**
+
+```sh
+cd workers
+npx wrangler secret list
+```
+
+`CF_ACCESS_TEAM_DOMAIN`・`CF_ACCESS_AUD`・`ADMIN_EMAILS` の 3 件が表示されることを
+確認する。1 件でも欠けていたら、以下で再登録してから次の手順へ進むこと:
+
+```sh
+npx wrangler secret put CF_ACCESS_TEAM_DOMAIN   # <team>.cloudflareaccess.com 形式
+npx wrangler secret put CF_ACCESS_AUD
+npx wrangler secret put ADMIN_EMAILS            # カンマ区切りメールアドレス
+```
+
+> 値は対話入力のみ。スクリプト引数・シェル履歴・ログへの書き込みは禁止。
+> 再登録後、新しいバージョン ID が発行される。`wrangler secret list` で 3 件を
+> 再確認してから次へ進む。
+>
+> **CF_ACCESS_AUD は必ず Cloudflare One ダッシュボードからコピー貼り付けすること。**
+> Cloudflare One → Access → Applications → アプリを Configure → Overview タブ。
+> 手入力・記憶入力は 1 文字の差異で /admin が 403 になる(2026-06-23 に実際に発生)。
+
+**B. スモーク確認**
+
+1. `https://share-photo.iniwach.com/` がログインフォームを返す (200)
 2. 未認証で `/albums` → `/` へ 303
-3. ブラウザでログイン → アルバム一覧 → サムネイル表示
+3. 未認証で `/img/…` → 401 `Cache-Control: no-store`
+4. 未認証で `/api/…` → 401 `Cache-Control: no-store`
+5. 未認証で `/admin` → Cloudflare Access が 302 でインターセプト
+6. ブラウザでログイン → アルバム一覧 → サムネイル表示
    (curl だけでは不十分。Referrer-Policy 事故の教訓により、ブラウザ
    経路の確認を必ず含めること)
-4. `deploy-log.md` に 1 行追記
+7. 認証済みで `/admin` → 管理コンソールが表示される(シークレット再登録確認)
+
+**C. 記録**
+
+8. `deploy-log.md` に実施した操作の行を追記
+
+上記 B-(1)〜(5) の curl スモークは 2026-06-23 のロールバック検証で実施・全合格済み。
+シークレット消失は同検証で判明(A の手順はこの事故を受けて追加)。
 
 ---
 
