@@ -23,11 +23,14 @@ Level 2 is complete only when:
 
 - Gitea push and GitHub mirror flow reliably trigger CI/CD.
 - Workers checks and permitted deployment are automated.
-- Docker tests, multi-arch versioned build, GHCR publication, and existing
-  Portainer stack update are automated.
+- Docker tests, multi-arch versioned build, and GHCR publication are automated;
+  the existing Portainer stack has a documented manual immutable-tag update
+  path.
 - Scheduled sync and daily session cleanup operate.
 - Failures are observable without leaking sensitive data.
-- Worker and Docker rollback procedures are tested and documented.
+- Worker rollback is tested and documented.
+- Docker rollback uses the documented immutable-tag Portainer procedure.
+  A production rollback exercise is optional and is not required for Level 2.
 - Backup and recovery procedures are documented and exercised where practical.
 
 ## Level 3: Feature Complete

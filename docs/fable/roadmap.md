@@ -114,12 +114,14 @@ This is a priority-ordered plan. Update status as implementation progresses.
       documented but pending verification after the operator token
       refresh; SELECT-dump fallback and Time Travel restore — the
       latter human-approval-only — are documented.)
-- [ ] Verify Worker rollback and Docker image rollback procedures.
+- [x] Verify the Worker rollback procedure.
       (Worker: `wrangler rollback` verified 2026-06-23 — rollback to `0fa7821a`
       and restore to `495c9ae6` both succeeded; unauthenticated smoke checks
       passed both ways. The exercise confirmed Worker secrets must be checked
       and re-registered after rollback; production recovered on `08e567cf`.
-      Docker rollback via Portainer stack swap remains unverified.)
+      By operator decision on 2026-06-23, a production Docker rollback exercise
+      is not required. The immutable-tag Portainer rollback procedure remains
+      documented for incident use.)
 
 ## Level 3: Feature Complete
 

@@ -4,10 +4,11 @@ Last updated: 2026-06-23.
 
 ## Current Completion Level
 
-**Level 1: Securely Usable — COMPLETE (2026-06-12).** A real album is
-served end-to-end in production and a human confirmed browser login,
-album list, thumbnail grid, and preview display. Working toward Level 2:
-Operable.
+**Level 2: Operable — COMPLETE (2026-06-23).** Level 1 production viewing,
+automated checks/releases, scheduled operation, health and sanitized logs,
+backup procedures, and Worker rollback verification are complete. By operator
+decision, a production Docker rollback exercise is not required; the documented
+immutable-tag Portainer procedure remains available for incident use.
 
 ## Current Task
 
@@ -113,12 +114,13 @@ Recent Level 2 execution:
 - DONE: the operator confirmed the existing Portainer stack is running sync
   `0.2.1` on 2026-06-23.
 
-Level 2 leftovers: Worker version rollback verified 2026-06-23 — `wrangler rollback`
+Level 2 closure: Worker version rollback verified 2026-06-23 — `wrangler rollback`
 with OAuth session, both directions, unauthenticated smoke checks passed.
 Rollback removed the Access secrets; they were re-registered, the AUD was
 corrected from the dashboard value, and authenticated `/admin` was restored on
-version `08e567cf`. Docker image rollback requires a Portainer stack swap
-operation and remains unverified.
+version `08e567cf`. A production Docker rollback exercise was removed from the
+completion requirements by operator decision; its Portainer procedure remains
+documented.
 
 ## Last Completed Work (Level 1 closure, 2026-06-11..12)
 
@@ -202,6 +204,5 @@ action list and full status snapshot.
 
 ## Next Priority
 
-Worker rollback verification is complete (2026-06-23). Select the next priority
-from Docker image rollback verification (Portainer stack swap) or Level 3 broader
-user/album administration, sync administration, or operational audit information.
+Level 2 is complete. Select the next Level 3 priority from broader user/album
+administration, sync administration, or operational audit information.

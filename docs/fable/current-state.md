@@ -4,10 +4,14 @@ Last audited: 2026-06-23.
 
 ## Level
 
-**Level 1 (Securely Usable) is complete.** A real family album is served
+**Level 2 (Operable) is complete.** A real family album is served
 end-to-end in production: PhotoPrism -> Docker sync on the Pi -> private
 R2 -> Workers viewer, with a human-confirmed browser login, album list,
-thumbnail grid, and preview display (2026-06-12).
+thumbnail grid, and preview display (2026-06-12). Delivery, scheduled
+operation, observability, backup procedures, and Worker rollback verification
+are in place. By operator decision on 2026-06-23, a production Docker rollback
+exercise is not required; the immutable-tag Portainer procedure remains
+documented for incident use.
 
 ## Production Topology
 
@@ -57,14 +61,14 @@ thumbnail grid, and preview display (2026-06-12).
 
 ## Missing / Next (see roadmap)
 
-- Level 2: Worker version rollback verified 2026-06-23 — `wrangler rollback`
-  (OAuth session) rolled back and restored production between version IDs
+- Level 2 is complete. Worker version rollback was verified 2026-06-23 —
+  `wrangler rollback` (OAuth session) rolled back and restored production between version IDs
   `0fa7821a` and `495c9ae6`; unauthenticated smoke checks passed both ways.
   The exercise revealed that rollback did not restore Worker secrets; the
   three Access secrets were re-registered and production recovered on version
   `08e567cf`, with authenticated `/admin` confirmed by the operator.
-  Docker rollback requires an intentional Portainer stack swap and remains
-  unverified.
+  Docker rollback remains documented as an immutable-tag Portainer operation,
+  but its production exercise is intentionally not required.
 - Level 3: `/admin` Worker-side Cloudflare Access JWT validation plus admin
   email allowlist and the read-only, keyset-paginated user, album, and
   permission inventories and idempotent permission grant/revoke mutations are
