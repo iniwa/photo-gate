@@ -66,6 +66,9 @@ explicitly authorizes that action.
 
 ## Claude Code Model Orchestration
 
+Codex must not invoke Claude Code through `claude -p`. Codex writes the active
+handoff file, and the operator passes it to Claude Code manually.
+
 Claude Code should normally run with Opus as the primary coordinator. Opus reads
 `AGENTS.md`, `CLAUDE.md`, the active handoff, and the security invariants; plans;
 and reviews subagent output before reporting. Sonnet subagents may take scoped
