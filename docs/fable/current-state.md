@@ -62,8 +62,8 @@ thumbnail grid, and preview display (2026-06-12).
   email allowlist and the read-only, keyset-paginated user, album, and
   permission inventories and idempotent permission grant/revoke mutations are
   implemented and deployed. Idempotent album enable/disable controls are also
-  implemented and deployed. Idempotent user enable/disable controls are
-  implemented and reviewed locally. The operator must create the path-scoped
+  implemented and deployed. Idempotent user enable/disable controls are also
+  implemented and deployed. The operator must create the path-scoped
   Access
   application and register the three Worker values before the production admin
   surface is usable; until then deployed admin routes fail closed with 403.
@@ -79,7 +79,7 @@ thumbnail grid, and preview display (2026-06-12).
   tests / 29 files locally (2026-06-23).
   Production audit is clean; full `npm audit` remains blocked by devDependency
   advisories in Wrangler/Miniflare. Workers CI checks and deploy succeeded for
-  commit `729dc72`; production smoke confirms the album inventory plus
+  commit `42a7b56`; production smoke confirms the user inventory plus
   enable/disable POST routes fail closed with 403/no-store without config.
 - Docker: 183 tests reported green for sync `0.2.1`; the targeted daemon
   regression suite independently passed 19 tests on Windows (2026-06-15).
