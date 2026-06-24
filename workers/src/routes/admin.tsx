@@ -25,6 +25,7 @@ export interface AdminRouteDeps {
   albumRepo: {
     listAlbums(afterAlbumId?: string): Promise<AdminAlbumPage>
     setAlbumEnabled(albumId: string, enabled: number, updatedAt: string): Promise<void>
+    updatePublicMetadata(albumId: string, title: string, expiresAt: string | null, downloadEnabled: number, updatedAt: string): Promise<void>
   }
   permissionRepo: {
     listPermissions(after?: { albumId: string; userId: string }): Promise<AdminPermissionPage>
@@ -143,6 +144,60 @@ function isValidDisplayName(value: unknown): value is string {
 
 function isValidPassword(value: unknown): value is string {
   return typeof value === 'string' && value.length >= 1 && value.length <= 1024
+}
+
+const ADMIN_TITLE_MAX_CODE_POINTS = 1024
+
+function isValidTitle(value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  if (value.length === 0) return false
+  if (/^\s|\s$/.test(value)) return false
+  if (/[\x00-\x1f\x7f]/.test(value)) return false
+  if (Array.from(value).length > ADMIN_TITLE_MAX_CODE_POINTS) return false
+  return true
+}
+
+function isValidExpiresAt(value: unknown): boolean {
+  if (typeof value !== 'string') return false
+  if (value === '') return true
+  const parsed = new Date(value)
+  return !Number.isNaN(parsed.valueOf()) && parsed.toISOString() === value
+}
+
+function isValidDownloadEnabled(value: unknown): value is '0' | '1' {
+  return value === '0' || value === '1'
+}
+
+async function parseUpdatePublicMetadataFields(
+  c: AdminContext,
+): Promise<{ albumId: string; title: string; expiresAt: string | null; downloadEnabled: 0 | 1 } | null> {
+  let body: Record<string, string | File | (string | File)[]>
+  try {
+    body = await c.req.parseBody({ all: true })
+  } catch {
+    return null
+  }
+  if (Object.keys(body).length !== 4) return null
+  const albumId = body['albumId']
+  const title = body['title']
+  const expiresAt = body['expiresAt']
+  const downloadEnabled = body['downloadEnabled']
+  if (
+    typeof albumId !== 'string' ||
+    typeof title !== 'string' ||
+    typeof expiresAt !== 'string' ||
+    typeof downloadEnabled !== 'string'
+  ) return null
+  if (!isValidId(albumId)) return null
+  if (!isValidTitle(title)) return null
+  if (!isValidExpiresAt(expiresAt)) return null
+  if (!isValidDownloadEnabled(downloadEnabled)) return null
+  return {
+    albumId,
+    title,
+    expiresAt: expiresAt === '' ? null : expiresAt,
+    downloadEnabled: Number(downloadEnabled) as 0 | 1,
+  }
 }
 
 async function parseCreateUserFields(
@@ -411,6 +466,50 @@ export function createAdminRoutes(
 
   admin.post('/albums/enable', (c) => handleSetEnabled(c, 1))
   admin.post('/albums/disable', (c) => handleSetEnabled(c, 0))
+
+  // Album public metadata update. Same security contract as album enable/disable:
+  // guard (above) -> strict same-origin -> exact form Content-Type -> exact field
+  // validation -> clock -> single D1 UPDATE. Only title, expires_at,
+  // download_enabled, and updated_at are written; enabled, photoprism_album_uid,
+  // transform settings, created_at, permissions, sessions, and R2 are never touched.
+  admin.post('/albums/update-public-metadata', async (c) => {
+    if (!isSameOrigin(c)) return forbiddenResponse(c)
+    if (!isFormContentType(c.req.header('Content-Type'))) {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Bad Request', 400)
+    }
+    const fields = await parseUpdatePublicMetadataFields(c)
+    if (fields === null) {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Bad Request', 400)
+    }
+
+    const deps = depsFromEnv(c.env)
+    let updatedAt: string
+    try {
+      updatedAt = deps.clock().toISOString()
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+
+    try {
+      await deps.albumRepo.updatePublicMetadata(
+        fields.albumId,
+        fields.title,
+        fields.expiresAt,
+        fields.downloadEnabled,
+        updatedAt,
+      )
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+
+    c.header('Cache-Control', 'no-store')
+    c.header('Location', '/admin/albums')
+    return c.body(null, 303)
+  })
 
   // User enable/disable. Same security contract as album enable/disable: guard
   // (above) -> strict same-origin -> exact form Content-Type -> exactly one
@@ -720,6 +819,16 @@ function AdminAlbumsPage({ page }: { page: AdminAlbumPage }) {
                       <button type="submit">有効化</button>
                     </form>
                   )}
+                  <form method="post" action="/admin/albums/update-public-metadata">
+                    <input type="hidden" name="albumId" value={a.id} />
+                    <input type="text" name="title" value={a.title} required />
+                    <input type="text" name="expiresAt" value={a.expires_at ?? ''} placeholder="YYYY-MM-DDTHH:mm:ss.sssZ または空" />
+                    <select name="downloadEnabled">
+                      <option value="0" selected={a.download_enabled === 0}>不可</option>
+                      <option value="1" selected={a.download_enabled === 1}>許可</option>
+                    </select>
+                    <button type="submit">メタデータ更新</button>
+                  </form>
                 </td>
               </tr>
             ))}

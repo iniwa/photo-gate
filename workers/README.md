@@ -33,6 +33,7 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 | Admin permission grant | `POST /admin/permissions/grant` | D1 (insert; idempotent ON CONFLICT DO NOTHING) |
 | Admin permission revoke | `POST /admin/permissions/revoke` | D1 (delete; idempotent on absent pair) |
 | Admin album enable/disable | `POST /admin/albums/enable`, `POST /admin/albums/disable` | D1 (UPDATE enabled; idempotent) |
+| Admin album metadata update | `POST /admin/albums/update-public-metadata` | D1 (UPDATE title, expires_at, download_enabled, updated_at; photoprism_album_uid and transform settings untouched) |
 | Admin user enable/disable | `POST /admin/users/enable`, `POST /admin/users/disable` | D1 (UPDATE enabled; sessions and lockout untouched) |
 | Admin user create | `POST /admin/users/create` | D1 (INSERT; enabled=1, fail_count=0, locked_until=NULL) |
 | Admin user password reset | `POST /admin/users/reset-password` | D1 (UPDATE password_hash, fail_count=0, locked_until=NULL; sessions and permissions untouched) |

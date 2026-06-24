@@ -46,6 +46,25 @@ The seventh Level 3 implementation handoff is reviewed and complete locally:
   1521 tests / 29 files. `npm audit --omit=dev --audit-level=high` reported
   0 vulnerabilities; full `npm audit` still reports existing Wrangler/Miniflare
   devDependency advisories.
+
+The eighth Level 3 implementation handoff is reviewed and complete locally:
+
+- DONE: admin-only `POST /admin/albums/update-public-metadata` behind the
+  existing Access guard.
+- The mutation requires strict same-origin POST, exact URL-encoded form
+  Content-Type, exact four-field validation, parameterized D1 write, and
+  sanitized no-store failures.
+- The single UPDATE writes only `title`, `expires_at`, `download_enabled`, and
+  `updated_at`. It never touches `photoprism_album_uid`, transform settings,
+  `strip_exif`, `enabled`, `created_at`, permissions, users, sessions, R2,
+  PhotoPrism, or NAS.
+- Codex review added route tests proving repeated fields are rejected and an
+  invalid form does not call the clock or repository.
+- DONE: local verification on 2026-06-24 passed lint, typecheck, build, and
+  1594 tests / 29 files. `npm audit --omit=dev --audit-level=high` reported
+  0 vulnerabilities; full `npm audit` still reports existing Wrangler/Miniflare
+  devDependency advisories.
+
 The fifth Level 3 implementation handoff is reviewed and complete:
 
 - DONE: idempotent `POST /admin/albums/enable` and
@@ -107,7 +126,8 @@ The first Level 3 implementation handoff is reviewed and complete:
   `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, and `ADMIN_EMAILS` are registered,
   and the operator verified an allowlisted authenticated session reaches the
   admin console at `https://share-photo.iniwach.com/admin`.
-- Broader album administration, sync operations, audit UI, and cleanup remain unimplemented.
+- Album creation/deletion and PhotoPrism-coupled album operations, sync
+  operations, audit UI, and cleanup remain unimplemented.
 
 Recent Level 2 execution:
 
@@ -168,8 +188,9 @@ documented.
 - Workers: 894 tests / 24 files, lint, typecheck, build, audit green
   in the production baseline (2026-06-12). The reviewed `/admin`
   authentication foundation, read-only inventories, permission mutations,
-  album and user enable/disable controls, and user create/password-reset
-  controls pass lint, typecheck, build, and 1521 tests / 29 files locally
+  album and user enable/disable controls, user create/password-reset controls,
+  and album public metadata update controls pass lint, typecheck, build, and
+  1594 tests / 29 files locally
   (2026-06-24). `npm audit` reports five advisories (1 low /
   4 high) through devDependencies (`wrangler -> esbuild/miniflare ->
   undici/ws`); production dependency audit with

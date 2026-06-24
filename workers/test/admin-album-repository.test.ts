@@ -552,3 +552,301 @@ describe('AdminAlbumRepository.setAlbumEnabled error sanitization', () => {
     ).rejects.toThrow('database operation failed')
   })
 })
+
+// ---------------------------------------------------------------------------
+// updatePublicMetadata — SQL structure
+// ---------------------------------------------------------------------------
+
+const UPDATE_ALBUM_ID = 'album-update-001'
+const UPDATE_TITLE = 'Updated Album Title'
+const UPDATE_EXPIRES_AT = '2026-12-31T23:59:59.000Z'
+const UPDATE_UPDATED_AT = '2026-06-24T00:00:00.000Z'
+
+async function issueUpdatePublicMetadata(
+  expiresAt: string | null = UPDATE_EXPIRES_AT,
+  downloadEnabled: 0 | 1 = 0,
+) {
+  const { db, queries } = makeMockDb([{}])
+  await new AdminAlbumRepository(db).updatePublicMetadata(
+    UPDATE_ALBUM_ID,
+    UPDATE_TITLE,
+    expiresAt,
+    downloadEnabled,
+    UPDATE_UPDATED_AT,
+  )
+  return queries
+}
+
+describe('AdminAlbumRepository.updatePublicMetadata SQL structure', () => {
+  it('SQL contains UPDATE albums', async () => {
+    const queries = await issueUpdatePublicMetadata()
+    expect(queries[0]?.sql).toContain('UPDATE albums')
+  })
+
+  it('SQL contains SET title = ?, expires_at = ?, download_enabled = ?, updated_at = ?', async () => {
+    const queries = await issueUpdatePublicMetadata()
+    expect(queries[0]?.sql).toContain('SET title = ?, expires_at = ?, download_enabled = ?, updated_at = ?')
+  })
+
+  it('SQL contains WHERE id = ?', async () => {
+    const queries = await issueUpdatePublicMetadata()
+    expect(queries[0]?.sql).toContain('WHERE id = ?')
+  })
+
+  it('SQL does NOT contain SELECT', async () => {
+    const queries = await issueUpdatePublicMetadata()
+    expect(queries[0]?.sql).not.toMatch(/\bSELECT\b/)
+  })
+
+  it('SQL does NOT contain INSERT', async () => {
+    const queries = await issueUpdatePublicMetadata()
+    expect(queries[0]?.sql).not.toMatch(/\bINSERT\b/)
+  })
+
+  it('SQL does NOT contain DELETE', async () => {
+    const queries = await issueUpdatePublicMetadata()
+    expect(queries[0]?.sql).not.toMatch(/\bDELETE\b/)
+  })
+
+  it('SQL does NOT contain JOIN', async () => {
+    const queries = await issueUpdatePublicMetadata()
+    expect(queries[0]?.sql).not.toMatch(/\bJOIN\b/)
+  })
+
+  it('SQL does NOT contain photoprism_album_uid', async () => {
+    const queries = await issueUpdatePublicMetadata()
+    expect(queries[0]?.sql).not.toContain('photoprism_album_uid')
+  })
+
+  it('SQL does NOT contain thumb_', async () => {
+    const queries = await issueUpdatePublicMetadata()
+    expect(queries[0]?.sql).not.toContain('thumb_')
+  })
+
+  it('SQL does NOT contain preview_', async () => {
+    const queries = await issueUpdatePublicMetadata()
+    expect(queries[0]?.sql).not.toContain('preview_')
+  })
+
+  it('SQL does NOT contain strip_exif', async () => {
+    const queries = await issueUpdatePublicMetadata()
+    expect(queries[0]?.sql).not.toContain('strip_exif')
+  })
+
+  it('SQL does NOT contain bare enabled keyword', async () => {
+    const queries = await issueUpdatePublicMetadata()
+    expect(queries[0]?.sql).not.toMatch(/\benabled\b/)
+  })
+
+  it('SQL does NOT contain created_at', async () => {
+    const queries = await issueUpdatePublicMetadata()
+    expect(queries[0]?.sql).not.toContain('created_at')
+  })
+
+  it('SQL does NOT contain sessions', async () => {
+    const queries = await issueUpdatePublicMetadata()
+    expect(queries[0]?.sql).not.toContain('sessions')
+  })
+
+  it('SQL does NOT contain album_permissions', async () => {
+    const queries = await issueUpdatePublicMetadata()
+    expect(queries[0]?.sql).not.toContain('album_permissions')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// updatePublicMetadata — bind order
+// ---------------------------------------------------------------------------
+
+describe('AdminAlbumRepository.updatePublicMetadata bind order', () => {
+  it('expiresAt string: params are [title, expiresAt, 0, updatedAt, albumId] in order', async () => {
+    const queries = await issueUpdatePublicMetadata(UPDATE_EXPIRES_AT, 0)
+    expect(queries[0]?.params).toEqual([UPDATE_TITLE, UPDATE_EXPIRES_AT, 0, UPDATE_UPDATED_AT, UPDATE_ALBUM_ID])
+  })
+
+  it('expiresAt null: params are [title, null, 1, updatedAt, albumId] in order', async () => {
+    const { db, queries } = makeMockDb([{}])
+    await new AdminAlbumRepository(db).updatePublicMetadata(
+      UPDATE_ALBUM_ID, UPDATE_TITLE, null, 1, UPDATE_UPDATED_AT,
+    )
+    expect(queries[0]?.params).toEqual([UPDATE_TITLE, null, 1, UPDATE_UPDATED_AT, UPDATE_ALBUM_ID])
+  })
+
+  it('SQL does not contain the literal albumId value', async () => {
+    const queries = await issueUpdatePublicMetadata()
+    expect(queries[0]?.sql).not.toContain(UPDATE_ALBUM_ID)
+  })
+
+  it('SQL does not contain the literal updatedAt value', async () => {
+    const queries = await issueUpdatePublicMetadata()
+    expect(queries[0]?.sql).not.toContain(UPDATE_UPDATED_AT)
+  })
+
+  it('SQL does not contain the literal title value', async () => {
+    const queries = await issueUpdatePublicMetadata()
+    expect(queries[0]?.sql).not.toContain(UPDATE_TITLE)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// updatePublicMetadata — success
+// ---------------------------------------------------------------------------
+
+describe('AdminAlbumRepository.updatePublicMetadata success', () => {
+  it('default {success:true} → resolves without throw', async () => {
+    const { db } = makeMockDb([{}])
+    await expect(
+      new AdminAlbumRepository(db).updatePublicMetadata(UPDATE_ALBUM_ID, UPDATE_TITLE, UPDATE_EXPIRES_AT, 0, UPDATE_UPDATED_AT),
+    ).resolves.toBeUndefined()
+  })
+
+  it('{success:true, meta:{changes:1}} → resolves without throw', async () => {
+    const { db } = makeMockDb([{ runResult: { success: true, meta: { changes: 1 } } }])
+    await expect(
+      new AdminAlbumRepository(db).updatePublicMetadata(UPDATE_ALBUM_ID, UPDATE_TITLE, UPDATE_EXPIRES_AT, 0, UPDATE_UPDATED_AT),
+    ).resolves.toBeUndefined()
+  })
+
+  it('{success:true, meta:{changes:0}} → rejects with database operation failed', async () => {
+    const { db } = makeMockDb([{ runResult: { success: true, meta: { changes: 0 } } }])
+    await expect(
+      new AdminAlbumRepository(db).updatePublicMetadata(UPDATE_ALBUM_ID, UPDATE_TITLE, UPDATE_EXPIRES_AT, 0, UPDATE_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+  })
+
+  it('{success:true} with no meta → resolves without throw', async () => {
+    const { db } = makeMockDb([{ runResult: { success: true } }])
+    await expect(
+      new AdminAlbumRepository(db).updatePublicMetadata(UPDATE_ALBUM_ID, UPDATE_TITLE, UPDATE_EXPIRES_AT, 0, UPDATE_UPDATED_AT),
+    ).resolves.toBeUndefined()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// updatePublicMetadata — validation before D1
+// ---------------------------------------------------------------------------
+
+describe('AdminAlbumRepository.updatePublicMetadata validation before D1', () => {
+  it('invalid albumId → rejects with database operation failed, D1 not touched', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminAlbumRepository(db).updatePublicMetadata('!bad!', UPDATE_TITLE, UPDATE_EXPIRES_AT, 0, UPDATE_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+
+  it('empty title → rejects with database operation failed, D1 not touched', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminAlbumRepository(db).updatePublicMetadata(UPDATE_ALBUM_ID, '', UPDATE_EXPIRES_AT, 0, UPDATE_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+
+  it('title with leading space → rejects with database operation failed, D1 not touched', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminAlbumRepository(db).updatePublicMetadata(UPDATE_ALBUM_ID, ' valid', UPDATE_EXPIRES_AT, 0, UPDATE_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+
+  it('title with trailing space → rejects with database operation failed, D1 not touched', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminAlbumRepository(db).updatePublicMetadata(UPDATE_ALBUM_ID, 'valid ', UPDATE_EXPIRES_AT, 0, UPDATE_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+
+  it('title with control char → rejects with database operation failed, D1 not touched', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminAlbumRepository(db).updatePublicMetadata(UPDATE_ALBUM_ID, '\x00title', UPDATE_EXPIRES_AT, 0, UPDATE_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+
+  it('title exceeding 1024 codepoints → rejects with database operation failed, D1 not touched', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminAlbumRepository(db).updatePublicMetadata(UPDATE_ALBUM_ID, 'a'.repeat(1025), UPDATE_EXPIRES_AT, 0, UPDATE_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+
+  it('non-canonical expiresAt ("2026-12-31") → rejects with database operation failed, D1 not touched', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminAlbumRepository(db).updatePublicMetadata(UPDATE_ALBUM_ID, UPDATE_TITLE, '2026-12-31', 0, UPDATE_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+
+  it('expiresAt=null → D1 is called (valid)', async () => {
+    const { db, queries } = makeMockDb([{}])
+    await new AdminAlbumRepository(db).updatePublicMetadata(UPDATE_ALBUM_ID, UPDATE_TITLE, null, 0, UPDATE_UPDATED_AT)
+    expect(queries).toHaveLength(1)
+  })
+
+  it('downloadEnabled = 2 → rejects with database operation failed, D1 not touched', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminAlbumRepository(db).updatePublicMetadata(UPDATE_ALBUM_ID, UPDATE_TITLE, UPDATE_EXPIRES_AT, 2, UPDATE_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+
+  it('downloadEnabled = -1 → rejects with database operation failed, D1 not touched', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminAlbumRepository(db).updatePublicMetadata(UPDATE_ALBUM_ID, UPDATE_TITLE, UPDATE_EXPIRES_AT, -1, UPDATE_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+
+  it('non-canonical updatedAt ("2026-06-24") → rejects with database operation failed, D1 not touched', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminAlbumRepository(db).updatePublicMetadata(UPDATE_ALBUM_ID, UPDATE_TITLE, UPDATE_EXPIRES_AT, 0, '2026-06-24'),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// updatePublicMetadata — error sanitization
+// ---------------------------------------------------------------------------
+
+describe('AdminAlbumRepository.updatePublicMetadata error sanitization', () => {
+  it('run() throws → rejects with database operation failed', async () => {
+    const { db } = makeMockDb([{ throws: new Error('secret-token-update-xyz') }])
+    await expect(
+      new AdminAlbumRepository(db).updatePublicMetadata(UPDATE_ALBUM_ID, UPDATE_TITLE, UPDATE_EXPIRES_AT, 0, UPDATE_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+  })
+
+  it('run() throws → error message does not contain the sensitive token', async () => {
+    const sensitiveToken = 'secret-token-update-xyz'
+    const { db } = makeMockDb([{ throws: new Error(sensitiveToken) }])
+    const err = await new AdminAlbumRepository(db)
+      .updatePublicMetadata(UPDATE_ALBUM_ID, UPDATE_TITLE, UPDATE_EXPIRES_AT, 0, UPDATE_UPDATED_AT)
+      .catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(Error)
+    expect((err as Error).message).not.toContain(sensitiveToken)
+  })
+
+  it('runResult {success:false} → rejects with database operation failed', async () => {
+    const { db } = makeMockDb([{ runResult: { success: false } }])
+    await expect(
+      new AdminAlbumRepository(db).updatePublicMetadata(UPDATE_ALBUM_ID, UPDATE_TITLE, UPDATE_EXPIRES_AT, 0, UPDATE_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+  })
+
+  it('runResult null → rejects with database operation failed', async () => {
+    const { db } = makeMockDb([{ runResult: null }])
+    await expect(
+      new AdminAlbumRepository(db).updatePublicMetadata(UPDATE_ALBUM_ID, UPDATE_TITLE, UPDATE_EXPIRES_AT, 0, UPDATE_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+  })
+})

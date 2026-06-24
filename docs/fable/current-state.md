@@ -1,6 +1,6 @@
 # Current State
 
-Last audited: 2026-06-23.
+Last audited: 2026-06-24.
 
 ## Level
 
@@ -74,21 +74,23 @@ documented for incident use.
   permission inventories and idempotent permission grant/revoke mutations are
   implemented and deployed. Idempotent album enable/disable controls are also
   implemented and deployed. Idempotent user enable/disable controls are also
-  implemented and deployed. Admin user creation and password reset controls are
-  implemented and reviewed locally. The path-scoped Cloudflare Access application is
+  implemented and deployed. Admin user creation/password reset and album public
+  metadata update controls are implemented and reviewed locally. The path-scoped
+  Cloudflare Access application is
   configured, and the three Worker values (`CF_ACCESS_TEAM_DOMAIN`,
   `CF_ACCESS_AUD`, `ADMIN_EMAILS`) are registered and operator-verified on
-  2026-06-23; the production admin surface is usable. Broader album mutation
-  operations, sync administration, dry-run cleanup, and final hardening remain
-  unimplemented.
+  2026-06-23; the production admin surface is usable. Album creation/deletion
+  and PhotoPrism-coupled album operations, sync administration, dry-run cleanup,
+  and final hardening remain unimplemented.
 
 ## Verification Baseline
 
 - Workers: 894 tests / 24 files, lint, typecheck, build, audit green
   in the last production baseline (2026-06-12). The reviewed `/admin`
   authentication foundation, read-only inventories, permission mutations,
-  album and user enable/disable controls, and user create/password-reset
-  controls pass lint, typecheck, build, and 1521 tests / 29 files locally
+  album and user enable/disable controls, user create/password-reset controls,
+  and album public metadata update controls pass lint, typecheck, build, and
+  1594 tests / 29 files locally
   (2026-06-24).
   Production audit is clean; full `npm audit` remains blocked by devDependency
   advisories in Wrangler/Miniflare. Workers CI checks and deploy succeeded for

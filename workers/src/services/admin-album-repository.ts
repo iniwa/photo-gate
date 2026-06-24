@@ -80,6 +80,20 @@ const SET_ENABLED_SQL = `
   SET enabled = ?, updated_at = ?
   WHERE id = ? AND enabled <> ?`
 
+function isValidTitle(value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  if (value.length === 0) return false
+  if (/^\s|\s$/.test(value)) return false
+  if (/[\x00-\x1f\x7f]/.test(value)) return false
+  if (Array.from(value).length > TITLE_MAX_CODE_POINTS) return false
+  return true
+}
+
+const UPDATE_PUBLIC_METADATA_SQL = `
+  UPDATE albums
+  SET title = ?, expires_at = ?, download_enabled = ?, updated_at = ?
+  WHERE id = ?`
+
 export class AdminAlbumRepository {
   constructor(private readonly db: D1Database) {}
 
@@ -145,6 +159,36 @@ export class AdminAlbumRepository {
       throw databaseOperationError()
     }
     if (result === null || typeof result !== 'object' || result.success !== true) {
+      throw databaseOperationError()
+    }
+  }
+
+  async updatePublicMetadata(
+    albumId: string,
+    title: string,
+    expiresAt: string | null,
+    downloadEnabled: number,
+    updatedAt: string,
+  ): Promise<void> {
+    if (!isValidId(albumId)) throw databaseOperationError()
+    if (!isValidTitle(title)) throw databaseOperationError()
+    if (expiresAt !== null && !isCanonicalUtcTimestamp(expiresAt)) throw databaseOperationError()
+    if (downloadEnabled !== 0 && downloadEnabled !== 1) throw databaseOperationError()
+    if (!isCanonicalUtcTimestamp(updatedAt)) throw databaseOperationError()
+
+    let result: D1Result
+    try {
+      result = await this.db
+        .prepare(UPDATE_PUBLIC_METADATA_SQL)
+        .bind(title, expiresAt, downloadEnabled, updatedAt, albumId)
+        .run()
+    } catch {
+      throw databaseOperationError()
+    }
+    if (result === null || typeof result !== 'object' || result.success !== true) {
+      throw databaseOperationError()
+    }
+    if ((result as unknown as { meta?: { changes?: number } }).meta?.changes === 0) {
       throw databaseOperationError()
     }
   }

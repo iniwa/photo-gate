@@ -162,16 +162,19 @@ function makeThrowingResetPasswordRepo(): UserRepo {
 type AlbumRepo = {
   listAlbums(afterAlbumId?: string): Promise<AdminAlbumPage>
   setAlbumEnabled(albumId: string, enabled: number, updatedAt: string): Promise<void>
+  updatePublicMetadata(albumId: string, title: string, expiresAt: string | null, downloadEnabled: number, updatedAt: string): Promise<void>
 }
 
 type MutationAlbumRepo = AlbumRepo & {
   calls: { albumId: string; enabled: number; updatedAt: string }[]
+  updateCalls: { albumId: string; title: string; expiresAt: string | null; downloadEnabled: number; updatedAt: string }[]
 }
 
 function makeEmptyAlbumRepo(): AlbumRepo {
   return {
     listAlbums: async () => ({ albums: [], hasMore: false }),
     setAlbumEnabled: async () => {},
+    updatePublicMetadata: async () => {},
   }
 }
 
@@ -182,6 +185,7 @@ function makeAlbumRepo(
   return {
     listAlbums: async () => ({ albums, hasMore }),
     setAlbumEnabled: async () => {},
+    updatePublicMetadata: async () => {},
   }
 }
 
@@ -191,15 +195,21 @@ function makeThrowingAlbumRepo(): AlbumRepo {
       throw new Error('D1 exploded')
     },
     setAlbumEnabled: async () => {},
+    updatePublicMetadata: async () => {},
   }
 }
 
 function makeMutationAlbumRepo(): MutationAlbumRepo {
   const calls: { albumId: string; enabled: number; updatedAt: string }[] = []
+  const updateCalls: { albumId: string; title: string; expiresAt: string | null; downloadEnabled: number; updatedAt: string }[] = []
   return {
     calls,
+    updateCalls,
     listAlbums: async () => ({ albums: [], hasMore: false }),
     setAlbumEnabled: async (albumId, enabled, updatedAt) => { calls.push({ albumId, enabled, updatedAt }) },
+    updatePublicMetadata: async (albumId, title, expiresAt, downloadEnabled, updatedAt) => {
+      updateCalls.push({ albumId, title, expiresAt, downloadEnabled, updatedAt })
+    },
   }
 }
 
@@ -207,6 +217,15 @@ function makeThrowingSetEnabledAlbumRepo(): AlbumRepo {
   return {
     listAlbums: async () => ({ albums: [], hasMore: false }),
     setAlbumEnabled: async () => { throw new Error('D1 exploded') },
+    updatePublicMetadata: async () => {},
+  }
+}
+
+function makeThrowingUpdatePublicMetadataRepo(): AlbumRepo {
+  return {
+    listAlbums: async () => ({ albums: [], hasMore: false }),
+    setAlbumEnabled: async () => {},
+    updatePublicMetadata: async () => { throw new Error('D1 exploded') },
   }
 }
 
@@ -1330,6 +1349,8 @@ const NEW_USER_ID = 'user-new-001'
 const VALID_CREATE_BODY = `userId=${NEW_USER_ID}&displayName=${encodeURIComponent(VALID_DISPLAY_NAME)}&password=${encodeURIComponent(VALID_PASSWORD)}`
 const VALID_RESET_BODY = `userId=${VALID_USER_ID}&password=${encodeURIComponent(VALID_PASSWORD)}`
 const PBKDF2_HASH_RE = /^pbkdf2-sha256\$100000\$[A-Za-z0-9_-]{22}\$[A-Za-z0-9_-]{43}$/
+const VALID_UPDATE_BODY = `albumId=${VALID_ALBUM_ID}&title=My+Album&expiresAt=&downloadEnabled=0`
+const VALID_UPDATE_BODY_WITH_EXPIRY = `albumId=${VALID_ALBUM_ID}&title=My+Album&expiresAt=${encodeURIComponent('2026-12-31T23:59:59.000Z')}&downloadEnabled=1`
 
 function makeValidPostOptions() {
   return {
@@ -1373,6 +1394,15 @@ function makeValidResetPostOptions() {
     origin: VALID_ORIGIN as string | undefined,
     contentType: 'application/x-www-form-urlencoded' as string | undefined,
     body: VALID_RESET_BODY as string | undefined,
+  }
+}
+
+function makeValidUpdatePostOptions() {
+  return {
+    token: VALID_TOKEN as string | null,
+    origin: VALID_ORIGIN as string | undefined,
+    contentType: 'application/x-www-form-urlencoded' as string | undefined,
+    body: VALID_UPDATE_BODY as string | undefined,
   }
 }
 
@@ -3615,5 +3645,382 @@ describe('admin-routes: GET /admin/users reset-password form rendering', () => {
     const res = await getAdmin(app, { path: '/admin/users' })
     const body = await res.text()
     expect(body).not.toContain('action="/admin/users/reset-password"')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /admin/albums/update-public-metadata — guard
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: POST /admin/albums/update-public-metadata guard', () => {
+  it('no token → 403 Forbidden no-store, updatePublicMetadata not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/update-public-metadata', {
+      ...makeValidUpdatePostOptions(),
+      token: null,
+    })
+    await assertForbidden(res)
+    expect(repo.updateCalls).toHaveLength(0)
+  })
+
+  it('non-allowlisted email → 403, updatePublicMetadata not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(() => ({
+      verifier: async () => ({ email: 'other@example.com' }),
+      allowlist: new Set([ADMIN_EMAIL]),
+    }), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/update-public-metadata', makeValidUpdatePostOptions())
+    await assertForbidden(res)
+    expect(repo.updateCalls).toHaveLength(0)
+  })
+
+  it('Origin absent → 403, updatePublicMetadata not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/update-public-metadata', {
+      ...makeValidUpdatePostOptions(),
+      origin: undefined,
+    })
+    await assertForbidden(res)
+    expect(repo.updateCalls).toHaveLength(0)
+  })
+
+  it('Origin = literal "null" → 403, updatePublicMetadata not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/update-public-metadata', {
+      ...makeValidUpdatePostOptions(),
+      origin: 'null',
+    })
+    await assertForbidden(res)
+    expect(repo.updateCalls).toHaveLength(0)
+  })
+
+  it('Origin mismatched → 403, updatePublicMetadata not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/update-public-metadata', {
+      ...makeValidUpdatePostOptions(),
+      origin: 'https://evil.example',
+    })
+    await assertForbidden(res)
+    expect(repo.updateCalls).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /admin/albums/update-public-metadata — content-type
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: POST /admin/albums/update-public-metadata content-type', () => {
+  it('Content-Type missing → 400 no-store, updatePublicMetadata not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/update-public-metadata', {
+      ...makeValidUpdatePostOptions(),
+      contentType: undefined,
+    })
+    expect(res.status).toBe(400)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(repo.updateCalls).toHaveLength(0)
+  })
+
+  it('Content-Type text/plain → 400, updatePublicMetadata not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/update-public-metadata', {
+      ...makeValidUpdatePostOptions(),
+      contentType: 'text/plain',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.updateCalls).toHaveLength(0)
+  })
+
+  it('Content-Type multipart/form-data → 400, updatePublicMetadata not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/update-public-metadata', {
+      ...makeValidUpdatePostOptions(),
+      contentType: 'multipart/form-data',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.updateCalls).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /admin/albums/update-public-metadata — body validation
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: POST /admin/albums/update-public-metadata body validation', () => {
+  it('empty body → 400, updatePublicMetadata not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/update-public-metadata', {
+      ...makeValidUpdatePostOptions(),
+      body: '',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.updateCalls).toHaveLength(0)
+  })
+
+  it('albumId only → 400 (field shortage), updatePublicMetadata not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/update-public-metadata', {
+      ...makeValidUpdatePostOptions(),
+      body: `albumId=${VALID_ALBUM_ID}`,
+    })
+    expect(res.status).toBe(400)
+    expect(repo.updateCalls).toHaveLength(0)
+  })
+
+  it('expiresAt empty string → valid (303)', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/update-public-metadata', {
+      ...makeValidUpdatePostOptions(),
+      body: VALID_UPDATE_BODY,
+    })
+    expect(res.status).toBe(303)
+  })
+
+  it('expiresAt non-canonical ("2026-12-31") → 400, updatePublicMetadata not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/update-public-metadata', {
+      ...makeValidUpdatePostOptions(),
+      body: `albumId=${VALID_ALBUM_ID}&title=My+Album&expiresAt=2026-12-31&downloadEnabled=0`,
+    })
+    expect(res.status).toBe(400)
+    expect(repo.updateCalls).toHaveLength(0)
+  })
+
+  it('downloadEnabled "2" → 400, updatePublicMetadata not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/update-public-metadata', {
+      ...makeValidUpdatePostOptions(),
+      body: `albumId=${VALID_ALBUM_ID}&title=My+Album&expiresAt=&downloadEnabled=2`,
+    })
+    expect(res.status).toBe(400)
+    expect(repo.updateCalls).toHaveLength(0)
+  })
+
+  it('downloadEnabled "true" → 400, updatePublicMetadata not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/update-public-metadata', {
+      ...makeValidUpdatePostOptions(),
+      body: `albumId=${VALID_ALBUM_ID}&title=My+Album&expiresAt=&downloadEnabled=true`,
+    })
+    expect(res.status).toBe(400)
+    expect(repo.updateCalls).toHaveLength(0)
+  })
+
+  it('empty title → 400, updatePublicMetadata not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/update-public-metadata', {
+      ...makeValidUpdatePostOptions(),
+      body: `albumId=${VALID_ALBUM_ID}&title=&expiresAt=&downloadEnabled=0`,
+    })
+    expect(res.status).toBe(400)
+    expect(repo.updateCalls).toHaveLength(0)
+  })
+
+  it('title with leading space → 400, updatePublicMetadata not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/update-public-metadata', {
+      ...makeValidUpdatePostOptions(),
+      body: `albumId=${VALID_ALBUM_ID}&title=${encodeURIComponent(' album')}&expiresAt=&downloadEnabled=0`,
+    })
+    expect(res.status).toBe(400)
+    expect(repo.updateCalls).toHaveLength(0)
+  })
+
+  it('title with control char → 400, updatePublicMetadata not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/update-public-metadata', {
+      ...makeValidUpdatePostOptions(),
+      body: `albumId=${VALID_ALBUM_ID}&title=${encodeURIComponent('\x01album')}&expiresAt=&downloadEnabled=0`,
+    })
+    expect(res.status).toBe(400)
+    expect(repo.updateCalls).toHaveLength(0)
+  })
+
+  it('extra field → 400, updatePublicMetadata not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/update-public-metadata', {
+      ...makeValidUpdatePostOptions(),
+      body: VALID_UPDATE_BODY + '&extra=x',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.updateCalls).toHaveLength(0)
+  })
+  it('repeated albumId → 400, updatePublicMetadata not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/update-public-metadata', {
+      ...makeValidUpdatePostOptions(),
+      body: `albumId=${VALID_ALBUM_ID}&albumId=album-other-001&title=My+Album&expiresAt=&downloadEnabled=0`,
+    })
+    expect(res.status).toBe(400)
+    expect(repo.updateCalls).toHaveLength(0)
+  })
+
+  it('repeated title → 400, updatePublicMetadata not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/update-public-metadata', {
+      ...makeValidUpdatePostOptions(),
+      body: `albumId=${VALID_ALBUM_ID}&title=My+Album&title=Other&expiresAt=&downloadEnabled=0`,
+    })
+    expect(res.status).toBe(400)
+    expect(repo.updateCalls).toHaveLength(0)
+  })
+
+  it('clock not called when body is invalid', async () => {
+    const spy = makeClockSpy()
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo, undefined, spy.clock)
+    await postAdmin(app, '/admin/albums/update-public-metadata', {
+      ...makeValidUpdatePostOptions(),
+      body: `albumId=${VALID_ALBUM_ID}&title=&expiresAt=&downloadEnabled=0`,
+    })
+    expect(spy.getCallCount()).toBe(0)
+    expect(repo.updateCalls).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /admin/albums/update-public-metadata — success
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: POST /admin/albums/update-public-metadata success', () => {
+  it('valid request → 303 with Location /admin/albums and no-store', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/update-public-metadata', makeValidUpdatePostOptions())
+    expect(res.status).toBe(303)
+    expect(res.headers.get('location')).toBe('/admin/albums')
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('valid request → empty body', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/update-public-metadata', makeValidUpdatePostOptions())
+    const body = await res.text()
+    expect(body).toBe('')
+  })
+
+  it('repo throws → 500 no-store, generic body', async () => {
+    const app = makeApp(goodAuth(), undefined, makeThrowingUpdatePublicMetadataRepo())
+    const res = await postAdmin(app, '/admin/albums/update-public-metadata', makeValidUpdatePostOptions())
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await res.text()).toBe('Internal Server Error')
+  })
+
+  it('clock throws → 500 no-store, updatePublicMetadata NOT called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo, undefined, () => {
+      throw new Error('clock detail must not escape')
+    })
+    const res = await postAdmin(app, '/admin/albums/update-public-metadata', makeValidUpdatePostOptions())
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await res.text()).toBe('Internal Server Error')
+    expect(repo.updateCalls).toHaveLength(0)
+  })
+
+  it('expiresAt empty string → repo receives null', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    await postAdmin(app, '/admin/albums/update-public-metadata', {
+      ...makeValidUpdatePostOptions(),
+      body: VALID_UPDATE_BODY,
+    })
+    expect(repo.updateCalls).toHaveLength(1)
+    expect(repo.updateCalls[0]!.expiresAt).toBeNull()
+  })
+
+  it('expiresAt canonical string → repo receives the string', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    await postAdmin(app, '/admin/albums/update-public-metadata', {
+      ...makeValidUpdatePostOptions(),
+      body: VALID_UPDATE_BODY_WITH_EXPIRY,
+    })
+    expect(repo.updateCalls).toHaveLength(1)
+    expect(repo.updateCalls[0]!.expiresAt).toBe('2026-12-31T23:59:59.000Z')
+  })
+
+  it('downloadEnabled "0" → repo receives 0 (numeric)', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    await postAdmin(app, '/admin/albums/update-public-metadata', {
+      ...makeValidUpdatePostOptions(),
+      body: VALID_UPDATE_BODY,
+    })
+    expect(repo.updateCalls).toHaveLength(1)
+    expect(repo.updateCalls[0]!.downloadEnabled).toBe(0)
+  })
+
+  it('downloadEnabled "1" → repo receives 1 (numeric)', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    await postAdmin(app, '/admin/albums/update-public-metadata', {
+      ...makeValidUpdatePostOptions(),
+      body: VALID_UPDATE_BODY_WITH_EXPIRY,
+    })
+    expect(repo.updateCalls).toHaveLength(1)
+    expect(repo.updateCalls[0]!.downloadEnabled).toBe(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// GET /admin/albums — update-public-metadata form rendering
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: GET /admin/albums update-public-metadata form rendering', () => {
+  it('body contains action="/admin/albums/update-public-metadata"', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM]))
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const body = await res.text()
+    expect(body).toContain('action="/admin/albums/update-public-metadata"')
+  })
+
+  it('update form contains name="albumId"', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM]))
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const body = await res.text()
+    expect(body).toContain('name="albumId"')
+  })
+
+  it('update form contains name="title"', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM]))
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const body = await res.text()
+    expect(body).toContain('name="title"')
+  })
+
+  it('update form contains name="expiresAt"', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM]))
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const body = await res.text()
+    expect(body).toContain('name="expiresAt"')
+  })
+
+  it('update form contains name="downloadEnabled"', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM]))
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const body = await res.text()
+    expect(body).toContain('name="downloadEnabled"')
   })
 })

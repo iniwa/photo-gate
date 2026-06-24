@@ -140,8 +140,9 @@ This is a priority-ordered plan. Update status as implementation progresses.
       implemented and reviewed 2026-06-18. Idempotent album enable/disable
       controls implemented and reviewed 2026-06-19. Idempotent user
       enable/disable controls implemented and reviewed 2026-06-23. User
-      creation and password reset controls implemented and reviewed locally
-      2026-06-24. Broader album mutation operations remain.)
+      creation/password reset and album public metadata update controls
+      implemented and reviewed locally 2026-06-24. Album creation/deletion and
+      PhotoPrism-coupled album operations remain.)
 - [ ] Implement sync request/status administration.
 - [ ] Add operational audit information without sensitive-data leakage.
 
