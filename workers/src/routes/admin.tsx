@@ -9,6 +9,8 @@ import { Layout } from '../templates/layout.js'
 import { requireAdmin } from '../middleware/require-admin.js'
 import { forbiddenResponse } from '../middleware/auth-response.js'
 import { isValidId } from '../services/repository-validation.js'
+import { hashPassword } from '../services/auth-crypto.js'
+import { PBKDF2_PRODUCTION_ITERATIONS } from '../services/login-policy.js'
 
 type AdminEnv = { Bindings: Env }
 type AdminContext = Context<AdminEnv>
@@ -17,6 +19,8 @@ export interface AdminRouteDeps {
   userRepo: {
     listUsers(afterUserId?: string): Promise<AdminUserPage>
     setUserEnabled(userId: string, enabled: number, updatedAt: string): Promise<void>
+    createUser(userId: string, displayName: string, passwordHash: string, createdAt: string, updatedAt: string): Promise<void>
+    resetPassword(userId: string, passwordHash: string, updatedAt: string): Promise<void>
   }
   albumRepo: {
     listAlbums(afterAlbumId?: string): Promise<AdminAlbumPage>
@@ -124,6 +128,59 @@ async function parseUserIdField(
   if (typeof userId !== 'string') return null
   if (!isValidId(userId)) return null
   return { userId }
+}
+
+const ADMIN_DISPLAY_NAME_MAX_CODE_POINTS = 1024
+
+function isValidDisplayName(value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  if (value.length === 0) return false
+  if (/^\s|\s$/.test(value)) return false
+  if (/[\x00-\x1f\x7f]/.test(value)) return false
+  if (Array.from(value).length > ADMIN_DISPLAY_NAME_MAX_CODE_POINTS) return false
+  return true
+}
+
+function isValidPassword(value: unknown): value is string {
+  return typeof value === 'string' && value.length >= 1 && value.length <= 1024
+}
+
+async function parseCreateUserFields(
+  c: AdminContext,
+): Promise<{ userId: string; displayName: string; password: string } | null> {
+  let body: Record<string, string | File | (string | File)[]>
+  try {
+    body = await c.req.parseBody({ all: true })
+  } catch {
+    return null
+  }
+  if (Object.keys(body).length !== 3) return null
+  const userId = body['userId']
+  const displayName = body['displayName']
+  const password = body['password']
+  if (typeof userId !== 'string' || typeof displayName !== 'string' || typeof password !== 'string') return null
+  if (!isValidId(userId)) return null
+  if (!isValidDisplayName(displayName)) return null
+  if (!isValidPassword(password)) return null
+  return { userId, displayName, password }
+}
+
+async function parseResetPasswordFields(
+  c: AdminContext,
+): Promise<{ userId: string; password: string } | null> {
+  let body: Record<string, string | File | (string | File)[]>
+  try {
+    body = await c.req.parseBody({ all: true })
+  } catch {
+    return null
+  }
+  if (Object.keys(body).length !== 2) return null
+  const userId = body['userId']
+  const password = body['password']
+  if (typeof userId !== 'string' || typeof password !== 'string') return null
+  if (!isValidId(userId)) return null
+  if (!isValidPassword(password)) return null
+  return { userId, password }
 }
 
 /**
@@ -397,6 +454,93 @@ export function createAdminRoutes(
   admin.post('/users/enable', (c) => handleSetUserEnabled(c, 1))
   admin.post('/users/disable', (c) => handleSetUserEnabled(c, 0))
 
+  // User create and password reset. Same security contract as user enable/disable:
+  // guard (above) -> strict same-origin -> exact form Content-Type -> exact field
+  // validation -> clock -> hash -> single D1 write. Password is hashed only after
+  // all cheap validation passes and is never reflected in any response. Sessions
+  // and permissions are never touched.
+  admin.post('/users/create', async (c) => {
+    if (!isSameOrigin(c)) return forbiddenResponse(c)
+    if (!isFormContentType(c.req.header('Content-Type'))) {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Bad Request', 400)
+    }
+    const fields = await parseCreateUserFields(c)
+    if (fields === null) {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Bad Request', 400)
+    }
+
+    const deps = depsFromEnv(c.env)
+    let createdAt: string
+    try {
+      createdAt = deps.clock().toISOString()
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+
+    let passwordHash: string
+    try {
+      passwordHash = await hashPassword(fields.password, PBKDF2_PRODUCTION_ITERATIONS)
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+
+    try {
+      await deps.userRepo.createUser(fields.userId, fields.displayName, passwordHash, createdAt, createdAt)
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+
+    c.header('Cache-Control', 'no-store')
+    c.header('Location', '/admin/users')
+    return c.body(null, 303)
+  })
+
+  admin.post('/users/reset-password', async (c) => {
+    if (!isSameOrigin(c)) return forbiddenResponse(c)
+    if (!isFormContentType(c.req.header('Content-Type'))) {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Bad Request', 400)
+    }
+    const fields = await parseResetPasswordFields(c)
+    if (fields === null) {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Bad Request', 400)
+    }
+
+    const deps = depsFromEnv(c.env)
+    let updatedAt: string
+    try {
+      updatedAt = deps.clock().toISOString()
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+
+    let passwordHash: string
+    try {
+      passwordHash = await hashPassword(fields.password, PBKDF2_PRODUCTION_ITERATIONS)
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+
+    try {
+      await deps.userRepo.resetPassword(fields.userId, passwordHash, updatedAt)
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+
+    c.header('Cache-Control', 'no-store')
+    c.header('Location', '/admin/users')
+    return c.body(null, 303)
+  })
+
   // Any other method/path under /admin stays behind the guard and returns a
   // generic authenticated 404 — never the viewer router, never any data.
   admin.all('*', (c) => {
@@ -430,7 +574,7 @@ function AdminHome() {
 }
 
 /**
- * Read-only user inventory page.
+ * User inventory page with create-user form and per-row password-reset form.
  * password_hash is never selected, returned, rendered, or logged.
  */
 function AdminUsersPage({ page }: { page: AdminUserPage }) {
@@ -443,6 +587,22 @@ function AdminUsersPage({ page }: { page: AdminUserPage }) {
         ← 管理コンソールへ
       </a>
       <h1>ユーザー一覧</h1>
+      <form class="admin-form" method="post" action="/admin/users/create">
+        <h2>ユーザーを作成</h2>
+        <label>
+          ユーザーID
+          <input type="text" name="userId" required />
+        </label>
+        <label>
+          表示名
+          <input type="text" name="displayName" required />
+        </label>
+        <label>
+          パスワード
+          <input type="password" name="password" required />
+        </label>
+        <button type="submit">作成</button>
+      </form>
       {users.length === 0 ? (
         <p class="empty-note">ユーザーがいません</p>
       ) : (
@@ -485,6 +645,11 @@ function AdminUsersPage({ page }: { page: AdminUserPage }) {
                       <button type="submit">有効化</button>
                     </form>
                   )}
+                  <form method="post" action="/admin/users/reset-password">
+                    <input type="hidden" name="userId" value={u.id} />
+                    <input type="password" name="password" required />
+                    <button type="submit">パスワードリセット</button>
+                  </form>
                 </td>
               </tr>
             ))}

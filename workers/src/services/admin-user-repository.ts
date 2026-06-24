@@ -13,6 +13,16 @@ function isSafeDisplayName(value: unknown): value is string {
   return typeof value === 'string' && Array.from(value).length <= DISPLAY_NAME_MAX_CODE_POINTS
 }
 
+function isValidNewDisplayName(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    !/^\s|\s$/.test(value) &&
+    !/[\x00-\x1f\x7f]/.test(value) &&
+    Array.from(value).length <= DISPLAY_NAME_MAX_CODE_POINTS
+  )
+}
+
 function parseUserRow(row: unknown): AdminUserSummary {
   if (typeof row !== 'object' || row === null) throw databaseOperationError()
   const r = row as Record<string, unknown>
@@ -72,6 +82,21 @@ const SET_USER_ENABLED_SQL = `
   SET enabled = ?, updated_at = ?
   WHERE id = ? AND enabled <> ?`
 
+const PBKDF2_HASH_RE = /^pbkdf2-sha256\$100000\$[A-Za-z0-9_-]{22}\$[A-Za-z0-9_-]{43}$/
+
+function isValidPasswordHashShape(value: unknown): value is string {
+  return typeof value === 'string' && PBKDF2_HASH_RE.test(value)
+}
+
+const CREATE_USER_SQL = `
+  INSERT INTO users (id, display_name, password_hash, enabled, fail_count, locked_until, created_at, updated_at)
+  VALUES (?, ?, ?, 1, 0, NULL, ?, ?)`
+
+const RESET_PASSWORD_SQL = `
+  UPDATE users
+  SET password_hash = ?, fail_count = 0, locked_until = NULL, updated_at = ?
+  WHERE id = ?`
+
 export class AdminUserRepository {
   constructor(private readonly db: D1Database) {}
 
@@ -124,6 +149,55 @@ export class AdminUserRepository {
       throw databaseOperationError()
     }
     if (result === null || typeof result !== 'object' || result.success !== true) {
+      throw databaseOperationError()
+    }
+  }
+
+  async createUser(
+    userId: string,
+    displayName: string,
+    passwordHash: string,
+    createdAt: string,
+    updatedAt: string,
+  ): Promise<void> {
+    if (!isValidId(userId)) throw databaseOperationError()
+    if (!isValidNewDisplayName(displayName)) throw databaseOperationError()
+    if (!isValidPasswordHashShape(passwordHash)) throw databaseOperationError()
+    if (!isCanonicalUtcTimestamp(createdAt)) throw databaseOperationError()
+    if (!isCanonicalUtcTimestamp(updatedAt)) throw databaseOperationError()
+
+    let result: D1Result
+    try {
+      result = await this.db
+        .prepare(CREATE_USER_SQL)
+        .bind(userId, displayName, passwordHash, createdAt, updatedAt)
+        .run()
+    } catch {
+      throw databaseOperationError()
+    }
+    if (result === null || typeof result !== 'object' || result.success !== true) {
+      throw databaseOperationError()
+    }
+  }
+
+  async resetPassword(userId: string, passwordHash: string, updatedAt: string): Promise<void> {
+    if (!isValidId(userId)) throw databaseOperationError()
+    if (!isValidPasswordHashShape(passwordHash)) throw databaseOperationError()
+    if (!isCanonicalUtcTimestamp(updatedAt)) throw databaseOperationError()
+
+    let result: D1Result
+    try {
+      result = await this.db
+        .prepare(RESET_PASSWORD_SQL)
+        .bind(passwordHash, updatedAt, userId)
+        .run()
+    } catch {
+      throw databaseOperationError()
+    }
+    if (result === null || typeof result !== 'object' || result.success !== true) {
+      throw databaseOperationError()
+    }
+    if ((result as unknown as { meta?: { changes?: number } }).meta?.changes === 0) {
       throw databaseOperationError()
     }
   }

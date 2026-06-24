@@ -139,8 +139,9 @@ This is a priority-ordered plan. Update status as implementation progresses.
       implemented and reviewed 2026-06-16. Idempotent permission grant/revoke
       implemented and reviewed 2026-06-18. Idempotent album enable/disable
       controls implemented and reviewed 2026-06-19. Idempotent user
-      enable/disable controls implemented and reviewed 2026-06-23. Broader user
-      and album mutation operations remain.)
+      enable/disable controls implemented and reviewed 2026-06-23. User
+      creation and password reset controls implemented and reviewed locally
+      2026-06-24. Broader album mutation operations remain.)
 - [ ] Implement sync request/status administration.
 - [ ] Add operational audit information without sensitive-data leakage.
 

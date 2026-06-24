@@ -584,3 +584,438 @@ describe('AdminUserRepository.setUserEnabled error sanitization', () => {
     ).rejects.toThrow('database operation failed')
   })
 })
+
+// ---------------------------------------------------------------------------
+// createUser -constants
+// ---------------------------------------------------------------------------
+
+const VALID_DISPLAY_NAME = 'Alice Viewer'
+const VALID_HASH = 'pbkdf2-sha256$100000$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+const VALID_CREATED_AT = '2026-06-24T00:00:00.000Z'
+
+// ---------------------------------------------------------------------------
+// createUser -SQL structure
+// ---------------------------------------------------------------------------
+
+describe('AdminUserRepository.createUser SQL structure', () => {
+  async function issueCreate() {
+    const { db, queries } = makeMockDb([{}])
+    await new AdminUserRepository(db).createUser(VALID_USER_ID, VALID_DISPLAY_NAME, VALID_HASH, VALID_CREATED_AT, VALID_UPDATED_AT)
+    return queries
+  }
+
+  it('uses INSERT INTO users', async () => {
+    const queries = await issueCreate()
+    expect(queries[0]?.sql).toMatch(/INSERT\s+INTO\s+users/i)
+  })
+
+  it('INSERT lists id, display_name, password_hash, enabled, fail_count, locked_until, created_at, updated_at', async () => {
+    const queries = await issueCreate()
+    expect(queries[0]?.sql).toContain('id')
+    expect(queries[0]?.sql).toContain('display_name')
+    expect(queries[0]?.sql).toContain('password_hash')
+    expect(queries[0]?.sql).toContain('enabled')
+    expect(queries[0]?.sql).toContain('fail_count')
+    expect(queries[0]?.sql).toContain('locked_until')
+    expect(queries[0]?.sql).toContain('created_at')
+    expect(queries[0]?.sql).toContain('updated_at')
+  })
+
+  it('VALUES clause uses 5 placeholders with 3 hardcoded literals', async () => {
+    const queries = await issueCreate()
+    // 8 columns: 5 params + 1 (enabled), 0 (fail_count), NULL (locked_until)
+    expect(queries[0]?.sql).toContain('VALUES')
+    expect(queries[0]?.sql).toContain('1')
+    expect(queries[0]?.sql).toContain('NULL')
+  })
+
+  it('does NOT use UPDATE', async () => {
+    const queries = await issueCreate()
+    expect(queries[0]?.sql).not.toMatch(/\bUPDATE\b/i)
+  })
+
+  it('does NOT use SELECT', async () => {
+    const queries = await issueCreate()
+    expect(queries[0]?.sql).not.toMatch(/\bSELECT\b/i)
+  })
+
+  it('does NOT use DELETE', async () => {
+    const queries = await issueCreate()
+    expect(queries[0]?.sql).not.toMatch(/\bDELETE\b/i)
+  })
+
+  it('does NOT JOIN any other table', async () => {
+    const queries = await issueCreate()
+    expect(queries[0]?.sql).not.toMatch(/\bJOIN\b/i)
+  })
+
+  it('does NOT reference sessions', async () => {
+    const queries = await issueCreate()
+    expect(queries[0]?.sql).not.toContain('sessions')
+  })
+
+  it('does NOT reference album_permissions', async () => {
+    const queries = await issueCreate()
+    expect(queries[0]?.sql).not.toContain('album_permissions')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// createUser -bind order
+// ---------------------------------------------------------------------------
+
+describe('AdminUserRepository.createUser params', () => {
+  it('binds [userId, displayName, passwordHash, createdAt, updatedAt] in that order', async () => {
+    const { db, queries } = makeMockDb([{}])
+    await new AdminUserRepository(db).createUser(VALID_USER_ID, VALID_DISPLAY_NAME, VALID_HASH, VALID_CREATED_AT, VALID_UPDATED_AT)
+    expect(queries[0]?.params).toEqual([VALID_USER_ID, VALID_DISPLAY_NAME, VALID_HASH, VALID_CREATED_AT, VALID_UPDATED_AT])
+  })
+
+  it('userId is a bound parameter, not an SQL literal', async () => {
+    const { db, queries } = makeMockDb([{}])
+    await new AdminUserRepository(db).createUser(VALID_USER_ID, VALID_DISPLAY_NAME, VALID_HASH, VALID_CREATED_AT, VALID_UPDATED_AT)
+    expect(queries[0]?.sql).not.toContain(VALID_USER_ID)
+    expect(queries[0]?.params).toContain(VALID_USER_ID)
+  })
+
+  it('passwordHash is a bound parameter, not an SQL literal', async () => {
+    const { db, queries } = makeMockDb([{}])
+    await new AdminUserRepository(db).createUser(VALID_USER_ID, VALID_DISPLAY_NAME, VALID_HASH, VALID_CREATED_AT, VALID_UPDATED_AT)
+    expect(queries[0]?.sql).not.toContain(VALID_HASH)
+    expect(queries[0]?.params).toContain(VALID_HASH)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// createUser -success
+// ---------------------------------------------------------------------------
+
+describe('AdminUserRepository.createUser success', () => {
+  it('resolves without throwing on successful run result', async () => {
+    const { db } = makeMockDb([{ runResult: { success: true } }])
+    await expect(
+      new AdminUserRepository(db).createUser(VALID_USER_ID, VALID_DISPLAY_NAME, VALID_HASH, VALID_CREATED_AT, VALID_UPDATED_AT),
+    ).resolves.toBeUndefined()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// createUser -validation before D1
+// ---------------------------------------------------------------------------
+
+describe('AdminUserRepository.createUser validation before D1', () => {
+  it('invalid userId ->throws before D1 is called', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminUserRepository(db).createUser('!bad!', VALID_DISPLAY_NAME, VALID_HASH, VALID_CREATED_AT, VALID_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+
+  it('displayName longer than 1024 code points ->throws before D1', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminUserRepository(db).createUser(VALID_USER_ID, 'a'.repeat(1025), VALID_HASH, VALID_CREATED_AT, VALID_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+
+  it('empty displayName -> throws before D1', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminUserRepository(db).createUser(VALID_USER_ID, '', VALID_HASH, VALID_CREATED_AT, VALID_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+
+  it('displayName with leading whitespace -> throws before D1', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminUserRepository(db).createUser(VALID_USER_ID, ' Leading', VALID_HASH, VALID_CREATED_AT, VALID_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+
+  it('displayName with trailing whitespace -> throws before D1', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminUserRepository(db).createUser(VALID_USER_ID, 'Trailing ', VALID_HASH, VALID_CREATED_AT, VALID_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+
+  it('displayName with ASCII control character -> throws before D1', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminUserRepository(db).createUser(VALID_USER_ID, 'bad\nname', VALID_HASH, VALID_CREATED_AT, VALID_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+
+  it('invalid passwordHash shape ->throws before D1', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminUserRepository(db).createUser(VALID_USER_ID, VALID_DISPLAY_NAME, 'not-a-hash', VALID_CREATED_AT, VALID_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+
+  it('invalid createdAt ->throws before D1', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminUserRepository(db).createUser(VALID_USER_ID, VALID_DISPLAY_NAME, VALID_HASH, 'not-a-date', VALID_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+
+  it('invalid updatedAt ->throws before D1', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminUserRepository(db).createUser(VALID_USER_ID, VALID_DISPLAY_NAME, VALID_HASH, VALID_CREATED_AT, 'not-a-date'),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// createUser -error sanitization
+// ---------------------------------------------------------------------------
+
+describe('AdminUserRepository.createUser error sanitization', () => {
+  it('D1 throw ->"database operation failed"', async () => {
+    const { db } = makeMockDb([{ throws: new Error('D1 constraint: UNIQUE constraint failed') }])
+    await expect(
+      new AdminUserRepository(db).createUser(VALID_USER_ID, VALID_DISPLAY_NAME, VALID_HASH, VALID_CREATED_AT, VALID_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+  })
+
+  it('D1 error message does not contain the sensitive detail', async () => {
+    const sensitiveDetail = 'secret-d1-constraint-xyz'
+    const { db } = makeMockDb([{ throws: new Error(`D1 error: ${sensitiveDetail}`) }])
+    const err = await new AdminUserRepository(db).createUser(VALID_USER_ID, VALID_DISPLAY_NAME, VALID_HASH, VALID_CREATED_AT, VALID_UPDATED_AT).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(Error)
+    expect((err as Error).message).not.toContain(sensitiveDetail)
+  })
+
+  it('null run result ->"database operation failed"', async () => {
+    const { db } = makeMockDb([{ runResult: null }])
+    await expect(
+      new AdminUserRepository(db).createUser(VALID_USER_ID, VALID_DISPLAY_NAME, VALID_HASH, VALID_CREATED_AT, VALID_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+  })
+
+  it('run result success=false ->"database operation failed"', async () => {
+    const { db } = makeMockDb([{ runResult: { success: false } }])
+    await expect(
+      new AdminUserRepository(db).createUser(VALID_USER_ID, VALID_DISPLAY_NAME, VALID_HASH, VALID_CREATED_AT, VALID_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// resetPassword -SQL structure
+// ---------------------------------------------------------------------------
+
+describe('AdminUserRepository.resetPassword SQL structure', () => {
+  async function issueReset() {
+    const { db, queries } = makeMockDb([{ runResult: { success: true, meta: { changes: 1 } } }])
+    await new AdminUserRepository(db).resetPassword(VALID_USER_ID, VALID_HASH, VALID_UPDATED_AT)
+    return queries
+  }
+
+  it('uses UPDATE users', async () => {
+    const queries = await issueReset()
+    expect(queries[0]?.sql).toMatch(/UPDATE\s+users/i)
+  })
+
+  it('SET clause contains password_hash', async () => {
+    const queries = await issueReset()
+    expect(queries[0]?.sql).toContain('password_hash')
+  })
+
+  it('SET clause resets fail_count to 0', async () => {
+    const queries = await issueReset()
+    expect(queries[0]?.sql).toContain('fail_count')
+  })
+
+  it('SET clause resets locked_until to NULL', async () => {
+    const queries = await issueReset()
+    expect(queries[0]?.sql).toContain('locked_until')
+    expect(queries[0]?.sql).toContain('NULL')
+  })
+
+  it('SET clause updates updated_at', async () => {
+    const queries = await issueReset()
+    expect(queries[0]?.sql).toContain('updated_at')
+  })
+
+  it('WHERE clause filters by id', async () => {
+    const queries = await issueReset()
+    expect(queries[0]?.sql).toContain('WHERE')
+    expect(queries[0]?.sql).toContain('id')
+  })
+
+  it('does NOT use INSERT', async () => {
+    const queries = await issueReset()
+    expect(queries[0]?.sql).not.toMatch(/\bINSERT\b/i)
+  })
+
+  it('does NOT use SELECT', async () => {
+    const queries = await issueReset()
+    expect(queries[0]?.sql).not.toMatch(/\bSELECT\b/i)
+  })
+
+  it('does NOT use DELETE', async () => {
+    const queries = await issueReset()
+    expect(queries[0]?.sql).not.toMatch(/\bDELETE\b/i)
+  })
+
+  it('does NOT JOIN any other table', async () => {
+    const queries = await issueReset()
+    expect(queries[0]?.sql).not.toMatch(/\bJOIN\b/i)
+  })
+
+  it('does NOT reference sessions', async () => {
+    const queries = await issueReset()
+    expect(queries[0]?.sql).not.toContain('sessions')
+  })
+
+  it('does NOT reference album_permissions', async () => {
+    const queries = await issueReset()
+    expect(queries[0]?.sql).not.toContain('album_permissions')
+  })
+
+  it('does NOT change display_name', async () => {
+    const queries = await issueReset()
+    expect(queries[0]?.sql).not.toContain('display_name')
+  })
+
+  it('does NOT change enabled', async () => {
+    const queries = await issueReset()
+    // enabled should not appear in the SET clause (only WHERE filter for id)
+    expect(queries[0]?.sql.split('WHERE')[0]).not.toContain('enabled')
+  })
+
+  it('does NOT change created_at', async () => {
+    const queries = await issueReset()
+    expect(queries[0]?.sql).not.toContain('created_at')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// resetPassword -bind order
+// ---------------------------------------------------------------------------
+
+describe('AdminUserRepository.resetPassword params', () => {
+  it('binds [passwordHash, updatedAt, userId] in that order', async () => {
+    const { db, queries } = makeMockDb([{ runResult: { success: true, meta: { changes: 1 } } }])
+    await new AdminUserRepository(db).resetPassword(VALID_USER_ID, VALID_HASH, VALID_UPDATED_AT)
+    expect(queries[0]?.params).toEqual([VALID_HASH, VALID_UPDATED_AT, VALID_USER_ID])
+  })
+
+  it('userId is a bound parameter, not an SQL literal', async () => {
+    const { db, queries } = makeMockDb([{ runResult: { success: true, meta: { changes: 1 } } }])
+    await new AdminUserRepository(db).resetPassword(VALID_USER_ID, VALID_HASH, VALID_UPDATED_AT)
+    expect(queries[0]?.sql).not.toContain(VALID_USER_ID)
+    expect(queries[0]?.params).toContain(VALID_USER_ID)
+  })
+
+  it('passwordHash is a bound parameter, not an SQL literal', async () => {
+    const { db, queries } = makeMockDb([{ runResult: { success: true, meta: { changes: 1 } } }])
+    await new AdminUserRepository(db).resetPassword(VALID_USER_ID, VALID_HASH, VALID_UPDATED_AT)
+    expect(queries[0]?.sql).not.toContain(VALID_HASH)
+    expect(queries[0]?.params).toContain(VALID_HASH)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// resetPassword -success
+// ---------------------------------------------------------------------------
+
+describe('AdminUserRepository.resetPassword success', () => {
+  it('resolves when meta.changes=1', async () => {
+    const { db } = makeMockDb([{ runResult: { success: true, meta: { changes: 1 } } }])
+    await expect(
+      new AdminUserRepository(db).resetPassword(VALID_USER_ID, VALID_HASH, VALID_UPDATED_AT),
+    ).resolves.toBeUndefined()
+  })
+
+  it('resolves when success=true and no meta (legacy path)', async () => {
+    const { db } = makeMockDb([{ runResult: { success: true } }])
+    await expect(
+      new AdminUserRepository(db).resetPassword(VALID_USER_ID, VALID_HASH, VALID_UPDATED_AT),
+    ).resolves.toBeUndefined()
+  })
+
+  it('meta.changes=0 ->throws (unknown userId treated as DB failure)', async () => {
+    const { db } = makeMockDb([{ runResult: { success: true, meta: { changes: 0 } } }])
+    await expect(
+      new AdminUserRepository(db).resetPassword(VALID_USER_ID, VALID_HASH, VALID_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// resetPassword -validation before D1
+// ---------------------------------------------------------------------------
+
+describe('AdminUserRepository.resetPassword validation before D1', () => {
+  it('invalid userId ->throws before D1 is called', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminUserRepository(db).resetPassword('!bad!', VALID_HASH, VALID_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+
+  it('invalid passwordHash shape ->throws before D1', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminUserRepository(db).resetPassword(VALID_USER_ID, 'not-a-hash', VALID_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+
+  it('invalid updatedAt ->throws before D1', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminUserRepository(db).resetPassword(VALID_USER_ID, VALID_HASH, 'not-a-date'),
+    ).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// resetPassword -error sanitization
+// ---------------------------------------------------------------------------
+
+describe('AdminUserRepository.resetPassword error sanitization', () => {
+  it('D1 throw ->"database operation failed"', async () => {
+    const { db } = makeMockDb([{ throws: new Error('D1 error with secret-detail') }])
+    await expect(
+      new AdminUserRepository(db).resetPassword(VALID_USER_ID, VALID_HASH, VALID_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+  })
+
+  it('D1 error message does not contain the sensitive detail', async () => {
+    const sensitiveDetail = 'secret-d1-detail-xyz'
+    const { db } = makeMockDb([{ throws: new Error(`D1 error: ${sensitiveDetail}`) }])
+    const err = await new AdminUserRepository(db).resetPassword(VALID_USER_ID, VALID_HASH, VALID_UPDATED_AT).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(Error)
+    expect((err as Error).message).not.toContain(sensitiveDetail)
+  })
+
+  it('null run result ->"database operation failed"', async () => {
+    const { db } = makeMockDb([{ runResult: null }])
+    await expect(
+      new AdminUserRepository(db).resetPassword(VALID_USER_ID, VALID_HASH, VALID_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+  })
+
+  it('run result success=false ->"database operation failed"', async () => {
+    const { db } = makeMockDb([{ runResult: { success: false } }])
+    await expect(
+      new AdminUserRepository(db).resetPassword(VALID_USER_ID, VALID_HASH, VALID_UPDATED_AT),
+    ).rejects.toThrow('database operation failed')
+  })
+})

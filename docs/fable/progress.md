@@ -28,6 +28,24 @@ The sixth Level 3 implementation handoff is reviewed and complete:
   returned the expected 403 with `Cache-Control: no-store`, without performing
   a D1 mutation.
 
+The seventh Level 3 implementation handoff is reviewed and complete locally:
+
+- DONE: admin-only `POST /admin/users/create` and
+  `POST /admin/users/reset-password` behind the existing Access guard.
+- Both mutations require strict same-origin POST, exact URL-encoded form
+  Content-Type, exact field validation, existing PBKDF2 hashing after cheap
+  validation, parameterized D1 writes, and sanitized no-store failures.
+- `createUser` inserts only a `users` row with `enabled=1`, `fail_count=0`,
+  `locked_until=NULL`, and canonical timestamps. `resetPassword` updates only
+  `password_hash`, `fail_count`, `locked_until`, and `updated_at`; sessions,
+  permissions, albums, and R2 data are untouched.
+- Codex review tightened repository-level display-name validation so direct
+  repository calls reject empty, leading/trailing whitespace, and ASCII control
+  characters before D1.
+- DONE: local verification on 2026-06-24 passed lint, typecheck, build, and
+  1521 tests / 29 files. `npm audit --omit=dev --audit-level=high` reported
+  0 vulnerabilities; full `npm audit` still reports existing Wrangler/Miniflare
+  devDependency advisories.
 The fifth Level 3 implementation handoff is reviewed and complete:
 
 - DONE: idempotent `POST /admin/albums/enable` and
@@ -89,7 +107,7 @@ The first Level 3 implementation handoff is reviewed and complete:
   `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, and `ADMIN_EMAILS` are registered,
   and the operator verified an allowlisted authenticated session reaches the
   admin console at `https://share-photo.iniwach.com/admin`.
-- Admin CRUD, sync operations, audit UI, and cleanup remain unimplemented.
+- Broader album administration, sync operations, audit UI, and cleanup remain unimplemented.
 
 Recent Level 2 execution:
 
@@ -149,9 +167,10 @@ documented.
 
 - Workers: 894 tests / 24 files, lint, typecheck, build, audit green
   in the production baseline (2026-06-12). The reviewed `/admin`
-  authentication foundation, read-only inventories, permission mutations, and
-  album and user enable/disable controls pass lint, typecheck, build, and 1403
-  tests / 29 files locally (2026-06-23). `npm audit` reports five advisories (1 low /
+  authentication foundation, read-only inventories, permission mutations,
+  album and user enable/disable controls, and user create/password-reset
+  controls pass lint, typecheck, build, and 1521 tests / 29 files locally
+  (2026-06-24). `npm audit` reports five advisories (1 low /
   4 high) through devDependencies (`wrangler -> esbuild/miniflare ->
   undici/ws`); production dependency audit with
   `npm audit --omit=dev --audit-level=high` reports 0 vulnerabilities. Workers
@@ -204,5 +223,5 @@ action list and full status snapshot.
 
 ## Next Priority
 
-Level 2 is complete. Select the next Level 3 priority from broader user/album
+Level 2 is complete. Select the next Level 3 priority from broader album
 administration, sync administration, or operational audit information.
