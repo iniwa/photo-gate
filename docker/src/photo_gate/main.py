@@ -160,6 +160,23 @@ def _utc_now_iso(clock: Callable[[], datetime]) -> str:
     return clock().strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+async def _publish_sync_status(
+    state: "HealthState",
+    store: object,
+    clock: "Callable[[], datetime]",
+) -> None:
+    """Best-effort R2 publish of sanitized sync status. Never propagates."""
+    if store is None:
+        return
+    try:
+        from .sync_status import build_sync_status, SYNC_STATUS_KEY
+        published_at = _utc_now_iso(clock)
+        data = build_sync_status(state, published_at)
+        await store.put(SYNC_STATUS_KEY, data, "application/json")
+    except Exception:
+        pass
+
+
 # Third-party loggers that emit request URLs or other untrusted text at
 # INFO. httpx/httpcore log every request line as
 # "HTTP Request: GET <full url>" — and that URL embeds the PhotoPrism
@@ -317,6 +334,7 @@ async def run_sync_daemon(
     clock: Callable[[], datetime] | None = None,
     sleep_fn: Callable[[float], object] | None = None,
     heartbeat_period: float = 60.0,
+    status_store=None,
 ) -> int:
     """
     Async composition function for sync-daemon.
@@ -340,6 +358,24 @@ async def run_sync_daemon(
         clock = lambda: datetime.now(tz=timezone.utc)
     if sleep_fn is None:
         sleep_fn = asyncio.sleep
+
+    # Resolve status store for best-effort remote status publishing.
+    _status_store = status_store
+    if _status_store is None:
+        try:
+            _cl = config_loader
+            if _cl is None:
+                from .config import load_config
+                _cl = load_config
+            _sf = store_factory
+            if _sf is None:
+                from .r2_store import R2ObjectStore
+                def _sf(cfg):
+                    return R2ObjectStore(cfg.r2)
+            _cfg = _cl()
+            _status_store = _sf(_cfg)
+        except Exception:
+            pass  # Best-effort; remote status unavailable if config fails
 
     from .health import HealthState, write_health
 
@@ -382,6 +418,7 @@ async def run_sync_daemon(
         write_health(state, health_path)
     except OSError:
         pass  # Non-fatal; health is best-effort
+    await _publish_sync_status(state, _status_store, clock)
 
     shutdown_event = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -434,6 +471,7 @@ async def run_sync_daemon(
                 write_health(state, health_path)
             except OSError:
                 pass
+            await _publish_sync_status(state, _status_store, clock)
 
             log.info("starting sync attempt %d for album %s", runs + 1, album_id)
             t_start = clock()
@@ -505,6 +543,7 @@ async def run_sync_daemon(
                 write_health(state, health_path)
             except OSError:
                 pass
+            await _publish_sync_status(state, _status_store, clock)
 
             if shutdown_event.is_set():
                 break

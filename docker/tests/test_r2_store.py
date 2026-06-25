@@ -390,3 +390,54 @@ def test_error_text_excludes_credentials():
             asyncio.run(store.put(_THUMB_KEY, b"data", "image/webp"))
     assert secret_key_id not in str(exc_info.value)
     assert secret_key not in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
+# Status key: ops/sync-status.json
+# ---------------------------------------------------------------------------
+
+_STATUS_KEY = "ops/sync-status.json"
+_STATUS_DATA = b'{"schema": 1}'
+_STATUS_CONTENT_TYPE = "application/json"
+_STATUS_CACHE = "private, no-cache"
+
+
+def test_status_key_accepted():
+    store, stubber = _make_store()
+    stubber.add_response(
+        "put_object",
+        {},
+        expected_params={
+            "Bucket": _BUCKET,
+            "Key": _STATUS_KEY,
+            "Body": _STATUS_DATA,
+            "ContentType": _STATUS_CONTENT_TYPE,
+            "CacheControl": _STATUS_CACHE,
+        },
+    )
+    with stubber:
+        asyncio.run(store.put(_STATUS_KEY, _STATUS_DATA, _STATUS_CONTENT_TYPE))
+    stubber.assert_no_pending_responses()
+
+
+def test_status_key_cache_control_is_private_no_cache():
+    from photo_gate.r2_store import _cache_control
+    assert _cache_control(_STATUS_KEY) == "private, no-cache"
+
+
+def test_status_key_content_type_must_be_json():
+    store, _ = _make_store()
+    with pytest.raises(ValueError, match="content type"):
+        asyncio.run(store.put(_STATUS_KEY, _STATUS_DATA, "text/plain"))
+
+
+def test_other_ops_keys_rejected():
+    store, _ = _make_store()
+    with pytest.raises(ValueError):
+        asyncio.run(store.put("ops/other.json", b"data", "application/json"))
+
+
+def test_ops_directory_traversal_rejected():
+    store, _ = _make_store()
+    with pytest.raises(ValueError):
+        asyncio.run(store.put("ops/../albums/album-x/manifest.json", b"data", "application/json"))

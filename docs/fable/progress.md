@@ -14,6 +14,28 @@ immutable-tag Portainer procedure remains available for incident use.
 
 There is no active implementation handoff.
 
+The tenth Level 3 implementation handoff is reviewed and complete locally:
+
+- DONE: read-only admin `GET /admin/sync` status page behind the existing
+  Access guard.
+- DONE: Docker `sync-daemon` publishes sanitized best-effort status JSON to the
+  fixed private R2 key `ops/sync-status.json` after startup, attempt start, and
+  attempt completion. Publish failure does not affect sync result,
+  `consecutive_failures`, or Docker HEALTHCHECK.
+- The status schema excludes PID, album title, PhotoPrism UID/URL/token,
+  Cloudflare Access credentials, R2 credentials, source photo data, manifest
+  contents, container hostnames, and environment values.
+- Worker-side parsing reads only the fixed key, treats a missing object as a
+  safe 200 empty state, and fails closed with sanitized 500 on R2, JSON, or
+  validation failure.
+- Codex review tightened Docker status validation to reject impossible daemon
+  timestamps and Python `bool` values where non-negative integers are required,
+  and added a Worker regression test proving the fixed R2 key is used.
+- DONE: local verification on 2026-06-25 passed Workers lint, typecheck, build,
+  1726 tests / 31 files, and production dependency audit. Docker verification
+  passed 190 tests with 34 expected libvips/pyvips skips and
+  `python -m compileall src`.
+
 The ninth Level 3 implementation handoff is reviewed and complete locally:
 
 - DONE: admin-only read-only `GET /admin/ops` operational summary behind the
@@ -206,9 +228,9 @@ documented.
   in the production baseline (2026-06-12). The reviewed `/admin`
   authentication foundation, read-only inventories, permission mutations,
   album and user enable/disable controls, user create/password-reset controls,
-  album public metadata update controls, and read-only admin ops summary pass
-  lint, typecheck, build, and 1676 tests / 30 files locally
-  (2026-06-25). `npm audit` reports five advisories (1 low /
+  album public metadata update controls, read-only admin ops summary, and
+  read-only admin sync status pass lint, typecheck, build, and 1726 tests /
+  31 files locally (2026-06-25). `npm audit` reports five advisories (1 low /
   4 high) through devDependencies (`wrangler -> esbuild/miniflare ->
   undici/ws`); production dependency audit with
   `npm audit --omit=dev --audit-level=high` reports 0 vulnerabilities. Workers
@@ -218,10 +240,10 @@ documented.
   return the expected 403/no-store. The operator subsequently configured the
   Access application, registered all three Worker values, and verified
   authenticated admin access on 2026-06-23.
-- Docker: sync `0.2.1` reports 183 tests green and is published multi-arch;
-  the targeted daemon regression suite independently passed 19 tests on
-  Windows (2026-06-15). The operator confirmed the production Pi is running
-  `0.2.1` on 2026-06-23.
+- Docker: sync `0.2.1` is published multi-arch. The admin sync-status handoff
+  passed 190 tests with 34 expected libvips/pyvips skips and
+  `python -m compileall src` locally (2026-06-25). The operator confirmed the
+  production Pi is running `0.2.1` on 2026-06-23.
 - Live security posture (2026-06-11/12): unauthenticated pages 303 to
   `/`; `/img` + reserved routes 401 `no-store`; cross-origin and
   `Origin: null` POSTs 403; direct R2 refused; no URL/token/EXIF/GPS/XMP
@@ -262,4 +284,4 @@ action list and full status snapshot.
 ## Next Priority
 
 Level 2 is complete. Select the next Level 3 priority from remaining broader
-album administration or sync administration.
+album administration or sync request controls.

@@ -148,5 +148,21 @@ Release images are published to GitHub Container Registry as
 - `photo_gate.r2_store` — R2Config and R2ObjectStore (boto3 S3-compatible, SigV4, asyncio.to_thread)
 - `photo_gate.sync` — sync orchestration: list → download → re-encode → validate → upload → manifest
 - `photo_gate.models` — typed dataclasses shared across modules
+- `photo_gate.sync_status` — builds sanitized sync status payload for R2 (`ops/sync-status.json`)
 
 Tests run entirely without network access, real PhotoPrism, R2, or credentials.
+
+## Remote Sync Status
+
+The sync daemon writes a sanitized status object to private R2 at a fixed key:
+
+```text
+ops/sync-status.json
+```
+
+- Content-Type: `application/json`
+- Cache-Control: `private, no-cache`
+- Published: after initial startup, after each attempt start, and after each attempt completion
+- Status publish is best-effort: failure does not affect sync success/failure semantics or Docker HEALTHCHECK
+- If R2 credentials or configuration are unavailable at daemon startup, the object is not published; local health file behavior remains the source of Docker HEALTHCHECK truth
+- The object contains only aggregate/operational fields; no PID, album title, PhotoPrism UID/URL/token, R2 credentials, or source photo data

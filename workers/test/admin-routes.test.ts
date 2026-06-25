@@ -8,6 +8,7 @@ import type { AdminAlbumPage, AdminAlbumSummary } from '../src/types/admin-album
 import type { AdminPermissionPage, AdminPermissionSummary } from '../src/types/admin-permission.js'
 import type { Env } from '../src/types/env.js'
 import type { AdminOpsSummary } from '../src/types/admin-ops.js'
+import type { AdminSyncStatus } from '../src/types/admin-sync-status.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -314,6 +315,38 @@ function makeThrowingOpsRepo(): OpsRepo {
   return { getSummary: async () => { throw new Error('D1 exploded') } }
 }
 
+type SyncStatusRepo = {
+  getStatus(): Promise<{ status: 'missing' } | { status: 'found'; value: AdminSyncStatus }>
+}
+
+const SAMPLE_SYNC_STATUS: AdminSyncStatus = {
+  schema: 1,
+  publishedAt: '2026-06-25T00:00:00.000Z',
+  albumId: 'my-album',
+  intervalSeconds: 86400,
+  startedAt: '2026-06-25T00:00:00.000Z',
+  heartbeatAt: '2026-06-25T00:01:00.000Z',
+  lastAttemptStartedAt: '2026-06-25T00:00:00.000Z',
+  lastAttemptCompletedAt: '2026-06-25T00:02:00.000Z',
+  lastResult: 'ok',
+  lastError: null,
+  consecutiveFailures: 0,
+  runsCompleted: 1,
+}
+
+function makeSyncStatusRepo(
+  result: { status: 'missing' } | { status: 'found'; value: AdminSyncStatus } = {
+    status: 'found',
+    value: SAMPLE_SYNC_STATUS,
+  },
+): SyncStatusRepo {
+  return { getStatus: async () => result }
+}
+
+function makeThrowingSyncStatusRepo(): SyncStatusRepo {
+  return { getStatus: async () => { throw new Error('R2 exploded') } }
+}
+
 function makeClockSpy() {
   let callCount = 0
   const clock = () => { callCount++; return new Date(NOW_TS) }
@@ -327,6 +360,7 @@ function makeApp(
   permissionRepo?: PermissionRepo,
   clock?: () => Date,
   opsRepo?: OpsRepo,
+  syncStatusRepo?: SyncStatusRepo,
 ): Hono {
   const app = new Hono()
   app.route(
@@ -337,6 +371,7 @@ function makeApp(
       permissionRepo: permissionRepo ?? makeEmptyPermissionRepo(),
       clock: clock ?? (() => new Date(NOW_TS)),
       opsRepo: opsRepo ?? makeOpsRepo(),
+      syncStatusRepo: syncStatusRepo ?? makeSyncStatusRepo(),
     })),
   )
   return app
@@ -4140,5 +4175,119 @@ describe('GET /admin/ops — admin home links', () => {
     const html = await res.text()
     expect(html).toContain('href="/admin/ops"')
     expect(html).toContain('運用サマリ')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// GET /admin/sync
+// ---------------------------------------------------------------------------
+
+describe('GET /admin/sync — auth guard', () => {
+  it('returns 403 with no token', async () => {
+    const res = await getAdmin(makeApp(goodAuth()), { token: null, path: '/admin/sync' })
+    expect(res.status).toBe(403)
+  })
+
+  it('returns 403 with bad auth config', async () => {
+    const res = await getAdmin(makeApp(() => null), { path: '/admin/sync' })
+    expect(res.status).toBe(403)
+  })
+})
+
+describe('GET /admin/sync — found status', () => {
+  it('returns 200', async () => {
+    const res = await getAdmin(makeApp(goodAuth()), { path: '/admin/sync' })
+    expect(res.status).toBe(200)
+  })
+
+  it('sets Cache-Control: no-store', async () => {
+    const res = await getAdmin(makeApp(goodAuth()), { path: '/admin/sync' })
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('renders album ID', async () => {
+    const res = await getAdmin(makeApp(goodAuth()), { path: '/admin/sync' })
+    const body = await res.text()
+    expect(body).toContain('my-album')
+  })
+
+  it('renders interval seconds', async () => {
+    const res = await getAdmin(makeApp(goodAuth()), { path: '/admin/sync' })
+    const body = await res.text()
+    expect(body).toContain('86400')
+  })
+
+  it('renders last result', async () => {
+    const res = await getAdmin(makeApp(goodAuth()), { path: '/admin/sync' })
+    const body = await res.text()
+    expect(body).toContain('ok')
+  })
+
+  it('does NOT render raw JSON blob', async () => {
+    const res = await getAdmin(makeApp(goodAuth()), { path: '/admin/sync' })
+    const body = await res.text()
+    expect(body).not.toContain('"schema"')
+  })
+
+  it('does NOT render PhotoPrism references', async () => {
+    const res = await getAdmin(makeApp(goodAuth()), { path: '/admin/sync' })
+    const body = await res.text()
+    expect(body.toLowerCase()).not.toContain('photoprism')
+  })
+})
+
+describe('GET /admin/sync — missing status', () => {
+  it('returns 200', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, makeSyncStatusRepo({ status: 'missing' }))
+    const res = await getAdmin(app, { path: '/admin/sync' })
+    expect(res.status).toBe(200)
+  })
+
+  it('renders 未報告', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, makeSyncStatusRepo({ status: 'missing' }))
+    const res = await getAdmin(app, { path: '/admin/sync' })
+    const body = await res.text()
+    expect(body).toContain('未報告')
+  })
+
+  it('sets Cache-Control: no-store', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, makeSyncStatusRepo({ status: 'missing' }))
+    const res = await getAdmin(app, { path: '/admin/sync' })
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+})
+
+describe('GET /admin/sync — repo failure', () => {
+  it('returns 500 when repo throws', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, makeThrowingSyncStatusRepo())
+    const res = await getAdmin(app, { path: '/admin/sync' })
+    expect(res.status).toBe(500)
+  })
+
+  it('sets Cache-Control: no-store on 500', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, makeThrowingSyncStatusRepo())
+    const res = await getAdmin(app, { path: '/admin/sync' })
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('500 body does not contain R2 error details', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, makeThrowingSyncStatusRepo())
+    const res = await getAdmin(app, { path: '/admin/sync' })
+    const body = await res.text()
+    expect(body).not.toContain('R2 exploded')
+  })
+})
+
+describe('GET /admin — home link to /admin/sync', () => {
+  it('contains link to /admin/sync', async () => {
+    const res = await getAdmin(makeApp(goodAuth()))
+    const body = await res.text()
+    expect(body).toContain('href="/admin/sync"')
+  })
+
+  it('link label is 同期状態', async () => {
+    const res = await getAdmin(makeApp(goodAuth()))
+    const body = await res.text()
+    expect(body).toContain('同期状態')
   })
 })

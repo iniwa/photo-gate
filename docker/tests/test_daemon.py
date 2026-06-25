@@ -23,6 +23,7 @@ import logging
 from photo_gate.main import (
     _build_parser,
     _configure_daemon_logging,
+    _publish_sync_status,
     run_sync_daemon,
     _run_healthcheck,
 )
@@ -576,3 +577,98 @@ def test_healthcheck_stderr_is_single_sanitized_line(tmp_path, capsys):
     assert len(lines) == 1
     # Must not contain file paths or exception class names in a stack trace
     assert "Traceback" not in captured.err
+
+
+# ---------------------------------------------------------------------------
+# _publish_sync_status — best-effort publish helper
+# ---------------------------------------------------------------------------
+
+
+class _FakeStore:
+    def __init__(self, fail: bool = False):
+        self.calls: list[tuple[str, bytes, str]] = []
+        self._fail = fail
+
+    async def put(self, key: str, data: bytes, content_type: str) -> None:
+        if self._fail:
+            raise RuntimeError("simulated put failure")
+        self.calls.append((key, data, content_type))
+
+
+_HEALTH = HealthState(
+    schema=1,
+    pid=1,
+    album_id="album-x",
+    interval_seconds=3600,
+    started_at="2026-06-25T00:00:00Z",
+    heartbeat_at="2026-06-25T00:00:00Z",
+    last_attempt_started_at=None,
+    last_attempt_completed_at=None,
+    last_result=None,
+    last_error=None,
+    consecutive_failures=0,
+    runs_completed=0,
+)
+
+_FIXED_CLOCK = lambda: datetime(2026, 6, 25, 0, 2, 5, tzinfo=timezone.utc)
+
+
+def test_publish_sync_status_calls_store():
+    store = _FakeStore()
+    asyncio.run(_publish_sync_status(_HEALTH, store, _FIXED_CLOCK))
+    assert len(store.calls) == 1
+    key, data, content_type = store.calls[0]
+    assert key == "ops/sync-status.json"
+    assert content_type == "application/json"
+    assert isinstance(data, bytes)
+
+
+def test_publish_sync_status_store_none_is_noop():
+    # Must not raise when store is None
+    asyncio.run(_publish_sync_status(_HEALTH, None, _FIXED_CLOCK))
+
+
+def test_publish_sync_status_store_failure_is_noop():
+    store = _FakeStore(fail=True)
+    # Must not propagate the store failure
+    asyncio.run(_publish_sync_status(_HEALTH, store, _FIXED_CLOCK))
+
+
+def test_daemon_publishes_status_on_lifecycle():
+    parser = _build_parser()
+    args = parser.parse_args(_VALID_DAEMON_ARGS)
+    store = _FakeStore()
+    code = asyncio.run(
+        run_sync_daemon(
+            args,
+            config_loader=lambda: _FakeConfig(),
+            client_factory=lambda cfg: _FakeClient(),
+            store_factory=lambda cfg: object(),
+            sync_fn=_noop_sync,
+            clock=lambda: _FIXED_TS,
+            status_store=store,
+        )
+    )
+    assert code == 0
+    # At minimum: initial publish + attempt-start or attempt-completed
+    assert len(store.calls) >= 2
+    for key, data, ct in store.calls:
+        assert key == "ops/sync-status.json"
+        assert ct == "application/json"
+
+
+def test_daemon_status_store_none_does_not_raise():
+    parser = _build_parser()
+    args = parser.parse_args(_VALID_DAEMON_ARGS)
+    code = asyncio.run(
+        run_sync_daemon(
+            args,
+            config_loader=lambda: _FakeConfig(),
+            client_factory=lambda cfg: _FakeClient(),
+            store_factory=lambda cfg: object(),
+            sync_fn=_noop_sync,
+            clock=lambda: _FIXED_TS,
+            status_store=None,
+        )
+    )
+    assert code == 0

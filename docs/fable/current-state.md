@@ -75,14 +75,13 @@ documented for incident use.
   implemented and deployed. Idempotent album enable/disable controls are also
   implemented and deployed. Idempotent user enable/disable controls are also
   implemented and deployed. Admin user creation/password reset, album public
-  metadata update controls, and read-only operational summary are implemented
-  and reviewed locally. The path-scoped
-  Cloudflare Access application is
-  configured, and the three Worker values (`CF_ACCESS_TEAM_DOMAIN`,
-  `CF_ACCESS_AUD`, `ADMIN_EMAILS`) are registered and operator-verified on
-  2026-06-23; the production admin surface is usable. Album creation/deletion
-  and PhotoPrism-coupled album operations, sync administration, dry-run cleanup,
-  and final hardening remain unimplemented.
+  metadata update controls, read-only operational summary, and read-only sync
+  status are implemented and reviewed locally. The path-scoped Cloudflare
+  Access application is configured, and the three Worker values
+  (`CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, `ADMIN_EMAILS`) are registered and
+  operator-verified on 2026-06-23; the production admin surface is usable.
+  Album creation/deletion and PhotoPrism-coupled album operations, sync request
+  controls, dry-run cleanup, and final hardening remain unimplemented.
 
 ## Verification Baseline
 
@@ -90,15 +89,16 @@ documented for incident use.
   in the last production baseline (2026-06-12). The reviewed `/admin`
   authentication foundation, read-only inventories, permission mutations,
   album and user enable/disable controls, user create/password-reset controls,
-  album public metadata update controls, and read-only admin ops summary pass
-  lint, typecheck, build, and 1676 tests / 30 files locally
-  (2026-06-25).
+  album public metadata update controls, read-only admin ops summary, and
+  read-only admin sync status pass lint, typecheck, build, and 1726 tests /
+  31 files locally (2026-06-25).
   Production audit is clean; full `npm audit` remains blocked by devDependency
   advisories in Wrangler/Miniflare. Workers CI checks and deploy succeeded for
   commit `42a7b56`; production smoke confirms the user inventory plus
   enable/disable POST routes fail closed with 403/no-store without config.
-- Docker: 183 tests reported green for sync `0.2.1`; the targeted daemon
-  regression suite independently passed 19 tests on Windows (2026-06-15).
+- Docker: sync `0.2.1` reports 183 tests green in the published baseline;
+  the admin sync-status handoff passed 190 tests with 34 expected libvips/pyvips
+  skips plus `python -m compileall src` locally (2026-06-25).
 - Live security posture verified 2026-06-11/12: unauthenticated pages
   303 to `/`; `/img` and reserved routes 401 `no-store`; cross-origin
   and `Origin: null` POSTs 403; direct R2 access refused; manifest and

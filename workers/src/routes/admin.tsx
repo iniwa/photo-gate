@@ -6,6 +6,7 @@ import type { AdminUserPage } from '../types/admin-user.js'
 import type { AdminAlbumPage } from '../types/admin-album.js'
 import type { AdminPermissionPage } from '../types/admin-permission.js'
 import type { AdminOpsSummary } from '../types/admin-ops.js'
+import type { AdminSyncStatus } from '../types/admin-sync-status.js'
 import { Layout } from '../templates/layout.js'
 import { requireAdmin } from '../middleware/require-admin.js'
 import { forbiddenResponse } from '../middleware/auth-response.js'
@@ -35,6 +36,9 @@ export interface AdminRouteDeps {
   }
   opsRepo: {
     getSummary(now: string, expiringSoonUntil: string): Promise<AdminOpsSummary>
+  }
+  syncStatusRepo: {
+    getStatus(): Promise<{ status: 'missing' } | { status: 'found'; value: AdminSyncStatus }>
   }
   clock: () => Date
 }
@@ -384,6 +388,22 @@ export function createAdminRoutes(
     return c.html(<AdminOpsPage summary={summary} />)
   })
 
+  admin.get('/sync', async (c) => {
+    const deps = depsFromEnv(c.env)
+    let result: { status: 'missing' } | { status: 'found'; value: AdminSyncStatus }
+    try {
+      result = await deps.syncStatusRepo.getStatus()
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+    c.header('Cache-Control', 'no-store')
+    if (result.status === 'missing') {
+      return c.html(<AdminSyncPage syncStatus={null} />)
+    }
+    return c.html(<AdminSyncPage syncStatus={result.value} />)
+  })
+
   // First admin mutations. Both POST routes run AFTER the admin guard (mounted
   // on '*' above), then enforce, in order and before any clock or repository
   // call: strict same-origin, exact form Content-Type, and an exact two-field
@@ -691,6 +711,9 @@ function AdminHome() {
         <p>
           <a href="/admin/ops">運用サマリ</a>
         </p>
+        <p>
+          <a href="/admin/sync">同期状態</a>
+        </p>
       </div>
     </Layout>
   )
@@ -982,6 +1005,42 @@ function AdminPermissionsPage({ page }: { page: AdminPermissionPage }) {
           </a>
         </div>
       ) : null}
+    </Layout>
+  )
+}
+
+/**
+ * Read-only sync status page. Renders only sanitized operational fields.
+ * No album title, PhotoPrism UID/URL/token, R2 credentials, or raw JSON.
+ */
+function AdminSyncPage({ syncStatus }: { syncStatus: AdminSyncStatus | null }) {
+  return (
+    <Layout title="同期状態">
+      <a class="back-link" href="/admin">
+        ← 管理コンソールへ
+      </a>
+      <h1>同期状態</h1>
+      {syncStatus === null ? (
+        <p class="empty-note">未報告 (status not reported yet)</p>
+      ) : (
+        <>
+          <p>公開日時: {syncStatus.publishedAt}</p>
+          <table class="user-table">
+            <tbody>
+              <tr><th>アルバムID</th><td>{syncStatus.albumId}</td></tr>
+              <tr><th>同期間隔 (秒)</th><td>{syncStatus.intervalSeconds}</td></tr>
+              <tr><th>開始日時</th><td>{syncStatus.startedAt}</td></tr>
+              <tr><th>最終ハートビート</th><td>{syncStatus.heartbeatAt}</td></tr>
+              <tr><th>最終試行開始</th><td>{syncStatus.lastAttemptStartedAt ?? '未実行'}</td></tr>
+              <tr><th>最終試行完了</th><td>{syncStatus.lastAttemptCompletedAt ?? '未完了'}</td></tr>
+              <tr><th>最終結果</th><td>{syncStatus.lastResult ?? '未実行'}</td></tr>
+              <tr><th>最終エラー</th><td>{syncStatus.lastError ?? 'なし'}</td></tr>
+              <tr><th>連続失敗回数</th><td>{syncStatus.consecutiveFailures}</td></tr>
+              <tr><th>完了回数</th><td>{syncStatus.runsCompleted}</td></tr>
+            </tbody>
+          </table>
+        </>
+      )}
     </Layout>
   )
 }

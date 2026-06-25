@@ -37,6 +37,8 @@ _SUFFIX_CONTENT_TYPE: dict[str, str] = {
 
 _IMMUTABLE_CACHE = "public, max-age=31536000, immutable"
 _MANIFEST_CACHE = "private, no-cache"
+_STATUS_KEY = "ops/sync-status.json"
+_STATUS_CACHE = "private, no-cache"
 
 
 @dataclass(frozen=True, repr=False)
@@ -98,6 +100,8 @@ def _validate_key(key: str) -> None:
             )
     if any(ord(c) < 32 or ord(c) == 127 for c in key):
         raise ValueError(f"key contains control characters: {key!r}")
+    if key == _STATUS_KEY:
+        return
     if not _ALLOWED_KEY.match(key):
         raise ValueError(
             f"key does not match any allowed schema path "
@@ -108,6 +112,8 @@ def _validate_key(key: str) -> None:
 
 
 def _cache_control(key: str) -> str:
+    if key == _STATUS_KEY:
+        return _STATUS_CACHE
     if key.endswith("/manifest.json"):
         return _MANIFEST_CACHE
     return _IMMUTABLE_CACHE
