@@ -7,6 +7,7 @@ import type { AdminUserPage, AdminUserSummary } from '../src/types/admin-user.js
 import type { AdminAlbumPage, AdminAlbumSummary } from '../src/types/admin-album.js'
 import type { AdminPermissionPage, AdminPermissionSummary } from '../src/types/admin-permission.js'
 import type { Env } from '../src/types/env.js'
+import type { AdminOpsSummary } from '../src/types/admin-ops.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -293,6 +294,26 @@ function makeThrowingMutationPermissionRepo(): PermissionRepo {
   }
 }
 
+type OpsRepo = {
+  getSummary(now: string, expiringSoonUntil: string): Promise<AdminOpsSummary>
+}
+
+const SAMPLE_SUMMARY: AdminOpsSummary = {
+  generatedAt: NOW_TS,
+  users: { total: 3, enabled: 2, disabled: 1, locked: 0 },
+  albums: { total: 2, enabled: 1, disabled: 1, expired: 0, expiringSoon: 0, downloadable: 1 },
+  permissions: { total: 4 },
+  sessions: { total: 5, expired: 1 },
+}
+
+function makeOpsRepo(summary: AdminOpsSummary = SAMPLE_SUMMARY): OpsRepo {
+  return { getSummary: async () => summary }
+}
+
+function makeThrowingOpsRepo(): OpsRepo {
+  return { getSummary: async () => { throw new Error('D1 exploded') } }
+}
+
 function makeClockSpy() {
   let callCount = 0
   const clock = () => { callCount++; return new Date(NOW_TS) }
@@ -305,6 +326,7 @@ function makeApp(
   albumRepo?: AlbumRepo,
   permissionRepo?: PermissionRepo,
   clock?: () => Date,
+  opsRepo?: OpsRepo,
 ): Hono {
   const app = new Hono()
   app.route(
@@ -314,6 +336,7 @@ function makeApp(
       albumRepo: albumRepo ?? makeEmptyAlbumRepo(),
       permissionRepo: permissionRepo ?? makeEmptyPermissionRepo(),
       clock: clock ?? (() => new Date(NOW_TS)),
+      opsRepo: opsRepo ?? makeOpsRepo(),
     })),
   )
   return app
@@ -4022,5 +4045,100 @@ describe('admin-routes: GET /admin/albums update-public-metadata form rendering'
     const res = await getAdmin(app, { path: '/admin/albums' })
     const body = await res.text()
     expect(body).toContain('name="downloadEnabled"')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// GET /admin/ops
+// ---------------------------------------------------------------------------
+
+describe('GET /admin/ops — guard', () => {
+  it('returns 403 when no auth token', async () => {
+    const app = makeApp(goodAuth())
+    const res = await getAdmin(app, { token: null, path: '/admin/ops' })
+    expect(res.status).toBe(403)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('returns 403 when auth rejects', async () => {
+    const app = makeApp(() => null)
+    const res = await getAdmin(app, { path: '/admin/ops' })
+    expect(res.status).toBe(403)
+  })
+})
+
+describe('GET /admin/ops — success', () => {
+  it('returns 200 with no-store', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, makeOpsRepo())
+    const res = await getAdmin(app, { path: '/admin/ops' })
+    expect(res.status).toBe(200)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    const html = await res.text()
+    expect(html).toContain('運用サマリ')
+  })
+
+  it('renders aggregate counts from the summary', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, makeOpsRepo())
+    const res = await getAdmin(app, { path: '/admin/ops' })
+    const html = await res.text()
+    expect(html).toContain('3') // users.total
+    expect(html).toContain('2') // users.enabled
+    expect(html).toContain('4') // permissions.total
+    expect(html).toContain('5') // sessions.total
+  })
+
+  it('does not expose forbidden data', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, makeOpsRepo())
+    const res = await getAdmin(app, { path: '/admin/ops' })
+    const html = await res.text()
+    expect(html).not.toContain('password_hash')
+    expect(html).not.toContain('token_hash')
+    expect(html).not.toContain('photoprism_album_uid')
+    expect(html).not.toContain('display_name')
+  })
+
+  it('passes nowIso and expiringSoonUntil to opsRepo', async () => {
+    const calls: { now: string; expiringSoonUntil: string }[] = []
+    const opsRepo: OpsRepo = {
+      getSummary: async (now, expiringSoonUntil) => {
+        calls.push({ now, expiringSoonUntil })
+        return SAMPLE_SUMMARY
+      },
+    }
+    const fixedDate = new Date(NOW_TS)
+    const clock = () => fixedDate
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, clock, opsRepo)
+    await getAdmin(app, { path: '/admin/ops' })
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.now).toBe(NOW_TS)
+    const sevenDaysLater = new Date(fixedDate.valueOf() + 7 * 24 * 60 * 60 * 1000).toISOString()
+    expect(calls[0]!.expiringSoonUntil).toBe(sevenDaysLater)
+  })
+})
+
+describe('GET /admin/ops — repo failure', () => {
+  it('returns 500 when opsRepo throws', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, makeThrowingOpsRepo())
+    const res = await getAdmin(app, { path: '/admin/ops' })
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('returns 500 when clock throws', async () => {
+    const throwingClock = (): Date => { throw new Error('clock failure') }
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, throwingClock, makeOpsRepo())
+    const res = await getAdmin(app, { path: '/admin/ops' })
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+})
+
+describe('GET /admin/ops — admin home links', () => {
+  it('GET /admin links to /admin/ops with label 運用サマリ', async () => {
+    const app = makeApp(goodAuth())
+    const res = await getAdmin(app)
+    const html = await res.text()
+    expect(html).toContain('href="/admin/ops"')
+    expect(html).toContain('運用サマリ')
   })
 })

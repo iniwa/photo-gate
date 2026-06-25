@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-06-23.
+Last updated: 2026-06-25.
 
 ## Current Completion Level
 
@@ -13,6 +13,23 @@ immutable-tag Portainer procedure remains available for incident use.
 ## Current Task
 
 There is no active implementation handoff.
+
+The ninth Level 3 implementation handoff is reviewed and complete locally:
+
+- DONE: admin-only read-only `GET /admin/ops` operational summary behind the
+  existing Access guard.
+- The page displays only aggregate D1 counts for users, albums, permissions,
+  and sessions. It does not select, return, render, or log row-level IDs,
+  display names, titles, password hashes, session token hashes, PhotoPrism UIDs,
+  transform settings, R2 keys, or manifest/photo data.
+- The repository uses four parameterized aggregate queries, validates canonical
+  UTC timestamps before D1, validates every returned aggregate as a safe
+  non-negative integer, and fails closed with sanitized errors.
+- Codex review tightened aggregate validation from integer to safe integer and
+  added a regression test for unsafe large counts.
+- DONE: local verification on 2026-06-25 passed lint, typecheck, build, and
+  1676 tests / 30 files. `npm audit --omit=dev --audit-level=high` reported
+  0 vulnerabilities.
 
 The sixth Level 3 implementation handoff is reviewed and complete:
 
@@ -189,9 +206,9 @@ documented.
   in the production baseline (2026-06-12). The reviewed `/admin`
   authentication foundation, read-only inventories, permission mutations,
   album and user enable/disable controls, user create/password-reset controls,
-  and album public metadata update controls pass lint, typecheck, build, and
-  1594 tests / 29 files locally
-  (2026-06-24). `npm audit` reports five advisories (1 low /
+  album public metadata update controls, and read-only admin ops summary pass
+  lint, typecheck, build, and 1676 tests / 30 files locally
+  (2026-06-25). `npm audit` reports five advisories (1 low /
   4 high) through devDependencies (`wrangler -> esbuild/miniflare ->
   undici/ws`); production dependency audit with
   `npm audit --omit=dev --audit-level=high` reports 0 vulnerabilities. Workers
@@ -244,5 +261,5 @@ action list and full status snapshot.
 
 ## Next Priority
 
-Level 2 is complete. Select the next Level 3 priority from broader album
-administration, sync administration, or operational audit information.
+Level 2 is complete. Select the next Level 3 priority from remaining broader
+album administration or sync administration.

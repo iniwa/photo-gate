@@ -5,6 +5,7 @@ import type { AdminAuthConfig } from '../types/admin-auth.js'
 import type { AdminUserPage } from '../types/admin-user.js'
 import type { AdminAlbumPage } from '../types/admin-album.js'
 import type { AdminPermissionPage } from '../types/admin-permission.js'
+import type { AdminOpsSummary } from '../types/admin-ops.js'
 import { Layout } from '../templates/layout.js'
 import { requireAdmin } from '../middleware/require-admin.js'
 import { forbiddenResponse } from '../middleware/auth-response.js'
@@ -31,6 +32,9 @@ export interface AdminRouteDeps {
     listPermissions(after?: { albumId: string; userId: string }): Promise<AdminPermissionPage>
     grantPermission(albumId: string, userId: string, createdAt: string): Promise<void>
     revokePermission(albumId: string, userId: string): Promise<void>
+  }
+  opsRepo: {
+    getSummary(now: string, expiringSoonUntil: string): Promise<AdminOpsSummary>
   }
   clock: () => Date
 }
@@ -363,6 +367,23 @@ export function createAdminRoutes(
     return c.html(<AdminPermissionsPage page={page} />)
   })
 
+  admin.get('/ops', async (c) => {
+    const deps = depsFromEnv(c.env)
+    let summary: AdminOpsSummary
+    try {
+      const now = deps.clock()
+      const nowIso = now.toISOString()
+      const sevenDaysMs = 7 * 24 * 60 * 60 * 1000
+      const expiringSoonUntil = new Date(now.valueOf() + sevenDaysMs).toISOString()
+      summary = await deps.opsRepo.getSummary(nowIso, expiringSoonUntil)
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+    c.header('Cache-Control', 'no-store')
+    return c.html(<AdminOpsPage summary={summary} />)
+  })
+
   // First admin mutations. Both POST routes run AFTER the admin guard (mounted
   // on '*' above), then enforce, in order and before any clock or repository
   // call: strict same-origin, exact form Content-Type, and an exact two-field
@@ -667,6 +688,9 @@ function AdminHome() {
         <p>
           <a href="/admin/permissions">権限一覧</a>
         </p>
+        <p>
+          <a href="/admin/ops">運用サマリ</a>
+        </p>
       </div>
     </Layout>
   )
@@ -842,6 +866,55 @@ function AdminAlbumsPage({ page }: { page: AdminAlbumPage }) {
           </a>
         </div>
       ) : null}
+    </Layout>
+  )
+}
+
+/**
+ * Read-only operational summary page. Displays only aggregate counts.
+ * No row-level identity, title, hash, token, PhotoPrism UID, or R2 data.
+ */
+function AdminOpsPage({ summary }: { summary: AdminOpsSummary }) {
+  return (
+    <Layout title="運用サマリ">
+      <a class="back-link" href="/admin">
+        ← 管理コンソールへ
+      </a>
+      <h1>運用サマリ</h1>
+      <p>生成日時: {summary.generatedAt}</p>
+      <h2>ユーザー</h2>
+      <table class="user-table">
+        <tbody>
+          <tr><th>合計</th><td>{summary.users.total}</td></tr>
+          <tr><th>有効</th><td>{summary.users.enabled}</td></tr>
+          <tr><th>無効</th><td>{summary.users.disabled}</td></tr>
+          <tr><th>ロック中</th><td>{summary.users.locked}</td></tr>
+        </tbody>
+      </table>
+      <h2>アルバム</h2>
+      <table class="user-table">
+        <tbody>
+          <tr><th>合計</th><td>{summary.albums.total}</td></tr>
+          <tr><th>有効</th><td>{summary.albums.enabled}</td></tr>
+          <tr><th>無効</th><td>{summary.albums.disabled}</td></tr>
+          <tr><th>期限切れ</th><td>{summary.albums.expired}</td></tr>
+          <tr><th>まもなく期限切れ (7日以内)</th><td>{summary.albums.expiringSoon}</td></tr>
+          <tr><th>ダウンロード許可</th><td>{summary.albums.downloadable}</td></tr>
+        </tbody>
+      </table>
+      <h2>権限</h2>
+      <table class="user-table">
+        <tbody>
+          <tr><th>合計</th><td>{summary.permissions.total}</td></tr>
+        </tbody>
+      </table>
+      <h2>セッション</h2>
+      <table class="user-table">
+        <tbody>
+          <tr><th>合計</th><td>{summary.sessions.total}</td></tr>
+          <tr><th>期限切れ</th><td>{summary.sessions.expired}</td></tr>
+        </tbody>
+      </table>
     </Layout>
   )
 }

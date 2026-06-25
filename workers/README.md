@@ -37,6 +37,7 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 | Admin user enable/disable | `POST /admin/users/enable`, `POST /admin/users/disable` | D1 (UPDATE enabled; sessions and lockout untouched) |
 | Admin user create | `POST /admin/users/create` | D1 (INSERT; enabled=1, fail_count=0, locked_until=NULL) |
 | Admin user password reset | `POST /admin/users/reset-password` | D1 (UPDATE password_hash, fail_count=0, locked_until=NULL; sessions and permissions untouched) |
+| Admin ops summary | `GET /admin/ops` | D1 (read-only aggregate counts from `users`, `albums`, `album_permissions`, `sessions`; no row-level identity, title, hash, token, PhotoPrism UID, or R2 data) |
 | Everything else under `/api`, `/img` | always `401` | — |
 | `/admin/*` (non-GET or unknown path) | authenticated `404` (behind Access guard) | — |
 

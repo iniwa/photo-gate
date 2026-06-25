@@ -141,10 +141,14 @@ This is a priority-ordered plan. Update status as implementation progresses.
       controls implemented and reviewed 2026-06-19. Idempotent user
       enable/disable controls implemented and reviewed 2026-06-23. User
       creation/password reset and album public metadata update controls
-      implemented and reviewed locally 2026-06-24. Album creation/deletion and
+      implemented and reviewed locally 2026-06-24. Read-only admin ops summary
+      implemented and reviewed locally 2026-06-25. Album creation/deletion and
       PhotoPrism-coupled album operations remain.)
 - [ ] Implement sync request/status administration.
-- [ ] Add operational audit information without sensitive-data leakage.
+- [x] Add operational audit information without sensitive-data leakage.
+      (Read-only `/admin/ops` aggregate D1 summary implemented and reviewed
+      locally 2026-06-25; no row-level identity/title/hash/token/PhotoPrism/R2
+      data is selected or rendered.)
 
 ### 7. Safe Cleanup
 
