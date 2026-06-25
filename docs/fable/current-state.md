@@ -81,9 +81,10 @@ documented for incident use.
   (`CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, `ADMIN_EMAILS`) are registered and
   operator-verified on 2026-06-23; the production admin surface is usable.
   Sync request controls have an accepted ADR (`docs/decisions/2026-06-25-sync-request-controls.md`)
-  but remain unimplemented. Album creation/deletion and PhotoPrism-coupled
-  album operations, sync request controls, dry-run cleanup, and final hardening
-  remain unimplemented.
+  and the Worker-side request writer is implemented locally; Docker request
+  consumption remains unimplemented. Album creation/deletion and PhotoPrism-coupled
+  album operations, Docker-side sync request consumption, dry-run cleanup, and
+  final hardening remain unimplemented.
 
 ## Verification Baseline
 

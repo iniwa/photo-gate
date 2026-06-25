@@ -11,6 +11,7 @@ import { AdminAlbumRepository } from './services/admin-album-repository.js'
 import { AdminPermissionRepository } from './services/admin-permission-repository.js'
 import { AdminOpsRepository } from './services/admin-ops-repository.js'
 import { AdminSyncStatusRepository } from './services/admin-sync-status-repository.js'
+import { AdminSyncRequestRepository } from './services/admin-sync-request-repository.js'
 import { AuthRepository } from './services/auth-repository.js'
 import { SessionRepository } from './services/session-repository.js'
 import { PermissionRepository } from './services/permission-repository.js'
@@ -74,6 +75,7 @@ app.route('/admin', createAdminRoutes(resolveAdminAuth, (env) => ({
   permissionRepo: new AdminPermissionRepository(env.DB),
   opsRepo: new AdminOpsRepository(env.DB),
   syncStatusRepo: new AdminSyncStatusRepository(env.PHOTO_BUCKET),
+  syncRequestRepo: new AdminSyncRequestRepository(env.PHOTO_BUCKET),
   clock: () => new Date(),
 })))
 

@@ -7,6 +7,7 @@ import type { AdminAlbumPage } from '../types/admin-album.js'
 import type { AdminPermissionPage } from '../types/admin-permission.js'
 import type { AdminOpsSummary } from '../types/admin-ops.js'
 import type { AdminSyncStatus } from '../types/admin-sync-status.js'
+import type { AdminSyncRequest } from '../types/admin-sync-request.js'
 import { Layout } from '../templates/layout.js'
 import { requireAdmin } from '../middleware/require-admin.js'
 import { forbiddenResponse } from '../middleware/auth-response.js'
@@ -39,6 +40,9 @@ export interface AdminRouteDeps {
   }
   syncStatusRepo: {
     getStatus(): Promise<{ status: 'missing' } | { status: 'found'; value: AdminSyncStatus }>
+  }
+  syncRequestRepo: {
+    writeRequest(req: AdminSyncRequest): Promise<void>
   }
   clock: () => Date
 }
@@ -247,6 +251,28 @@ async function parseResetPasswordFields(
 }
 
 /**
+ * Parse and strictly validate the sync-request form body. Returns `{ kind: 'sync-now' }`
+ * or `null` for any ambiguity. Exactly one field `kind=sync-now` is accepted; missing,
+ * repeated, file-valued, extra, or wrong-value fields all yield `null`. Input is never
+ * reflected and no repository or clock is touched here.
+ */
+async function parseSyncRequestFields(
+  c: AdminContext,
+): Promise<{ kind: 'sync-now' } | null> {
+  let body: Record<string, string | File | (string | File)[]>
+  try {
+    body = await c.req.parseBody({ all: true })
+  } catch {
+    return null
+  }
+  if (Object.keys(body).length !== 1) return null
+  const kind = body['kind']
+  if (typeof kind !== 'string') return null
+  if (kind !== 'sync-now') return null
+  return { kind: 'sync-now' }
+}
+
+/**
  * Admin surface, mounted at `/admin` by index.tsx BEFORE the reserved-401 loop so
  * it owns every `/admin` and `/admin/*` request and nothing falls through to the
  * public viewer page router.
@@ -402,6 +428,45 @@ export function createAdminRoutes(
       return c.html(<AdminSyncPage syncStatus={null} />)
     }
     return c.html(<AdminSyncPage syncStatus={result.value} />)
+  })
+
+  // Sync request writer. Runs AFTER the admin guard, then enforces: strict
+  // same-origin, exact form Content-Type, exactly one field `kind=sync-now`.
+  // Only after all cheap validation passes does it generate a requestId, read
+  // the clock, and write to R2. No requestId, timestamp, admin identity, R2
+  // key, bucket name, or error detail is reflected or logged.
+  admin.post('/sync/request', async (c) => {
+    if (!isSameOrigin(c)) return forbiddenResponse(c)
+    if (!isFormContentType(c.req.header('Content-Type'))) {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Bad Request', 400)
+    }
+    const fields = await parseSyncRequestFields(c)
+    if (fields === null) {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Bad Request', 400)
+    }
+
+    let requestId: string
+    try {
+      requestId = crypto.randomUUID().replaceAll('-', '')
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+
+    try {
+      const deps = depsFromEnv(c.env)
+      const requestedAt = deps.clock().toISOString()
+      await deps.syncRequestRepo.writeRequest({ schema: 1, requestId, requestedAt, kind: 'sync-now' })
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+
+    c.header('Cache-Control', 'no-store')
+    c.header('Location', '/admin/sync')
+    return c.body(null, 303)
   })
 
   // First admin mutations. Both POST routes run AFTER the admin guard (mounted

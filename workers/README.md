@@ -39,6 +39,7 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 | Admin user password reset | `POST /admin/users/reset-password` | D1 (UPDATE password_hash, fail_count=0, locked_until=NULL; sessions and permissions untouched) |
 | Admin ops summary | `GET /admin/ops` | D1 (read-only aggregate counts from `users`, `albums`, `album_permissions`, `sessions`; no row-level identity, title, hash, token, PhotoPrism UID, or R2 data) |
 | Admin sync status | `GET /admin/sync` | Private R2 (read-only; fixed key `ops/sync-status.json`; status-only, no sync trigger) |
+| Admin sync request writer | `POST /admin/sync/request` | Private R2 (write-only; fixed key `ops/sync-request.json`; admin-only; validates exact `kind=sync-now` form input; Docker consumption not implemented yet; no visible admin button exposed) |
 | Everything else under `/api`, `/img` | always `401` | — |
 | `/admin/*` (non-GET or unknown path) | authenticated `404` (behind Access guard) | — |
 

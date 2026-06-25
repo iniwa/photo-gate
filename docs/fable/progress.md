@@ -14,6 +14,22 @@ immutable-tag Portainer procedure remains available for incident use.
 
 There is no active implementation handoff.
 
+The eleventh Level 3 implementation handoff is reviewed and complete locally:
+
+- DONE: admin-only `POST /admin/sync/request` writes a schema-1 manual sync
+  request object to the fixed private R2 key `ops/sync-request.json`.
+- The route uses the existing admin guard, strict same-origin check, exact
+  URL-encoded Content-Type check, exact `kind=sync-now` form validation,
+  Worker-generated 32-hex `requestId`, and `clock().toISOString()` for
+  `requestedAt`.
+- No visible Sync Now button or pending indicator is exposed yet because the
+  Docker consumer is not implemented. Docker polling/deletion/status schema 2
+  remain future work.
+- Codex review tightened repository timestamp validation to require the exact
+  Worker ISO shape (`YYYY-MM-DDTHH:mm:ss.sssZ`) and added clock-not-called
+  regression tests for cheap validation failures.
+- DONE: local verification on 2026-06-25 passed Workers lint, typecheck, build,
+  1790 tests / 32 files, and production dependency audit.
 The sync request controls design ADR is reviewed and accepted:
 
 - DONE: `docs/decisions/2026-06-25-sync-request-controls.md` records the

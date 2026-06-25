@@ -347,6 +347,26 @@ function makeThrowingSyncStatusRepo(): SyncStatusRepo {
   return { getStatus: async () => { throw new Error('R2 exploded') } }
 }
 
+type SyncRequestRepo = {
+  writeRequest(req: { schema: 1; requestId: string; requestedAt: string; kind: 'sync-now' }): Promise<void>
+}
+
+type CapturingSyncRequestRepo = SyncRequestRepo & {
+  calls: { schema: 1; requestId: string; requestedAt: string; kind: 'sync-now' }[]
+}
+
+function makeCapturingSyncRequestRepo(): CapturingSyncRequestRepo {
+  const calls: { schema: 1; requestId: string; requestedAt: string; kind: 'sync-now' }[] = []
+  return {
+    calls,
+    writeRequest: async (req) => { calls.push(req) },
+  }
+}
+
+function makeThrowingSyncRequestRepo(): SyncRequestRepo {
+  return { writeRequest: async () => { throw new Error('R2 exploded') } }
+}
+
 function makeClockSpy() {
   let callCount = 0
   const clock = () => { callCount++; return new Date(NOW_TS) }
@@ -361,6 +381,7 @@ function makeApp(
   clock?: () => Date,
   opsRepo?: OpsRepo,
   syncStatusRepo?: SyncStatusRepo,
+  syncRequestRepo?: SyncRequestRepo,
 ): Hono {
   const app = new Hono()
   app.route(
@@ -372,6 +393,7 @@ function makeApp(
       clock: clock ?? (() => new Date(NOW_TS)),
       opsRepo: opsRepo ?? makeOpsRepo(),
       syncStatusRepo: syncStatusRepo ?? makeSyncStatusRepo(),
+      syncRequestRepo: syncRequestRepo ?? makeCapturingSyncRequestRepo(),
     })),
   )
   return app
@@ -4289,5 +4311,364 @@ describe('GET /admin — home link to /admin/sync', () => {
     const res = await getAdmin(makeApp(goodAuth()))
     const body = await res.text()
     expect(body).toContain('同期状態')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /admin/sync/request helpers
+// ---------------------------------------------------------------------------
+
+function postSyncRequest(
+  app: Hono,
+  options: {
+    token?: string | null
+    origin?: string | null
+    contentType?: string | null
+    body?: string
+  } = {},
+): Promise<Response> {
+  const {
+    token = VALID_TOKEN,
+    origin = 'https://example.com',
+    contentType = 'application/x-www-form-urlencoded',
+    body = 'kind=sync-now',
+  } = options
+  const headers: Record<string, string> = {}
+  if (token !== null) headers['Cf-Access-Jwt-Assertion'] = token
+  if (origin !== null) headers['Origin'] = origin
+  if (contentType !== null) headers['Content-Type'] = contentType
+  return Promise.resolve(
+    app.request(
+      'https://example.com/admin/sync/request',
+      { method: 'POST', headers, body },
+      {} as unknown as Parameters<typeof app.request>[2],
+    ),
+  )
+}
+
+// ---------------------------------------------------------------------------
+// POST /admin/sync/request — auth guard
+// ---------------------------------------------------------------------------
+
+describe('POST /admin/sync/request — auth guard', () => {
+  it('returns 403 when no token', async () => {
+    const app = makeApp(goodAuth())
+    const res = await postSyncRequest(app, { token: null })
+    expect(res.status).toBe(403)
+  })
+
+  it('returns 403 with no-store when no token', async () => {
+    const app = makeApp(goodAuth())
+    const res = await postSyncRequest(app, { token: null })
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('returns 403 when token invalid', async () => {
+    const resolveAuth: ResolveAuth = () => ({
+      verifier: async () => { throw new Error('bad token') },
+      allowlist: new Set([ADMIN_EMAIL]),
+    })
+    const app = makeApp(resolveAuth)
+    const res = await postSyncRequest(app)
+    expect(res.status).toBe(403)
+  })
+
+  it('returns 403 when email not in allowlist', async () => {
+    const resolveAuth: ResolveAuth = () => ({
+      verifier: async () => ({ email: 'other@example.com' }),
+      allowlist: new Set([ADMIN_EMAIL]),
+    })
+    const app = makeApp(resolveAuth)
+    const res = await postSyncRequest(app)
+    expect(res.status).toBe(403)
+  })
+
+  it('repo is not called on auth failure', async () => {
+    const repo = makeCapturingSyncRequestRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, repo)
+    await postSyncRequest(app, { token: null })
+    expect(repo.calls).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /admin/sync/request — same-origin guard
+// ---------------------------------------------------------------------------
+
+describe('POST /admin/sync/request — same-origin guard', () => {
+  it('returns 403 when Origin is absent', async () => {
+    const app = makeApp(goodAuth())
+    const res = await postSyncRequest(app, { origin: null })
+    expect(res.status).toBe(403)
+  })
+
+  it('returns no-store when Origin is absent', async () => {
+    const app = makeApp(goodAuth())
+    const res = await postSyncRequest(app, { origin: null })
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('returns 403 when Origin is "null"', async () => {
+    const app = makeApp(goodAuth())
+    const res = await postSyncRequest(app, { origin: 'null' })
+    expect(res.status).toBe(403)
+  })
+
+  it('returns 403 when Origin is cross-origin', async () => {
+    const app = makeApp(goodAuth())
+    const res = await postSyncRequest(app, { origin: 'https://evil.example.com' })
+    expect(res.status).toBe(403)
+  })
+
+  it('repo is not called on same-origin failure', async () => {
+    const repo = makeCapturingSyncRequestRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, repo)
+    await postSyncRequest(app, { origin: null })
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('clock is not called on same-origin failure', async () => {
+    const { clock, getCallCount } = makeClockSpy()
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, clock)
+    await postSyncRequest(app, { origin: null })
+    expect(getCallCount()).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /admin/sync/request — Content-Type guard
+// ---------------------------------------------------------------------------
+
+describe('POST /admin/sync/request — Content-Type guard', () => {
+  it('returns 400 when Content-Type is absent', async () => {
+    const app = makeApp(goodAuth())
+    const res = await postSyncRequest(app, { contentType: null })
+    expect(res.status).toBe(400)
+  })
+
+  it('returns no-store when Content-Type is absent', async () => {
+    const app = makeApp(goodAuth())
+    const res = await postSyncRequest(app, { contentType: null })
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('returns 400 when Content-Type is application/json', async () => {
+    const app = makeApp(goodAuth())
+    const res = await postSyncRequest(app, { contentType: 'application/json' })
+    expect(res.status).toBe(400)
+  })
+
+  it('returns 400 when Content-Type is multipart/form-data', async () => {
+    const app = makeApp(goodAuth())
+    const res = await postSyncRequest(app, { contentType: 'multipart/form-data' })
+    expect(res.status).toBe(400)
+  })
+
+  it('repo is not called on Content-Type failure', async () => {
+    const repo = makeCapturingSyncRequestRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, repo)
+    await postSyncRequest(app, { contentType: 'application/json' })
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('clock is not called on Content-Type failure', async () => {
+    const { clock, getCallCount } = makeClockSpy()
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, clock)
+    await postSyncRequest(app, { contentType: 'application/json' })
+    expect(getCallCount()).toBe(0)
+  })
+
+  it('accepts Content-Type with charset', async () => {
+    const app = makeApp(goodAuth())
+    const res = await postSyncRequest(app, { contentType: 'application/x-www-form-urlencoded; charset=utf-8' })
+    expect(res.status).toBe(303)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /admin/sync/request — form validation
+// ---------------------------------------------------------------------------
+
+describe('POST /admin/sync/request — form validation', () => {
+  it('returns 400 when body is empty (kind missing)', async () => {
+    const app = makeApp(goodAuth())
+    const res = await postSyncRequest(app, { body: '' })
+    expect(res.status).toBe(400)
+  })
+
+  it('returns no-store when kind missing', async () => {
+    const app = makeApp(goodAuth())
+    const res = await postSyncRequest(app, { body: '' })
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('returns 400 when kind has wrong value', async () => {
+    const app = makeApp(goodAuth())
+    const res = await postSyncRequest(app, { body: 'kind=sync-later' })
+    expect(res.status).toBe(400)
+  })
+
+  it('returns 400 when extra field is present', async () => {
+    const app = makeApp(goodAuth())
+    const res = await postSyncRequest(app, { body: 'kind=sync-now&extra=value' })
+    expect(res.status).toBe(400)
+  })
+
+  it('returns 400 when kind is repeated', async () => {
+    const app = makeApp(goodAuth())
+    const res = await postSyncRequest(app, { body: 'kind=sync-now&kind=sync-now' })
+    expect(res.status).toBe(400)
+  })
+
+  it('repo is not called on form validation failure', async () => {
+    const repo = makeCapturingSyncRequestRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, repo)
+    await postSyncRequest(app, { body: 'kind=wrong' })
+    expect(repo.calls).toHaveLength(0)
+  })
+
+  it('clock is not called on form validation failure', async () => {
+    const { clock, getCallCount } = makeClockSpy()
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, clock)
+    await postSyncRequest(app, { body: 'kind=wrong' })
+    expect(getCallCount()).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /admin/sync/request — success
+// ---------------------------------------------------------------------------
+
+describe('POST /admin/sync/request — success', () => {
+  it('returns 303 on success', async () => {
+    const app = makeApp(goodAuth())
+    const res = await postSyncRequest(app)
+    expect(res.status).toBe(303)
+  })
+
+  it('sets Location: /admin/sync on success', async () => {
+    const app = makeApp(goodAuth())
+    const res = await postSyncRequest(app)
+    expect(res.headers.get('location')).toBe('/admin/sync')
+  })
+
+  it('sets Cache-Control: no-store on success', async () => {
+    const app = makeApp(goodAuth())
+    const res = await postSyncRequest(app)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('calls repo.writeRequest exactly once on success', async () => {
+    const repo = makeCapturingSyncRequestRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, repo)
+    await postSyncRequest(app)
+    expect(repo.calls).toHaveLength(1)
+  })
+
+  it('written request has schema=1', async () => {
+    const repo = makeCapturingSyncRequestRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, repo)
+    await postSyncRequest(app)
+    expect(repo.calls[0]!.schema).toBe(1)
+  })
+
+  it('written request has kind=sync-now', async () => {
+    const repo = makeCapturingSyncRequestRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, repo)
+    await postSyncRequest(app)
+    expect(repo.calls[0]!.kind).toBe('sync-now')
+  })
+
+  it('written request has requestId matching /^[0-9a-f]{32}$/', async () => {
+    const repo = makeCapturingSyncRequestRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, repo)
+    await postSyncRequest(app)
+    expect(repo.calls[0]!.requestId).toMatch(/^[0-9a-f]{32}$/)
+  })
+
+  it('written request has canonical ISO requestedAt', async () => {
+    const repo = makeCapturingSyncRequestRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, repo)
+    await postSyncRequest(app)
+    const ts = repo.calls[0]!.requestedAt
+    expect(ts).toBe(new Date(ts).toISOString())
+  })
+
+  it('clock is called during successful request', async () => {
+    const { clock, getCallCount } = makeClockSpy()
+    const repo = makeCapturingSyncRequestRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, clock, undefined, undefined, repo)
+    await postSyncRequest(app)
+    expect(getCallCount()).toBeGreaterThan(0)
+  })
+
+  it('requestedAt matches clock output', async () => {
+    const fixedDate = new Date('2026-06-25T10:20:30.456Z')
+    const repo = makeCapturingSyncRequestRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, () => fixedDate, undefined, undefined, repo)
+    await postSyncRequest(app)
+    expect(repo.calls[0]!.requestedAt).toBe(fixedDate.toISOString())
+  })
+
+  it('body does not reflect requestId', async () => {
+    const repo = makeCapturingSyncRequestRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, repo)
+    const res = await postSyncRequest(app)
+    const body = await res.text()
+    if (repo.calls[0]) {
+      expect(body).not.toContain(repo.calls[0]!.requestId)
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /admin/sync/request — repo failure
+// ---------------------------------------------------------------------------
+
+describe('POST /admin/sync/request — repo failure', () => {
+  it('returns 500 when repo throws', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, makeThrowingSyncRequestRepo())
+    const res = await postSyncRequest(app)
+    expect(res.status).toBe(500)
+  })
+
+  it('sets Cache-Control: no-store on repo failure', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, makeThrowingSyncRequestRepo())
+    const res = await postSyncRequest(app)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('500 body does not contain repo error details', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, makeThrowingSyncRequestRepo())
+    const res = await postSyncRequest(app)
+    const body = await res.text()
+    expect(body).not.toContain('R2 exploded')
+  })
+
+  it('500 body does not contain ops/sync-request.json', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, makeThrowingSyncRequestRepo())
+    const res = await postSyncRequest(app)
+    const body = await res.text()
+    expect(body).not.toContain('ops/sync-request.json')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// GET /admin/sync — no visible Sync Now button
+// ---------------------------------------------------------------------------
+
+describe('GET /admin/sync — no visible Sync Now button', () => {
+  it('GET /admin/sync does not contain a form targeting /admin/sync/request', async () => {
+    const app = makeApp(goodAuth())
+    const res = await getAdmin(app, { path: '/admin/sync' })
+    const body = await res.text()
+    expect(body).not.toContain('/admin/sync/request')
+  })
+
+  it('GET /admin/sync does not contain a sync-now submit button', async () => {
+    const app = makeApp(goodAuth())
+    const res = await getAdmin(app, { path: '/admin/sync' })
+    const body = await res.text()
+    expect(body).not.toContain('sync-now')
   })
 })
