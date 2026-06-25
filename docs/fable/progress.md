@@ -14,6 +14,20 @@ immutable-tag Portainer procedure remains available for incident use.
 
 There is no active implementation handoff.
 
+The sync request controls design ADR is reviewed and accepted:
+
+- DONE: `docs/decisions/2026-06-25-sync-request-controls.md` records the
+  fixed private R2 request-object design for future manual sync controls.
+- The future request key is `ops/sync-request.json`; the Worker will generate a
+  four-field schema-1 payload and write it only after the existing admin guard,
+  strict same-origin check, exact URL-encoded Content-Type check, and exact
+  `kind=sync-now` form validation.
+- The Docker daemon will poll the fixed key, validate strictly, run the
+  configured single-album sync without interruption of in-flight syncs, and
+  best-effort delete handled, stale, duplicate, or invalid request objects.
+- The ADR explicitly preserves the no Workers-to-PhotoPrism/NAS/Docker/
+  Portainer boundary and the no Docker-to-D1/admin-auth boundary.
+
 The tenth Level 3 implementation handoff is reviewed and complete locally:
 
 - DONE: read-only admin `GET /admin/sync` status page behind the existing

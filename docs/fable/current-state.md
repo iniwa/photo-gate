@@ -80,8 +80,10 @@ documented for incident use.
   Access application is configured, and the three Worker values
   (`CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, `ADMIN_EMAILS`) are registered and
   operator-verified on 2026-06-23; the production admin surface is usable.
-  Album creation/deletion and PhotoPrism-coupled album operations, sync request
-  controls, dry-run cleanup, and final hardening remain unimplemented.
+  Sync request controls have an accepted ADR (`docs/decisions/2026-06-25-sync-request-controls.md`)
+  but remain unimplemented. Album creation/deletion and PhotoPrism-coupled
+  album operations, sync request controls, dry-run cleanup, and final hardening
+  remain unimplemented.
 
 ## Verification Baseline
 

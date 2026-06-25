@@ -146,8 +146,9 @@ This is a priority-ordered plan. Update status as implementation progresses.
       PhotoPrism-coupled album operations remain.)
 - [ ] Implement sync request/status administration.
       (Read-only `/admin/sync` status page plus Docker best-effort R2 status
-      publication implemented and reviewed locally 2026-06-25. Manual sync
-      request controls remain.)
+      publication implemented and reviewed locally 2026-06-25. The manual sync
+      request controls ADR was accepted 2026-06-25 with a fixed private R2
+      request object design at `ops/sync-request.json`; implementation remains.)
 - [x] Add operational audit information without sensitive-data leakage.
       (Read-only `/admin/ops` aggregate D1 summary implemented and reviewed
       locally 2026-06-25; no row-level identity/title/hash/token/PhotoPrism/R2
