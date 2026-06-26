@@ -94,6 +94,18 @@ const UPDATE_PUBLIC_METADATA_SQL = `
   SET title = ?, expires_at = ?, download_enabled = ?, updated_at = ?
   WHERE id = ?`
 
+function isValidPhotoprismAlbumUid(value: unknown): value is string {
+  return typeof value === 'string' && /^[\x21-\x7e]{1,128}$/.test(value)
+}
+
+// enabled is hardcoded as literal 0 (schema default is 1, so INSERT must be explicit).
+// Transform/EXIF columns (thumb_*, preview_*, strip_exif) are intentionally omitted
+// so schema defaults apply. photoprism_album_uid is write-only: accepted here and
+// never selected back.
+const CREATE_ALBUM_SQL = `
+  INSERT INTO albums (id, title, photoprism_album_uid, enabled, expires_at, download_enabled, created_at, updated_at)
+  VALUES (?, ?, ?, 0, ?, ?, ?, ?)`
+
 export class AdminAlbumRepository {
   constructor(private readonly db: D1Database) {}
 
@@ -155,6 +167,37 @@ export class AdminAlbumRepository {
     let result: D1Result
     try {
       result = await this.db.prepare(SET_ENABLED_SQL).bind(enabled, updatedAt, albumId, enabled).run()
+    } catch {
+      throw databaseOperationError()
+    }
+    if (result === null || typeof result !== 'object' || result.success !== true) {
+      throw databaseOperationError()
+    }
+  }
+
+  async createAlbum(
+    albumId: string,
+    title: string,
+    photoprismAlbumUid: string,
+    expiresAt: string | null,
+    downloadEnabled: 0 | 1,
+    createdAt: string,
+    updatedAt: string,
+  ): Promise<void> {
+    if (!isValidId(albumId)) throw databaseOperationError()
+    if (!isValidTitle(title)) throw databaseOperationError()
+    if (!isValidPhotoprismAlbumUid(photoprismAlbumUid)) throw databaseOperationError()
+    if (expiresAt !== null && !isCanonicalUtcTimestamp(expiresAt)) throw databaseOperationError()
+    if (downloadEnabled !== 0 && downloadEnabled !== 1) throw databaseOperationError()
+    if (!isCanonicalUtcTimestamp(createdAt)) throw databaseOperationError()
+    if (!isCanonicalUtcTimestamp(updatedAt)) throw databaseOperationError()
+
+    let result: D1Result
+    try {
+      result = await this.db
+        .prepare(CREATE_ALBUM_SQL)
+        .bind(albumId, title, photoprismAlbumUid, expiresAt, downloadEnabled, createdAt, updatedAt)
+        .run()
     } catch {
       throw databaseOperationError()
     }

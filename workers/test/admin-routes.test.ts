@@ -188,11 +188,13 @@ type AlbumRepo = {
   listAlbums(afterAlbumId?: string): Promise<AdminAlbumPage>
   setAlbumEnabled(albumId: string, enabled: number, updatedAt: string): Promise<void>
   updatePublicMetadata(albumId: string, title: string, expiresAt: string | null, downloadEnabled: number, updatedAt: string): Promise<void>
+  createAlbum(albumId: string, title: string, photoprismAlbumUid: string, expiresAt: string | null, downloadEnabled: 0 | 1, createdAt: string, updatedAt: string): Promise<void>
 }
 
 type MutationAlbumRepo = AlbumRepo & {
   calls: { albumId: string; enabled: number; updatedAt: string }[]
   updateCalls: { albumId: string; title: string; expiresAt: string | null; downloadEnabled: number; updatedAt: string }[]
+  createAlbumCalls: { albumId: string; title: string; photoprismAlbumUid: string; expiresAt: string | null; downloadEnabled: 0 | 1; createdAt: string; updatedAt: string }[]
 }
 
 function makeEmptyAlbumRepo(): AlbumRepo {
@@ -200,6 +202,7 @@ function makeEmptyAlbumRepo(): AlbumRepo {
     listAlbums: async () => ({ albums: [], hasMore: false }),
     setAlbumEnabled: async () => {},
     updatePublicMetadata: async () => {},
+    createAlbum: async () => {},
   }
 }
 
@@ -211,6 +214,7 @@ function makeAlbumRepo(
     listAlbums: async () => ({ albums, hasMore }),
     setAlbumEnabled: async () => {},
     updatePublicMetadata: async () => {},
+    createAlbum: async () => {},
   }
 }
 
@@ -221,19 +225,25 @@ function makeThrowingAlbumRepo(): AlbumRepo {
     },
     setAlbumEnabled: async () => {},
     updatePublicMetadata: async () => {},
+    createAlbum: async () => {},
   }
 }
 
 function makeMutationAlbumRepo(): MutationAlbumRepo {
   const calls: { albumId: string; enabled: number; updatedAt: string }[] = []
   const updateCalls: { albumId: string; title: string; expiresAt: string | null; downloadEnabled: number; updatedAt: string }[] = []
+  const createAlbumCalls: { albumId: string; title: string; photoprismAlbumUid: string; expiresAt: string | null; downloadEnabled: 0 | 1; createdAt: string; updatedAt: string }[] = []
   return {
     calls,
     updateCalls,
+    createAlbumCalls,
     listAlbums: async () => ({ albums: [], hasMore: false }),
     setAlbumEnabled: async (albumId, enabled, updatedAt) => { calls.push({ albumId, enabled, updatedAt }) },
     updatePublicMetadata: async (albumId, title, expiresAt, downloadEnabled, updatedAt) => {
       updateCalls.push({ albumId, title, expiresAt, downloadEnabled, updatedAt })
+    },
+    createAlbum: async (albumId, title, photoprismAlbumUid, expiresAt, downloadEnabled, createdAt, updatedAt) => {
+      createAlbumCalls.push({ albumId, title, photoprismAlbumUid, expiresAt, downloadEnabled, createdAt, updatedAt })
     },
   }
 }
@@ -243,6 +253,7 @@ function makeThrowingSetEnabledAlbumRepo(): AlbumRepo {
     listAlbums: async () => ({ albums: [], hasMore: false }),
     setAlbumEnabled: async () => { throw new Error('D1 exploded') },
     updatePublicMetadata: async () => {},
+    createAlbum: async () => {},
   }
 }
 
@@ -251,6 +262,16 @@ function makeThrowingUpdatePublicMetadataRepo(): AlbumRepo {
     listAlbums: async () => ({ albums: [], hasMore: false }),
     setAlbumEnabled: async () => {},
     updatePublicMetadata: async () => { throw new Error('D1 exploded') },
+    createAlbum: async () => {},
+  }
+}
+
+function makeThrowingCreateAlbumRepo(): AlbumRepo {
+  return {
+    listAlbums: async () => ({ albums: [], hasMore: false }),
+    setAlbumEnabled: async () => {},
+    updatePublicMetadata: async () => {},
+    createAlbum: async () => { throw new Error('D1 exploded') },
   }
 }
 
@@ -1498,6 +1519,9 @@ const PBKDF2_HASH_RE = /^pbkdf2-sha256\$100000\$[A-Za-z0-9_-]{22}\$[A-Za-z0-9_-]
 const VALID_UPDATE_BODY = `albumId=${VALID_ALBUM_ID}&title=My+Album&expiresAt=&downloadEnabled=0`
 const VALID_UPDATE_BODY_WITH_EXPIRY = `albumId=${VALID_ALBUM_ID}&title=My+Album&expiresAt=${encodeURIComponent('2026-12-31T23:59:59.000Z')}&downloadEnabled=1`
 const VALID_UPDATE_DISPLAY_NAME_BODY = `userId=${VALID_USER_ID}&displayName=${encodeURIComponent(VALID_DISPLAY_NAME)}`
+const NEW_ALBUM_ID = 'album-new-001'
+const VALID_ALBUM_UID = 'pxyz1234ABCD'
+const VALID_CREATE_ALBUM_BODY = `albumId=${NEW_ALBUM_ID}&title=My+New+Album&photoprismAlbumUid=${VALID_ALBUM_UID}&expiresAt=&downloadEnabled=0`
 
 function makeValidPostOptions() {
   return {
@@ -1559,6 +1583,15 @@ function makeValidUpdateDisplayNamePostOptions() {
     origin: VALID_ORIGIN as string | undefined,
     contentType: 'application/x-www-form-urlencoded' as string | undefined,
     body: VALID_UPDATE_DISPLAY_NAME_BODY as string | undefined,
+  }
+}
+
+function makeValidCreateAlbumPostOptions() {
+  return {
+    token: VALID_TOKEN as string | null,
+    origin: VALID_ORIGIN as string | undefined,
+    contentType: 'application/x-www-form-urlencoded' as string | undefined,
+    body: VALID_CREATE_ALBUM_BODY as string | undefined,
   }
 }
 
@@ -5230,5 +5263,435 @@ describe('admin-routes: GET /admin/permissions assignment UI', () => {
     const res = await getAdmin(app, { path: '/admin/permissions' })
     const body = await res.text()
     expect(body).not.toContain('photoprism_album_uid')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// GET /admin/albums — create form
+// ---------------------------------------------------------------------------
+
+describe('GET /admin/albums — create form presence', () => {
+  it('form action="/admin/albums/create" is present', async () => {
+    const app = makeApp(goodAuth(), undefined, makeEmptyAlbumRepo())
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const body = await res.text()
+    expect(body).toContain('action="/admin/albums/create"')
+  })
+
+  it('input name="albumId" is present', async () => {
+    const app = makeApp(goodAuth(), undefined, makeEmptyAlbumRepo())
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const body = await res.text()
+    expect(body).toContain('name="albumId"')
+  })
+
+  it('input name="title" is present', async () => {
+    const app = makeApp(goodAuth(), undefined, makeEmptyAlbumRepo())
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const body = await res.text()
+    expect(body).toContain('name="title"')
+  })
+
+  it('input name="photoprismAlbumUid" is present', async () => {
+    const app = makeApp(goodAuth(), undefined, makeEmptyAlbumRepo())
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const body = await res.text()
+    expect(body).toContain('name="photoprismAlbumUid"')
+  })
+
+  it('input name="expiresAt" is present', async () => {
+    const app = makeApp(goodAuth(), undefined, makeEmptyAlbumRepo())
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const body = await res.text()
+    expect(body).toContain('name="expiresAt"')
+  })
+
+  it('select name="downloadEnabled" is present', async () => {
+    const app = makeApp(goodAuth(), undefined, makeEmptyAlbumRepo())
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const body = await res.text()
+    expect(body).toContain('name="downloadEnabled"')
+  })
+
+  it('create form is visible when album list is empty', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([]))
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const body = await res.text()
+    expect(body).toContain('action="/admin/albums/create"')
+    expect(body).toContain('アルバムがありません')
+  })
+
+  it('create form is visible when album list has items', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM]))
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const body = await res.text()
+    expect(body).toContain('action="/admin/albums/create"')
+    expect(body).toContain(SAMPLE_ALBUM.title)
+  })
+
+  it('create form does NOT render any stored photoprism_album_uid value', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM]))
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const body = await res.text()
+    expect(body).not.toContain('photoprism_album_uid')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /admin/albums/create — guard
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: POST /admin/albums/create guard', () => {
+  it('no token → 403 no-store, createAlbum not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/create', {
+      ...makeValidCreateAlbumPostOptions(),
+      token: null,
+    })
+    expect(res.status).toBe(403)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(repo.createAlbumCalls).toHaveLength(0)
+  })
+
+  it('non-allowlisted email → 403, createAlbum not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(
+      () => ({ verifier: async () => ({ email: 'other@example.com' }), allowlist: new Set([ADMIN_EMAIL]) }),
+      undefined,
+      repo,
+    )
+    const res = await postAdmin(app, '/admin/albums/create', makeValidCreateAlbumPostOptions())
+    expect(res.status).toBe(403)
+    expect(repo.createAlbumCalls).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /admin/albums/create — same-origin
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: POST /admin/albums/create same-origin', () => {
+  it('absent Origin → 403, createAlbum not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/create', {
+      ...makeValidCreateAlbumPostOptions(),
+      origin: undefined,
+    })
+    expect(res.status).toBe(403)
+    expect(repo.createAlbumCalls).toHaveLength(0)
+  })
+
+  it('Origin = "null" → 403, createAlbum not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/create', {
+      ...makeValidCreateAlbumPostOptions(),
+      origin: 'null',
+    })
+    expect(res.status).toBe(403)
+    expect(repo.createAlbumCalls).toHaveLength(0)
+  })
+
+  it('Origin mismatched → 403, createAlbum not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/create', {
+      ...makeValidCreateAlbumPostOptions(),
+      origin: 'https://evil.example',
+    })
+    expect(res.status).toBe(403)
+    expect(repo.createAlbumCalls).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /admin/albums/create — content-type
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: POST /admin/albums/create content-type', () => {
+  it('Content-Type missing → 400 no-store, createAlbum not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/create', {
+      ...makeValidCreateAlbumPostOptions(),
+      contentType: undefined,
+    })
+    expect(res.status).toBe(400)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(repo.createAlbumCalls).toHaveLength(0)
+  })
+
+  it('Content-Type application/json → 400, createAlbum not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/create', {
+      ...makeValidCreateAlbumPostOptions(),
+      contentType: 'application/json',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.createAlbumCalls).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /admin/albums/create — body validation
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: POST /admin/albums/create body validation', () => {
+  it('missing albumId → 400, createAlbum not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/create', {
+      ...makeValidCreateAlbumPostOptions(),
+      body: `title=My+Album&photoprismAlbumUid=${VALID_ALBUM_UID}&expiresAt=&downloadEnabled=0`,
+    })
+    expect(res.status).toBe(400)
+    expect(repo.createAlbumCalls).toHaveLength(0)
+  })
+
+  it('missing title → 400, createAlbum not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/create', {
+      ...makeValidCreateAlbumPostOptions(),
+      body: `albumId=${NEW_ALBUM_ID}&photoprismAlbumUid=${VALID_ALBUM_UID}&expiresAt=&downloadEnabled=0`,
+    })
+    expect(res.status).toBe(400)
+    expect(repo.createAlbumCalls).toHaveLength(0)
+  })
+
+  it('missing photoprismAlbumUid → 400, createAlbum not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/create', {
+      ...makeValidCreateAlbumPostOptions(),
+      body: `albumId=${NEW_ALBUM_ID}&title=My+Album&expiresAt=&downloadEnabled=0`,
+    })
+    expect(res.status).toBe(400)
+    expect(repo.createAlbumCalls).toHaveLength(0)
+  })
+
+  it('extra field → 400, createAlbum not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/create', {
+      ...makeValidCreateAlbumPostOptions(),
+      body: `${VALID_CREATE_ALBUM_BODY}&extra=value`,
+    })
+    expect(res.status).toBe(400)
+    expect(repo.createAlbumCalls).toHaveLength(0)
+  })
+
+  it('repeated albumId → 400, createAlbum not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/create', {
+      ...makeValidCreateAlbumPostOptions(),
+      body: `albumId=${NEW_ALBUM_ID}&albumId=other-id&title=My+Album&photoprismAlbumUid=${VALID_ALBUM_UID}&expiresAt=&downloadEnabled=0`,
+    })
+    expect(res.status).toBe(400)
+    expect(repo.createAlbumCalls).toHaveLength(0)
+  })
+
+  it('invalid albumId → 400, createAlbum not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/create', {
+      ...makeValidCreateAlbumPostOptions(),
+      body: `albumId=!bad!&title=My+Album&photoprismAlbumUid=${VALID_ALBUM_UID}&expiresAt=&downloadEnabled=0`,
+    })
+    expect(res.status).toBe(400)
+    expect(repo.createAlbumCalls).toHaveLength(0)
+  })
+
+  it('empty title → 400, createAlbum not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/create', {
+      ...makeValidCreateAlbumPostOptions(),
+      body: `albumId=${NEW_ALBUM_ID}&title=&photoprismAlbumUid=${VALID_ALBUM_UID}&expiresAt=&downloadEnabled=0`,
+    })
+    expect(res.status).toBe(400)
+    expect(repo.createAlbumCalls).toHaveLength(0)
+  })
+
+  it('title with leading space → 400, createAlbum not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/create', {
+      ...makeValidCreateAlbumPostOptions(),
+      body: `albumId=${NEW_ALBUM_ID}&title=+leading&photoprismAlbumUid=${VALID_ALBUM_UID}&expiresAt=&downloadEnabled=0`,
+    })
+    expect(res.status).toBe(400)
+    expect(repo.createAlbumCalls).toHaveLength(0)
+  })
+
+  it('empty photoprismAlbumUid → 400, createAlbum not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/create', {
+      ...makeValidCreateAlbumPostOptions(),
+      body: `albumId=${NEW_ALBUM_ID}&title=My+Album&photoprismAlbumUid=&expiresAt=&downloadEnabled=0`,
+    })
+    expect(res.status).toBe(400)
+    expect(repo.createAlbumCalls).toHaveLength(0)
+  })
+
+  it('photoprismAlbumUid with space → 400, createAlbum not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/create', {
+      ...makeValidCreateAlbumPostOptions(),
+      body: `albumId=${NEW_ALBUM_ID}&title=My+Album&photoprismAlbumUid=uid+space&expiresAt=&downloadEnabled=0`,
+    })
+    expect(res.status).toBe(400)
+    expect(repo.createAlbumCalls).toHaveLength(0)
+  })
+
+  it('invalid expiresAt (non-canonical date) → 400, createAlbum not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/create', {
+      ...makeValidCreateAlbumPostOptions(),
+      body: `albumId=${NEW_ALBUM_ID}&title=My+Album&photoprismAlbumUid=${VALID_ALBUM_UID}&expiresAt=2027-01-01&downloadEnabled=0`,
+    })
+    expect(res.status).toBe(400)
+    expect(repo.createAlbumCalls).toHaveLength(0)
+  })
+
+  it('invalid downloadEnabled ("2") → 400, createAlbum not called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/create', {
+      ...makeValidCreateAlbumPostOptions(),
+      body: `albumId=${NEW_ALBUM_ID}&title=My+Album&photoprismAlbumUid=${VALID_ALBUM_UID}&expiresAt=&downloadEnabled=2`,
+    })
+    expect(res.status).toBe(400)
+    expect(repo.createAlbumCalls).toHaveLength(0)
+  })
+
+  it('clock not called when body is invalid', async () => {
+    const spy = makeClockSpy()
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo, undefined, spy.clock)
+    await postAdmin(app, '/admin/albums/create', {
+      ...makeValidCreateAlbumPostOptions(),
+      body: `albumId=!bad!&title=My+Album&photoprismAlbumUid=${VALID_ALBUM_UID}&expiresAt=&downloadEnabled=0`,
+    })
+    expect(spy.getCallCount()).toBe(0)
+    expect(repo.createAlbumCalls).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /admin/albums/create — success
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: POST /admin/albums/create success', () => {
+  it('valid request → 303 Location /admin/albums no-store', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/create', makeValidCreateAlbumPostOptions())
+    expect(res.status).toBe(303)
+    expect(res.headers.get('location')).toBe('/admin/albums')
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('valid request → empty body', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const res = await postAdmin(app, '/admin/albums/create', makeValidCreateAlbumPostOptions())
+    const body = await res.text()
+    expect(body).toBe('')
+  })
+
+  it('createAlbum called once with correct albumId, title, uid', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    await postAdmin(app, '/admin/albums/create', makeValidCreateAlbumPostOptions())
+    expect(repo.createAlbumCalls).toHaveLength(1)
+    expect(repo.createAlbumCalls[0]!.albumId).toBe(NEW_ALBUM_ID)
+    expect(repo.createAlbumCalls[0]!.title).toBe('My New Album')
+    expect(repo.createAlbumCalls[0]!.photoprismAlbumUid).toBe(VALID_ALBUM_UID)
+  })
+
+  it('createAlbum called with expiresAt null when empty string', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    await postAdmin(app, '/admin/albums/create', makeValidCreateAlbumPostOptions())
+    expect(repo.createAlbumCalls[0]!.expiresAt).toBeNull()
+  })
+
+  it('createAlbum called with downloadEnabled 0', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    await postAdmin(app, '/admin/albums/create', makeValidCreateAlbumPostOptions())
+    expect(repo.createAlbumCalls[0]!.downloadEnabled).toBe(0)
+  })
+
+  it('createAlbum called with downloadEnabled 1 when "1" submitted', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    await postAdmin(app, '/admin/albums/create', {
+      ...makeValidCreateAlbumPostOptions(),
+      body: `albumId=${NEW_ALBUM_ID}&title=My+New+Album&photoprismAlbumUid=${VALID_ALBUM_UID}&expiresAt=&downloadEnabled=1`,
+    })
+    expect(repo.createAlbumCalls[0]!.downloadEnabled).toBe(1)
+  })
+
+  it('createdAt and updatedAt are canonical ISO timestamps from clock', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    await postAdmin(app, '/admin/albums/create', makeValidCreateAlbumPostOptions())
+    expect(repo.createAlbumCalls[0]!.createdAt).toBe(NOW_TS)
+    expect(repo.createAlbumCalls[0]!.updatedAt).toBe(NOW_TS)
+  })
+
+  it('expiresAt non-empty canonical ISO → passed through to repo', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo)
+    const iso = '2027-06-01T00:00:00.000Z'
+    await postAdmin(app, '/admin/albums/create', {
+      ...makeValidCreateAlbumPostOptions(),
+      body: `albumId=${NEW_ALBUM_ID}&title=My+New+Album&photoprismAlbumUid=${VALID_ALBUM_UID}&expiresAt=${encodeURIComponent(iso)}&downloadEnabled=0`,
+    })
+    expect(repo.createAlbumCalls[0]!.expiresAt).toBe(iso)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /admin/albums/create — errors
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: POST /admin/albums/create errors', () => {
+  it('repo throws → 500 no-store', async () => {
+    const app = makeApp(goodAuth(), undefined, makeThrowingCreateAlbumRepo())
+    const res = await postAdmin(app, '/admin/albums/create', makeValidCreateAlbumPostOptions())
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('repo throws → generic body, no submitted values reflected', async () => {
+    const app = makeApp(goodAuth(), undefined, makeThrowingCreateAlbumRepo())
+    const res = await postAdmin(app, '/admin/albums/create', makeValidCreateAlbumPostOptions())
+    const body = await res.text()
+    expect(body).toBe('Internal Server Error')
+    expect(body).not.toContain(NEW_ALBUM_ID)
+    expect(body).not.toContain(VALID_ALBUM_UID)
+    expect(body).not.toContain('My New Album')
+  })
+
+  it('clock throws → 500 no-store, createAlbum NOT called', async () => {
+    const repo = makeMutationAlbumRepo()
+    const app = makeApp(goodAuth(), undefined, repo, undefined, () => {
+      throw new Error('clock detail must not escape')
+    })
+    const res = await postAdmin(app, '/admin/albums/create', makeValidCreateAlbumPostOptions())
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await res.text()).toBe('Internal Server Error')
+    expect(repo.createAlbumCalls).toHaveLength(0)
   })
 })

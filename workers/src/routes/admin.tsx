@@ -30,6 +30,7 @@ export interface AdminRouteDeps {
     listAlbums(afterAlbumId?: string): Promise<AdminAlbumPage>
     setAlbumEnabled(albumId: string, enabled: number, updatedAt: string): Promise<void>
     updatePublicMetadata(albumId: string, title: string, expiresAt: string | null, downloadEnabled: number, updatedAt: string): Promise<void>
+    createAlbum(albumId: string, title: string, photoprismAlbumUid: string, expiresAt: string | null, downloadEnabled: 0 | 1, createdAt: string, updatedAt: string): Promise<void>
   }
   permissionRepo: {
     listAssignmentOptions(after?: { albumId: string; userId: string }): Promise<AssignmentOptions>
@@ -212,6 +213,46 @@ async function parseUpdatePublicMetadataFields(
   return {
     albumId,
     title,
+    expiresAt: expiresAt === '' ? null : expiresAt,
+    downloadEnabled: Number(downloadEnabled) as 0 | 1,
+  }
+}
+
+function isValidPhotoprismUid(value: unknown): value is string {
+  return typeof value === 'string' && /^[\x21-\x7e]{1,128}$/.test(value)
+}
+
+async function parseCreateAlbumFields(
+  c: AdminContext,
+): Promise<{ albumId: string; title: string; photoprismAlbumUid: string; expiresAt: string | null; downloadEnabled: 0 | 1 } | null> {
+  let body: Record<string, string | File | (string | File)[]>
+  try {
+    body = await c.req.parseBody({ all: true })
+  } catch {
+    return null
+  }
+  if (Object.keys(body).length !== 5) return null
+  const albumId = body['albumId']
+  const title = body['title']
+  const photoprismAlbumUid = body['photoprismAlbumUid']
+  const expiresAt = body['expiresAt']
+  const downloadEnabled = body['downloadEnabled']
+  if (
+    typeof albumId !== 'string' ||
+    typeof title !== 'string' ||
+    typeof photoprismAlbumUid !== 'string' ||
+    typeof expiresAt !== 'string' ||
+    typeof downloadEnabled !== 'string'
+  ) return null
+  if (!isValidId(albumId)) return null
+  if (!isValidTitle(title)) return null
+  if (!isValidPhotoprismUid(photoprismAlbumUid)) return null
+  if (!isValidExpiresAt(expiresAt)) return null
+  if (!isValidDownloadEnabled(downloadEnabled)) return null
+  return {
+    albumId,
+    title,
+    photoprismAlbumUid,
     expiresAt: expiresAt === '' ? null : expiresAt,
     downloadEnabled: Number(downloadEnabled) as 0 | 1,
   }
@@ -816,6 +857,52 @@ export function createAdminRoutes(
     return c.body(null, 303)
   })
 
+  // Album create. Same security contract as album update-public-metadata:
+  // guard (above) -> strict same-origin -> exact form Content-Type -> exact five-field
+  // validation -> clock -> D1 INSERT. enabled is hardcoded to 0; photoprism_album_uid
+  // is accepted write-only and never selected, rendered, logged, or returned in errors.
+  // Transform/EXIF columns are omitted so schema defaults apply.
+  admin.post('/albums/create', async (c) => {
+    if (!isSameOrigin(c)) return forbiddenResponse(c)
+    if (!isFormContentType(c.req.header('Content-Type'))) {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Bad Request', 400)
+    }
+    const fields = await parseCreateAlbumFields(c)
+    if (fields === null) {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Bad Request', 400)
+    }
+
+    const deps = depsFromEnv(c.env)
+    let createdAt: string
+    try {
+      createdAt = deps.clock().toISOString()
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+
+    try {
+      await deps.albumRepo.createAlbum(
+        fields.albumId,
+        fields.title,
+        fields.photoprismAlbumUid,
+        fields.expiresAt,
+        fields.downloadEnabled,
+        createdAt,
+        createdAt,
+      )
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+
+    c.header('Cache-Control', 'no-store')
+    c.header('Location', '/admin/albums')
+    return c.body(null, 303)
+  })
+
   // Any other method/path under /admin stays behind the guard and returns a
   // generic authenticated 404 — never the viewer router, never any data.
   admin.all('*', (c) => {
@@ -968,6 +1055,33 @@ function AdminAlbumsPage({ page }: { page: AdminAlbumPage }) {
         ← 管理コンソールへ
       </a>
       <h1>アルバム一覧</h1>
+      <form class="admin-form" method="post" action="/admin/albums/create">
+        <h2>アルバムを作成</h2>
+        <label>
+          アルバムID
+          <input type="text" name="albumId" required />
+        </label>
+        <label>
+          タイトル
+          <input type="text" name="title" required />
+        </label>
+        <label>
+          PhotoPrism album UID
+          <input type="text" name="photoprismAlbumUid" required />
+        </label>
+        <label>
+          有効期限
+          <input type="text" name="expiresAt" placeholder="YYYY-MM-DDTHH:mm:ss.sssZ または空" />
+        </label>
+        <label>
+          ダウンロード
+          <select name="downloadEnabled">
+            <option value="0" selected>不可</option>
+            <option value="1">許可</option>
+          </select>
+        </label>
+        <button type="submit">作成</button>
+      </form>
       {albums.length === 0 ? (
         <p class="empty-note">アルバムがありません</p>
       ) : (

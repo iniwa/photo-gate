@@ -143,8 +143,9 @@ This is a priority-ordered plan. Update status as implementation progresses.
       creation/password reset and album public metadata update controls
       implemented and reviewed locally 2026-06-24. User display-name editing
       and browser-friendly permission assignment dropdowns implemented and
-      reviewed locally 2026-06-26. Album creation/deletion and
-      PhotoPrism-coupled album operations remain.)
+      reviewed locally 2026-06-26. D1-only album creation with explicit
+      `enabled = 0` implemented and reviewed locally 2026-06-26. Album
+      deletion and PhotoPrism-coupled album operations remain.)
 - [x] Implement sync request/status administration.
       (Read-only `/admin/sync` status page, Docker best-effort R2 status
       publication, fixed private request object at `ops/sync-request.json`,

@@ -93,8 +93,12 @@ documented for incident use.
   uploaded, pending state cleared, failures remained 0, runs completed reached 1,
   and trigger kind showed manual. ADR Phase 1 admin browser management is
   implemented and reviewed locally: display-name editing and dropdown-based
-  permission assignment. Album creation/deletion and PhotoPrism-coupled album
-  operations, dry-run cleanup, and final hardening remain unimplemented.
+  permission assignment. ADR Phase 2 admin album creation is implemented and
+  reviewed locally: `POST /admin/albums/create` inserts a D1-only row with
+  `enabled = 0`, accepts `photoprism_album_uid` only on create, and does not
+  touch PhotoPrism, NAS, Docker, Portainer, or R2. Album deletion,
+  PhotoPrism-coupled album operations, dry-run cleanup, and final hardening
+  remain unimplemented.
 
 ## Verification Baseline
 
@@ -104,8 +108,9 @@ documented for incident use.
   album and user enable/disable controls, user create/password-reset controls,
   album public metadata update controls, read-only admin ops summary, read-only
   admin sync status, the manual sync UI/status-schema additions, user display-name
-  editing, and browser-friendly permission assignment UI pass lint, typecheck,
-  build, and 1958 tests / 32 files locally (2026-06-26).
+  editing, browser-friendly permission assignment UI, and D1-only album creation
+  pass lint, typecheck, build, production dependency audit, and 2041 tests / 32
+  files locally (2026-06-26).
   Production audit is clean; full `npm audit` remains blocked by devDependency
   advisories in Wrangler/Miniflare. Workers manual deploy succeeded for commit
   `a1a5c2e` (version `b30250aa`, 2026-06-26); unauthenticated production smoke

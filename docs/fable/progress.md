@@ -21,6 +21,20 @@ The manual sync release is deployed and live-smoke verified in production:
 - DONE: the operator pressed the manual sync button from `/admin/sync`; the`r`n  daemon consumed the request, synced 234/234, uploaded cover and manifest, and`r`n  reported success in 136.5s.
 - DONE: `/admin/sync` reported no pending request, 0 failures, 1 completed`r`n  run, manual trigger kind, and a non-null handled request ID.
 
+The fifteenth Level 3 implementation handoff is reviewed and complete locally:
+
+- DONE: D1-only admin album creation via `POST /admin/albums/create`.
+- The route uses the existing admin guard, strict same-origin check, exact
+  URL-encoded Content-Type check, exact five-field validation, canonical
+  timestamps from the Worker clock, and a single parameterized `albums` INSERT.
+- The INSERT explicitly sets `enabled = 0`, accepts `photoprism_album_uid` only
+  on create, and omits transform/EXIF columns so schema defaults apply.
+- The create path does not select or render stored PhotoPrism UIDs and does not
+  access PhotoPrism, NAS, Docker, Portainer, R2, permissions, users, or sessions.
+- DONE: local verification on 2026-06-26 passed Workers lint, typecheck, build,
+  2041 tests / 32 files, production dependency audit, `git diff --check`, and
+  confirmed no Docker or migration diff.
+
 The fourteenth Level 3 implementation handoff is reviewed and complete locally:
 
 - DONE: admin user display-name editing via `POST /admin/users/update-display-name`.
@@ -325,18 +339,16 @@ documented.
   in the production baseline (2026-06-12). The reviewed `/admin`
   authentication foundation, read-only inventories, permission mutations,
   album and user enable/disable controls, user create/password-reset controls,
-  album public metadata update controls, read-only admin ops summary, and
-  read-only admin sync status pass lint, typecheck, build, and 1726 tests /
-  31 files locally (2026-06-25). `npm audit` reports five advisories (1 low /
-  4 high) through devDependencies (`wrangler -> esbuild/miniflare ->
-  undici/ws`); production dependency audit with
-  `npm audit --omit=dev --audit-level=high` reports 0 vulnerabilities. Workers
-  CI gates production dependencies only until upstream Wrangler/Miniflare adopt
-  fixed transitive releases.
-  Live includes CI-deployed commit `42a7b56`; unauthenticated admin smoke checks
-  return the expected 403/no-store. The operator subsequently configured the
-  Access application, registered all three Worker values, and verified
-  authenticated admin access on 2026-06-23.
+  album public metadata update controls, read-only admin ops summary, read-only
+  admin sync status, manual sync UI/status-schema additions, user display-name
+  editing, browser-friendly permission assignment UI, and D1-only album creation
+  pass lint, typecheck, build, production dependency audit, and 2041 tests / 32
+  files locally (2026-06-26). Full devDependency audit may still report
+  Wrangler/Miniflare transitive advisories; production dependency audit reports
+  0 vulnerabilities.
+  Production Worker commit `a1a5c2e` is deployed as version `b30250aa`; live
+  includes manual sync controls but not the later local-only admin browser
+  management additions.
 - Docker: sync `0.3.0` is published multi-arch and running in production. The`r`n  admin sync-status handoff
   passed 190 tests with 34 expected libvips/pyvips skips and
   `python -m compileall src` locally (2026-06-25). The Docker-side sync request
@@ -388,6 +400,6 @@ action list and full status snapshot.
 ## Next Priority
 
 Level 2 is complete. Manual sync deployment and smoke are complete. The next
-Level 3 priority is ADR Phase 2: D1-only album creation from the admin browser
-with `enabled=0` by default and `photoprism_album_uid` accepted only at create
-time.
+Level 3 priority is ADR Phase 3 planning: safe PhotoPrism album catalog
+publication by Docker to private R2, followed by admin UI integration. Worker
+must still not contact PhotoPrism, NAS, Docker, or Portainer directly.
