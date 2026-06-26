@@ -16,8 +16,9 @@ documented for incident use.
 ## Production Topology
 
 - Workers viewer: https://share-photo.iniwach.com
-  (code equivalent to CI-deployed commit `42a7b56`; active version
-  `08e567cf-76a8-4151-8f76-d92783b73af0`; cron 18:00 UTC session cleanup).
+  (commit `a1a5c2e`; active version `b30250aa-0289-4758-b1fe-3376beba0afe`;
+  manually deployed 2026-06-26; cron 18:00 UTC session cleanup).
+  Includes manual sync request writer, admin sync UI, and status schema 2.
   The former `photo-gate.iniwaiwana.workers.dev` route is disabled and returns 404.
 - D1 `photo-gate` (APAC, id `de77cb73-497a-4a41-bd1c-151fd907be3f`),
   2 migrations applied. One user, one album, one permission row (real
@@ -81,12 +82,15 @@ documented for incident use.
   (`CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, `ADMIN_EMAILS`) are registered and
   operator-verified on 2026-06-23; the production admin surface is usable.
   Sync request controls have an accepted ADR (`docs/decisions/2026-06-25-sync-request-controls.md`)
-  and the local manual sync administration loop is implemented and reviewed:
-  Worker request writer, Docker request consumer, status schema 2 trigger
-  metadata, pending indicator, and no-JS Sync Now form. Production Worker
-  deploy, Docker image release/stack update, and live manual-sync smoke remain
-  unperformed. Album creation/deletion and PhotoPrism-coupled album operations,
-  dry-run cleanup, and final hardening remain unimplemented.
+  and the Worker-side manual sync administration surface is deployed to production:
+  request writer (`POST /admin/sync/request`), status schema 2 rendering,
+  pending indicator, and no-JS Sync Now form (`GET /admin/sync`). Production
+  Worker deploy completed 2026-06-26 (version `b30250aa`, commit `a1a5c2e`);
+  unauthenticated smoke checks pass. The Docker request consumer is implemented
+  locally but not yet released to production; Docker image release (sync `0.3.0`),
+  Portainer stack update, and live manual-sync smoke remain unperformed (Phase C
+  not yet approved). Album creation/deletion and PhotoPrism-coupled album
+  operations, dry-run cleanup, and final hardening remain unimplemented.
 
 ## Verification Baseline
 
@@ -98,9 +102,11 @@ documented for incident use.
   admin sync status, and the manual sync UI/status-schema additions pass lint,
   typecheck, build, and 1844 tests / 32 files locally (2026-06-26).
   Production audit is clean; full `npm audit` remains blocked by devDependency
-  advisories in Wrangler/Miniflare. Workers CI checks and deploy succeeded for
-  commit `42a7b56`; production smoke confirms the user inventory plus
-  enable/disable POST routes fail closed with 403/no-store without config.
+  advisories in Wrangler/Miniflare. Workers manual deploy succeeded for commit
+  `a1a5c2e` (version `b30250aa`, 2026-06-26); unauthenticated production smoke
+  confirms viewer login page, /albums redirect, /img 401 no-store, /api 401
+  no-store, /admin Cloudflare Access intercept, and authenticated /admin/sync
+  browser rendering all pass.
 - Docker: sync `0.2.1` reports 183 tests green in the published baseline;
   the admin sync-status handoff passed 190 tests with 34 expected libvips/pyvips
   skips plus `python -m compileall src` locally (2026-06-25). The Docker-side
