@@ -4,7 +4,7 @@ import type { Env } from '../types/env.js'
 import type { AdminAuthConfig } from '../types/admin-auth.js'
 import type { AdminUserPage } from '../types/admin-user.js'
 import type { AdminAlbumPage } from '../types/admin-album.js'
-import type { AdminPermissionPage } from '../types/admin-permission.js'
+import type { AssignmentOptions } from '../types/admin-permission.js'
 import type { AdminOpsSummary } from '../types/admin-ops.js'
 import type { AdminSyncStatus } from '../types/admin-sync-status.js'
 import type { AdminSyncRequest } from '../types/admin-sync-request.js'
@@ -24,6 +24,7 @@ export interface AdminRouteDeps {
     setUserEnabled(userId: string, enabled: number, updatedAt: string): Promise<void>
     createUser(userId: string, displayName: string, passwordHash: string, createdAt: string, updatedAt: string): Promise<void>
     resetPassword(userId: string, passwordHash: string, updatedAt: string): Promise<void>
+    updateDisplayName(userId: string, displayName: string, updatedAt: string): Promise<void>
   }
   albumRepo: {
     listAlbums(afterAlbumId?: string): Promise<AdminAlbumPage>
@@ -31,7 +32,7 @@ export interface AdminRouteDeps {
     updatePublicMetadata(albumId: string, title: string, expiresAt: string | null, downloadEnabled: number, updatedAt: string): Promise<void>
   }
   permissionRepo: {
-    listPermissions(after?: { albumId: string; userId: string }): Promise<AdminPermissionPage>
+    listAssignmentOptions(after?: { albumId: string; userId: string }): Promise<AssignmentOptions>
     grantPermission(albumId: string, userId: string, createdAt: string): Promise<void>
     revokePermission(albumId: string, userId: string): Promise<void>
   }
@@ -254,6 +255,24 @@ async function parseResetPasswordFields(
   return { userId, password }
 }
 
+async function parseUpdateDisplayNameFields(
+  c: AdminContext,
+): Promise<{ userId: string; displayName: string } | null> {
+  let body: Record<string, string | File | (string | File)[]>
+  try {
+    body = await c.req.parseBody({ all: true })
+  } catch {
+    return null
+  }
+  if (Object.keys(body).length !== 2) return null
+  const userId = body['userId']
+  const displayName = body['displayName']
+  if (typeof userId !== 'string' || typeof displayName !== 'string') return null
+  if (!isValidId(userId)) return null
+  if (!isValidDisplayName(displayName)) return null
+  return { userId, displayName }
+}
+
 /**
  * Parse and strictly validate the sync-request form body. Returns `{ kind: 'sync-now' }`
  * or `null` for any ambiguity. Exactly one field `kind=sync-now` is accepted; missing,
@@ -389,16 +408,16 @@ export function createAdminRoutes(
 
     const cursorArg = a === undefined ? undefined : { albumId: a, userId: u! }
 
-    let page: AdminPermissionPage
+    let options: AssignmentOptions
     try {
-      page = await depsFromEnv(c.env).permissionRepo.listPermissions(cursorArg)
+      options = await depsFromEnv(c.env).permissionRepo.listAssignmentOptions(cursorArg)
     } catch {
       c.header('Cache-Control', 'no-store')
       return c.text('Internal Server Error', 500)
     }
 
     c.header('Cache-Control', 'no-store')
-    return c.html(<AdminPermissionsPage page={page} />)
+    return c.html(<AdminPermissionsPage options={options} />)
   })
 
   admin.get('/ops', async (c) => {
@@ -758,6 +777,45 @@ export function createAdminRoutes(
     return c.body(null, 303)
   })
 
+  // User display-name update. Same security contract as user enable/disable:
+  // guard (above) -> strict same-origin -> exact form Content-Type -> exact two-field
+  // validation (userId, displayName) -> clock -> single D1 UPDATE. Only display_name
+  // and updated_at are written; password_hash, enabled, fail_count, locked_until,
+  // created_at, sessions, and permissions are never touched. Unknown userId surfaces
+  // as a generic 500 (matches reset-password behavior, not the idempotent enable/disable).
+  admin.post('/users/update-display-name', async (c) => {
+    if (!isSameOrigin(c)) return forbiddenResponse(c)
+    if (!isFormContentType(c.req.header('Content-Type'))) {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Bad Request', 400)
+    }
+    const fields = await parseUpdateDisplayNameFields(c)
+    if (fields === null) {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Bad Request', 400)
+    }
+
+    const deps = depsFromEnv(c.env)
+    let updatedAt: string
+    try {
+      updatedAt = deps.clock().toISOString()
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+
+    try {
+      await deps.userRepo.updateDisplayName(fields.userId, fields.displayName, updatedAt)
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+
+    c.header('Cache-Control', 'no-store')
+    c.header('Location', '/admin/users')
+    return c.body(null, 303)
+  })
+
   // Any other method/path under /admin stays behind the guard and returns a
   // generic authenticated 404 — never the viewer router, never any data.
   admin.all('*', (c) => {
@@ -868,6 +926,11 @@ function AdminUsersPage({ page }: { page: AdminUserPage }) {
                       <button type="submit">有効化</button>
                     </form>
                   )}
+                  <form method="post" action="/admin/users/update-display-name">
+                    <input type="hidden" name="userId" value={u.id} />
+                    <input type="text" name="displayName" value={u.display_name} required />
+                    <button type="submit">表示名変更</button>
+                  </form>
                   <form method="post" action="/admin/users/reset-password">
                     <input type="hidden" name="userId" value={u.id} />
                     <input type="password" name="password" required />
@@ -1020,11 +1083,19 @@ function AdminOpsPage({ summary }: { summary: AdminOpsSummary }) {
 }
 
 /**
- * Read-only permission inventory page.
- * No JOIN to users or albums; no display_name, title, email, or password_hash.
+ * Permission assignment page. Renders safe select menus (album title, user
+ * display_name, enabled status) for the grant form and existing revoke forms.
+ *
+ * Selected/rendered fields only:
+ *   users  — id (hidden value), display_name (option label), enabled (status badge)
+ *   albums — id (hidden value), title (option label), enabled (status badge)
+ *   album_permissions — album_id, user_id, created_at
+ *
+ * Never renders: password_hash, session tokens, photoprism_album_uid, R2 keys,
+ * transform settings, fail_count, locked_until, or PhotoPrism/NAS source data.
  */
-function AdminPermissionsPage({ page }: { page: AdminPermissionPage }) {
-  const { permissions, hasMore } = page
+function AdminPermissionsPage({ options }: { options: AssignmentOptions }) {
+  const { users, albums, permissions, hasMore } = options
   const last = permissions.length > 0 ? permissions[permissions.length - 1] : undefined
 
   return (
@@ -1036,12 +1107,24 @@ function AdminPermissionsPage({ page }: { page: AdminPermissionPage }) {
       <form class="admin-form" method="post" action="/admin/permissions/grant">
         <h2>権限を付与</h2>
         <label>
-          アルバムID
-          <input type="text" name="albumId" required />
+          アルバム
+          <select name="albumId" required>
+            {albums.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.title}{a.enabled === 0 ? ' (無効)' : ''}
+              </option>
+            ))}
+          </select>
         </label>
         <label>
-          ユーザーID
-          <input type="text" name="userId" required />
+          ユーザー
+          <select name="userId" required>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.display_name}{u.enabled === 0 ? ' (無効)' : ''}
+              </option>
+            ))}
+          </select>
         </label>
         <button type="submit">付与</button>
       </form>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { AdminPermissionRepository, ADMIN_PERMISSIONS_PAGE_SIZE } from '../src/services/admin-permission-repository.js'
+import { AdminPermissionRepository, ADMIN_PERMISSIONS_PAGE_SIZE, ASSIGNMENT_OPTIONS_MAX } from '../src/services/admin-permission-repository.js'
 import { makeMockDb } from './helpers/mock-d1.js'
 
 const NOW_TS = '2026-06-15T00:00:00.000Z'
@@ -571,5 +571,410 @@ describe('AdminPermissionRepository.revokePermission error sanitization', () => 
     await expect(
       new AdminPermissionRepository(db).revokePermission(REVOKE_ALBUM_ID, REVOKE_USER_ID),
     ).rejects.toThrow('database operation failed')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// ASSIGNMENT_OPTIONS_MAX exported constant
+// ---------------------------------------------------------------------------
+
+describe('ASSIGNMENT_OPTIONS_MAX', () => {
+  it('equals 100', () => {
+    expect(ASSIGNMENT_OPTIONS_MAX).toBe(100)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// listAssignmentOptions — helper fixtures
+// ---------------------------------------------------------------------------
+
+const VALID_USER_ROW = { id: 'user-opt-001', display_name: 'Alice', enabled: 1 }
+const VALID_USER_ROW_2 = { id: 'user-opt-002', display_name: 'Bob', enabled: 0 }
+const VALID_ALBUM_ROW = { id: 'album-opt-001', title: 'Summer Trip', enabled: 1 }
+const VALID_ALBUM_ROW_2 = { id: 'album-opt-002', title: 'Winter', enabled: 0 }
+
+function makeOptionsDb(usersRows: unknown[], albumRows: unknown[], permRows?: unknown[]) {
+  return makeMockDb([
+    { allRows: usersRows },
+    { allRows: albumRows },
+    { allRows: permRows ?? [] },
+  ])
+}
+
+// ---------------------------------------------------------------------------
+// listAssignmentOptions — users SQL structure
+// ---------------------------------------------------------------------------
+
+describe('AdminPermissionRepository.listAssignmentOptions users SQL structure', () => {
+  async function issueOptions() {
+    const { db, queries } = makeOptionsDb([], [])
+    await new AdminPermissionRepository(db).listAssignmentOptions()
+    return queries
+  }
+
+  it('users query selects id, display_name, enabled', async () => {
+    const queries = await issueOptions()
+    expect(queries[0]?.sql).toContain('id')
+    expect(queries[0]?.sql).toContain('display_name')
+    expect(queries[0]?.sql).toContain('enabled')
+  })
+
+  it('users query queries FROM users', async () => {
+    const queries = await issueOptions()
+    expect(queries[0]?.sql).toMatch(/FROM\s+users/i)
+  })
+
+  it('users query does NOT select password_hash', async () => {
+    const queries = await issueOptions()
+    expect(queries[0]?.sql).not.toContain('password_hash')
+  })
+
+  it('users query does NOT select photoprism_album_uid', async () => {
+    const queries = await issueOptions()
+    expect(queries[0]?.sql).not.toContain('photoprism_album_uid')
+  })
+
+  it('users query does NOT select sessions', async () => {
+    const queries = await issueOptions()
+    expect(queries[0]?.sql).not.toContain('sessions')
+  })
+
+  it('users query does NOT select token_hash', async () => {
+    const queries = await issueOptions()
+    expect(queries[0]?.sql).not.toContain('token_hash')
+  })
+
+  it('users query does NOT select fail_count', async () => {
+    const queries = await issueOptions()
+    expect(queries[0]?.sql).not.toContain('fail_count')
+  })
+
+  it('users query does NOT select locked_until', async () => {
+    const queries = await issueOptions()
+    expect(queries[0]?.sql).not.toContain('locked_until')
+  })
+
+  it('users query does NOT use SELECT *', async () => {
+    const queries = await issueOptions()
+    expect(queries[0]?.sql).not.toMatch(/SELECT\s+\*/i)
+  })
+
+  it('users query uses LIMIT', async () => {
+    const queries = await issueOptions()
+    expect(queries[0]?.sql).toMatch(/\bLIMIT\b/i)
+  })
+
+  it('users query binds ASSIGNMENT_OPTIONS_MAX + 1 as limit', async () => {
+    const queries = await issueOptions()
+    expect(queries[0]?.params[0]).toBe(ASSIGNMENT_OPTIONS_MAX + 1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// listAssignmentOptions — albums SQL structure
+// ---------------------------------------------------------------------------
+
+describe('AdminPermissionRepository.listAssignmentOptions albums SQL structure', () => {
+  async function issueOptions() {
+    const { db, queries } = makeOptionsDb([], [])
+    await new AdminPermissionRepository(db).listAssignmentOptions()
+    return queries
+  }
+
+  it('albums query selects id, title, enabled', async () => {
+    const queries = await issueOptions()
+    expect(queries[1]?.sql).toContain('id')
+    expect(queries[1]?.sql).toContain('title')
+    expect(queries[1]?.sql).toContain('enabled')
+  })
+
+  it('albums query queries FROM albums', async () => {
+    const queries = await issueOptions()
+    expect(queries[1]?.sql).toMatch(/FROM\s+albums/i)
+  })
+
+  it('albums query does NOT select photoprism_album_uid', async () => {
+    const queries = await issueOptions()
+    expect(queries[1]?.sql).not.toContain('photoprism_album_uid')
+  })
+
+  it('albums query does NOT select transform settings', async () => {
+    const queries = await issueOptions()
+    expect(queries[1]?.sql).not.toContain('transform')
+  })
+
+  it('albums query does NOT use SELECT *', async () => {
+    const queries = await issueOptions()
+    expect(queries[1]?.sql).not.toMatch(/SELECT\s+\*/i)
+  })
+
+  it('albums query uses LIMIT', async () => {
+    const queries = await issueOptions()
+    expect(queries[1]?.sql).toMatch(/\bLIMIT\b/i)
+  })
+
+  it('albums query binds ASSIGNMENT_OPTIONS_MAX + 1 as limit', async () => {
+    const queries = await issueOptions()
+    expect(queries[1]?.params[0]).toBe(ASSIGNMENT_OPTIONS_MAX + 1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// listAssignmentOptions — limit enforcement
+// ---------------------------------------------------------------------------
+
+describe('AdminPermissionRepository.listAssignmentOptions limit enforcement', () => {
+  function makeUserRows(count: number) {
+    return Array.from({ length: count }, (_, i) => ({
+      id: `user-limit-${String(i).padStart(3, '0')}`,
+      display_name: `User ${i}`,
+      enabled: 1,
+    }))
+  }
+
+  function makeAlbumRows(count: number) {
+    return Array.from({ length: count }, (_, i) => ({
+      id: `album-limit-${String(i).padStart(3, '0')}`,
+      title: `Album ${i}`,
+      enabled: 1,
+    }))
+  }
+
+  it('100 user rows → resolves OK', async () => {
+    const { db } = makeOptionsDb(makeUserRows(100), [])
+    await expect(new AdminPermissionRepository(db).listAssignmentOptions()).resolves.toBeDefined()
+  })
+
+  it('101 user rows → throws (fail closed)', async () => {
+    const { db } = makeOptionsDb(makeUserRows(101), [])
+    await expect(new AdminPermissionRepository(db).listAssignmentOptions()).rejects.toThrow('database operation failed')
+  })
+
+  it('100 album rows → resolves OK', async () => {
+    const { db } = makeOptionsDb([], makeAlbumRows(100))
+    await expect(new AdminPermissionRepository(db).listAssignmentOptions()).resolves.toBeDefined()
+  })
+
+  it('101 album rows → throws (fail closed)', async () => {
+    const { db } = makeOptionsDb([], makeAlbumRows(101))
+    await expect(new AdminPermissionRepository(db).listAssignmentOptions()).rejects.toThrow('database operation failed')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// listAssignmentOptions — user row validation
+// ---------------------------------------------------------------------------
+
+describe('AdminPermissionRepository.listAssignmentOptions user row validation', () => {
+  it('accepts a valid user row', async () => {
+    const { db } = makeOptionsDb([VALID_USER_ROW], [])
+    const result = await new AdminPermissionRepository(db).listAssignmentOptions()
+    expect(result.users).toHaveLength(1)
+    expect(result.users[0]?.id).toBe(VALID_USER_ROW.id)
+    expect(result.users[0]?.display_name).toBe(VALID_USER_ROW.display_name)
+    expect(result.users[0]?.enabled).toBe(1)
+  })
+
+  it('accepts a disabled user row (enabled=0)', async () => {
+    const { db } = makeOptionsDb([VALID_USER_ROW_2], [])
+    const result = await new AdminPermissionRepository(db).listAssignmentOptions()
+    expect(result.users[0]?.enabled).toBe(0)
+  })
+
+  it('rejects user row with invalid id', async () => {
+    const { db } = makeOptionsDb([{ ...VALID_USER_ROW, id: '!bad!' }], [])
+    await expect(new AdminPermissionRepository(db).listAssignmentOptions()).rejects.toThrow('database operation failed')
+  })
+
+  it('rejects user row with display_name > 1024 code points', async () => {
+    const { db } = makeOptionsDb([{ ...VALID_USER_ROW, display_name: 'a'.repeat(1025) }], [])
+    await expect(new AdminPermissionRepository(db).listAssignmentOptions()).rejects.toThrow('database operation failed')
+  })
+
+  it('accepts user row with display_name of exactly 1024 code points', async () => {
+    const { db } = makeOptionsDb([{ ...VALID_USER_ROW, display_name: 'a'.repeat(1024) }], [])
+    const result = await new AdminPermissionRepository(db).listAssignmentOptions()
+    expect(result.users).toHaveLength(1)
+  })
+
+  it('rejects user row with enabled=2', async () => {
+    const { db } = makeOptionsDb([{ ...VALID_USER_ROW, enabled: 2 }], [])
+    await expect(new AdminPermissionRepository(db).listAssignmentOptions()).rejects.toThrow('database operation failed')
+  })
+
+  it('rejects user row with null enabled', async () => {
+    const { db } = makeOptionsDb([{ ...VALID_USER_ROW, enabled: null }], [])
+    await expect(new AdminPermissionRepository(db).listAssignmentOptions()).rejects.toThrow('database operation failed')
+  })
+
+  it('rejects null user row from D1', async () => {
+    const { db } = makeOptionsDb([null], [])
+    await expect(new AdminPermissionRepository(db).listAssignmentOptions()).rejects.toThrow('database operation failed')
+  })
+
+  it('rejects duplicate user id', async () => {
+    const { db } = makeOptionsDb([VALID_USER_ROW, VALID_USER_ROW], [])
+    await expect(new AdminPermissionRepository(db).listAssignmentOptions()).rejects.toThrow('database operation failed')
+  })
+
+  it('accepts two user rows with distinct ids', async () => {
+    const { db } = makeOptionsDb([VALID_USER_ROW, VALID_USER_ROW_2], [])
+    const result = await new AdminPermissionRepository(db).listAssignmentOptions()
+    expect(result.users).toHaveLength(2)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// listAssignmentOptions — album row validation
+// ---------------------------------------------------------------------------
+
+describe('AdminPermissionRepository.listAssignmentOptions album row validation', () => {
+  it('accepts a valid album row', async () => {
+    const { db } = makeOptionsDb([], [VALID_ALBUM_ROW])
+    const result = await new AdminPermissionRepository(db).listAssignmentOptions()
+    expect(result.albums).toHaveLength(1)
+    expect(result.albums[0]?.id).toBe(VALID_ALBUM_ROW.id)
+    expect(result.albums[0]?.title).toBe(VALID_ALBUM_ROW.title)
+    expect(result.albums[0]?.enabled).toBe(1)
+  })
+
+  it('accepts a disabled album row (enabled=0)', async () => {
+    const { db } = makeOptionsDb([], [VALID_ALBUM_ROW_2])
+    const result = await new AdminPermissionRepository(db).listAssignmentOptions()
+    expect(result.albums[0]?.enabled).toBe(0)
+  })
+
+  it('rejects album row with invalid id', async () => {
+    const { db } = makeOptionsDb([], [{ ...VALID_ALBUM_ROW, id: '!bad!' }])
+    await expect(new AdminPermissionRepository(db).listAssignmentOptions()).rejects.toThrow('database operation failed')
+  })
+
+  it('rejects album row with title > 1024 code points', async () => {
+    const { db } = makeOptionsDb([], [{ ...VALID_ALBUM_ROW, title: 'a'.repeat(1025) }])
+    await expect(new AdminPermissionRepository(db).listAssignmentOptions()).rejects.toThrow('database operation failed')
+  })
+
+  it('rejects album row with enabled=2', async () => {
+    const { db } = makeOptionsDb([], [{ ...VALID_ALBUM_ROW, enabled: 2 }])
+    await expect(new AdminPermissionRepository(db).listAssignmentOptions()).rejects.toThrow('database operation failed')
+  })
+
+  it('rejects null album row from D1', async () => {
+    const { db } = makeOptionsDb([], [null])
+    await expect(new AdminPermissionRepository(db).listAssignmentOptions()).rejects.toThrow('database operation failed')
+  })
+
+  it('rejects duplicate album id', async () => {
+    const { db } = makeOptionsDb([], [VALID_ALBUM_ROW, VALID_ALBUM_ROW])
+    await expect(new AdminPermissionRepository(db).listAssignmentOptions()).rejects.toThrow('database operation failed')
+  })
+
+  it('accepts two album rows with distinct ids', async () => {
+    const { db } = makeOptionsDb([], [VALID_ALBUM_ROW, VALID_ALBUM_ROW_2])
+    const result = await new AdminPermissionRepository(db).listAssignmentOptions()
+    expect(result.albums).toHaveLength(2)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// listAssignmentOptions — permission pagination
+// ---------------------------------------------------------------------------
+
+describe('AdminPermissionRepository.listAssignmentOptions permission pagination', () => {
+  function makePermRows(count: number) {
+    return Array.from({ length: count }, (_, i) => ({
+      album_id: `album-p-${String(i).padStart(3, '0')}`,
+      user_id: `user-p-${String(i).padStart(3, '0')}`,
+      created_at: NOW_TS,
+    }))
+  }
+
+  it('51 permission rows → 50 permissions + hasMore true', async () => {
+    const { db } = makeOptionsDb([], [], makePermRows(51))
+    const result = await new AdminPermissionRepository(db).listAssignmentOptions()
+    expect(result.permissions).toHaveLength(50)
+    expect(result.hasMore).toBe(true)
+  })
+
+  it('50 permission rows → 50 permissions + hasMore false', async () => {
+    const { db } = makeOptionsDb([], [], makePermRows(50))
+    const result = await new AdminPermissionRepository(db).listAssignmentOptions()
+    expect(result.permissions).toHaveLength(50)
+    expect(result.hasMore).toBe(false)
+  })
+
+  it('0 permission rows → 0 permissions + hasMore false', async () => {
+    const { db } = makeOptionsDb([], [], [])
+    const result = await new AdminPermissionRepository(db).listAssignmentOptions()
+    expect(result.permissions).toHaveLength(0)
+    expect(result.hasMore).toBe(false)
+  })
+
+  it('permissions do NOT expose password_hash, photoprism_album_uid, or title', async () => {
+    const { db } = makeOptionsDb([], [], makePermRows(1))
+    const result = await new AdminPermissionRepository(db).listAssignmentOptions()
+    const perm = result.permissions[0]
+    expect(perm).not.toHaveProperty('password_hash')
+    expect(perm).not.toHaveProperty('photoprism_album_uid')
+    expect(perm).not.toHaveProperty('title')
+    expect(perm).not.toHaveProperty('display_name')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// listAssignmentOptions — cursor validation
+// ---------------------------------------------------------------------------
+
+describe('AdminPermissionRepository.listAssignmentOptions cursor validation', () => {
+  it('invalid albumId in after throws before D1', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminPermissionRepository(db).listAssignmentOptions({ albumId: '!bad!', userId: 'user-abc-001' }),
+    ).rejects.toThrow('invalid cursor')
+    expect(queries).toHaveLength(0)
+  })
+
+  it('invalid userId in after throws before D1', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(
+      new AdminPermissionRepository(db).listAssignmentOptions({ albumId: 'album-abc-001', userId: '!bad!' }),
+    ).rejects.toThrow('invalid cursor')
+    expect(queries).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// listAssignmentOptions — error sanitization
+// ---------------------------------------------------------------------------
+
+describe('AdminPermissionRepository.listAssignmentOptions error sanitization', () => {
+  it('users query D1 throw → "database operation failed"', async () => {
+    const { db } = makeMockDb([{ throws: new Error('D1 users secret-detail') }])
+    await expect(new AdminPermissionRepository(db).listAssignmentOptions()).rejects.toThrow('database operation failed')
+  })
+
+  it('albums query D1 throw → "database operation failed"', async () => {
+    const { db } = makeMockDb([
+      { allRows: [] },
+      { throws: new Error('D1 albums secret-detail') },
+    ])
+    await expect(new AdminPermissionRepository(db).listAssignmentOptions()).rejects.toThrow('database operation failed')
+  })
+
+  it('permissions query D1 throw → "database operation failed"', async () => {
+    const { db } = makeMockDb([
+      { allRows: [] },
+      { allRows: [] },
+      { throws: new Error('D1 perms secret-detail') },
+    ])
+    await expect(new AdminPermissionRepository(db).listAssignmentOptions()).rejects.toThrow('database operation failed')
+  })
+
+  it('error message does not contain sensitive D1 detail', async () => {
+    const sensitiveToken = 'secret-token-opts-xyz'
+    const { db } = makeMockDb([{ throws: new Error(sensitiveToken) }])
+    const err = await new AdminPermissionRepository(db).listAssignmentOptions().catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(Error)
+    expect((err as Error).message).not.toContain(sensitiveToken)
   })
 })

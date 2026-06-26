@@ -77,7 +77,8 @@ documented for incident use.
   implemented and deployed. Idempotent user enable/disable controls are also
   implemented and deployed. Admin user creation/password reset, album public
   metadata update controls, read-only operational summary, and read-only sync
-  status are implemented and reviewed locally. The path-scoped Cloudflare
+  status, user display-name editing, and browser-friendly permission assignment
+  UI are implemented and reviewed locally. The path-scoped Cloudflare
   Access application is configured, and the three Worker values
   (`CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, `ADMIN_EMAILS`) are registered and
   operator-verified on 2026-06-23; the production admin surface is usable.
@@ -90,8 +91,10 @@ documented for incident use.
   in Portainer, and live manual-sync smoke completed 2026-06-26: the admin
   request was consumed by the daemon, sync completed 234/234, cover and manifest
   uploaded, pending state cleared, failures remained 0, runs completed reached 1,
-  and trigger kind showed manual. Album creation/deletion and PhotoPrism-coupled
-  album operations, dry-run cleanup, and final hardening remain unimplemented.
+  and trigger kind showed manual. ADR Phase 1 admin browser management is
+  implemented and reviewed locally: display-name editing and dropdown-based
+  permission assignment. Album creation/deletion and PhotoPrism-coupled album
+  operations, dry-run cleanup, and final hardening remain unimplemented.
 
 ## Verification Baseline
 
@@ -100,8 +103,9 @@ documented for incident use.
   authentication foundation, read-only inventories, permission mutations,
   album and user enable/disable controls, user create/password-reset controls,
   album public metadata update controls, read-only admin ops summary, read-only
-  admin sync status, and the manual sync UI/status-schema additions pass lint,
-  typecheck, build, and 1844 tests / 32 files locally (2026-06-26).
+  admin sync status, the manual sync UI/status-schema additions, user display-name
+  editing, and browser-friendly permission assignment UI pass lint, typecheck,
+  build, and 1958 tests / 32 files locally (2026-06-26).
   Production audit is clean; full `npm audit` remains blocked by devDependency
   advisories in Wrangler/Miniflare. Workers manual deploy succeeded for commit
   `a1a5c2e` (version `b30250aa`, 2026-06-26); unauthenticated production smoke

@@ -141,7 +141,9 @@ This is a priority-ordered plan. Update status as implementation progresses.
       controls implemented and reviewed 2026-06-19. Idempotent user
       enable/disable controls implemented and reviewed 2026-06-23. User
       creation/password reset and album public metadata update controls
-      implemented and reviewed locally 2026-06-24. Album creation/deletion and
+      implemented and reviewed locally 2026-06-24. User display-name editing
+      and browser-friendly permission assignment dropdowns implemented and
+      reviewed locally 2026-06-26. Album creation/deletion and
       PhotoPrism-coupled album operations remain.)
 - [x] Implement sync request/status administration.
       (Read-only `/admin/sync` status page, Docker best-effort R2 status

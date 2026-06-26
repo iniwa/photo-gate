@@ -97,6 +97,11 @@ const RESET_PASSWORD_SQL = `
   SET password_hash = ?, fail_count = 0, locked_until = NULL, updated_at = ?
   WHERE id = ?`
 
+const UPDATE_DISPLAY_NAME_SQL = `
+  UPDATE users
+  SET display_name = ?, updated_at = ?
+  WHERE id = ?`
+
 export class AdminUserRepository {
   constructor(private readonly db: D1Database) {}
 
@@ -176,6 +181,28 @@ export class AdminUserRepository {
       throw databaseOperationError()
     }
     if (result === null || typeof result !== 'object' || result.success !== true) {
+      throw databaseOperationError()
+    }
+  }
+
+  async updateDisplayName(userId: string, displayName: string, updatedAt: string): Promise<void> {
+    if (!isValidId(userId)) throw databaseOperationError()
+    if (!isValidNewDisplayName(displayName)) throw databaseOperationError()
+    if (!isCanonicalUtcTimestamp(updatedAt)) throw databaseOperationError()
+
+    let result: D1Result
+    try {
+      result = await this.db
+        .prepare(UPDATE_DISPLAY_NAME_SQL)
+        .bind(displayName, updatedAt, userId)
+        .run()
+    } catch {
+      throw databaseOperationError()
+    }
+    if (result === null || typeof result !== 'object' || result.success !== true) {
+      throw databaseOperationError()
+    }
+    if ((result as unknown as { meta?: { changes?: number } }).meta?.changes === 0) {
       throw databaseOperationError()
     }
   }

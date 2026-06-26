@@ -21,6 +21,26 @@ The manual sync release is deployed and live-smoke verified in production:
 - DONE: the operator pressed the manual sync button from `/admin/sync`; the`r`n  daemon consumed the request, synced 234/234, uploaded cover and manifest, and`r`n  reported success in 136.5s.
 - DONE: `/admin/sync` reported no pending request, 0 failures, 1 completed`r`n  run, manual trigger kind, and a non-null handled request ID.
 
+The fourteenth Level 3 implementation handoff is reviewed and complete locally:
+
+- DONE: admin user display-name editing via `POST /admin/users/update-display-name`.
+- DONE: browser-friendly permission assignment UI on `GET /admin/permissions`
+  with safe user and album dropdowns.
+- The display-name mutation uses the existing admin guard, strict same-origin
+  check, exact URL-encoded Content-Type check, exact two-field validation,
+  canonical `updated_at`, and a single parameterized `users` UPDATE touching
+  only `display_name` and `updated_at`.
+- The assignment UI reads only `users.id/display_name/enabled`,
+  `albums.id/title/enabled`, and paginated `album_permissions.album_id/user_id/created_at`.
+  Disabled users and albums remain selectable and are marked in the option label
+  so newly created disabled albums can be pre-assigned before enablement.
+- Lists are capped at 100 users and 100 albums and fail closed on overflow.
+  Password hashes, session tokens, PhotoPrism UIDs, transform settings, R2 keys,
+  and source photo details are not selected or rendered.
+- DONE: local verification on 2026-06-26 passed Workers lint, typecheck, build,
+  1958 tests / 32 files, production dependency audit, `git diff --check`, and
+  confirmed no Docker diff.
+
 The thirteenth Level 3 implementation handoff is reviewed and complete in production:
 
 - DONE: manual sync admin UI and status schema 2.
@@ -367,6 +387,7 @@ action list and full status snapshot.
 
 ## Next Priority
 
-Level 2 is complete. Manual sync deployment and smoke are complete. Next Level 3
-priority is broader album administration, audit/history depth, or safe cleanup
-design.
+Level 2 is complete. Manual sync deployment and smoke are complete. The next
+Level 3 priority is ADR Phase 2: D1-only album creation from the admin browser
+with `enabled=0` by default and `photoprism_album_uid` accepted only at create
+time.

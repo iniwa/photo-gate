@@ -5,7 +5,7 @@ import { normalizeEmail, parseAdminAllowlist } from '../src/middleware/require-a
 import type { AdminAuthConfig } from '../src/types/admin-auth.js'
 import type { AdminUserPage, AdminUserSummary } from '../src/types/admin-user.js'
 import type { AdminAlbumPage, AdminAlbumSummary } from '../src/types/admin-album.js'
-import type { AdminPermissionPage, AdminPermissionSummary } from '../src/types/admin-permission.js'
+import type { AdminPermissionSummary, AssignmentOptions } from '../src/types/admin-permission.js'
 import type { Env } from '../src/types/env.js'
 import type { AdminOpsSummary } from '../src/types/admin-ops.js'
 import type { AdminSyncStatus } from '../src/types/admin-sync-status.js'
@@ -75,12 +75,14 @@ type UserRepo = {
   setUserEnabled(userId: string, enabled: number, updatedAt: string): Promise<void>
   createUser(userId: string, displayName: string, passwordHash: string, createdAt: string, updatedAt: string): Promise<void>
   resetPassword(userId: string, passwordHash: string, updatedAt: string): Promise<void>
+  updateDisplayName(userId: string, displayName: string, updatedAt: string): Promise<void>
 }
 
 type MutationUserRepo = UserRepo & {
   calls: { userId: string; enabled: number; updatedAt: string }[]
   createCalls: { userId: string; displayName: string; passwordHash: string; createdAt: string; updatedAt: string }[]
   resetCalls: { userId: string; passwordHash: string; updatedAt: string }[]
+  updateDisplayNameCalls: { userId: string; displayName: string; updatedAt: string }[]
 }
 
 function makeEmptyUserRepo(): UserRepo {
@@ -89,6 +91,7 @@ function makeEmptyUserRepo(): UserRepo {
     setUserEnabled: async () => {},
     createUser: async () => {},
     resetPassword: async () => {},
+    updateDisplayName: async () => {},
   }
 }
 
@@ -101,6 +104,7 @@ function makeUserRepo(
     setUserEnabled: async () => {},
     createUser: async () => {},
     resetPassword: async () => {},
+    updateDisplayName: async () => {},
   }
 }
 
@@ -112,6 +116,7 @@ function makeThrowingUserRepo(): UserRepo {
     setUserEnabled: async () => {},
     createUser: async () => {},
     resetPassword: async () => {},
+    updateDisplayName: async () => {},
   }
 }
 
@@ -119,10 +124,12 @@ function makeMutationUserRepo(): MutationUserRepo {
   const calls: { userId: string; enabled: number; updatedAt: string }[] = []
   const createCalls: { userId: string; displayName: string; passwordHash: string; createdAt: string; updatedAt: string }[] = []
   const resetCalls: { userId: string; passwordHash: string; updatedAt: string }[] = []
+  const updateDisplayNameCalls: { userId: string; displayName: string; updatedAt: string }[] = []
   return {
     calls,
     createCalls,
     resetCalls,
+    updateDisplayNameCalls,
     listUsers: async () => ({ users: [], hasMore: false }),
     setUserEnabled: async (userId, enabled, updatedAt) => { calls.push({ userId, enabled, updatedAt }) },
     createUser: async (userId, displayName, passwordHash, createdAt, updatedAt) => {
@@ -130,6 +137,9 @@ function makeMutationUserRepo(): MutationUserRepo {
     },
     resetPassword: async (userId, passwordHash, updatedAt) => {
       resetCalls.push({ userId, passwordHash, updatedAt })
+    },
+    updateDisplayName: async (userId, displayName, updatedAt) => {
+      updateDisplayNameCalls.push({ userId, displayName, updatedAt })
     },
   }
 }
@@ -140,6 +150,7 @@ function makeThrowingSetEnabledUserRepo(): UserRepo {
     setUserEnabled: async () => { throw new Error('D1 exploded') },
     createUser: async () => {},
     resetPassword: async () => {},
+    updateDisplayName: async () => {},
   }
 }
 
@@ -149,6 +160,7 @@ function makeThrowingCreateUserRepo(): UserRepo {
     setUserEnabled: async () => {},
     createUser: async () => { throw new Error('D1 exploded') },
     resetPassword: async () => {},
+    updateDisplayName: async () => {},
   }
 }
 
@@ -158,6 +170,17 @@ function makeThrowingResetPasswordRepo(): UserRepo {
     setUserEnabled: async () => {},
     createUser: async () => {},
     resetPassword: async () => { throw new Error('D1 exploded') },
+    updateDisplayName: async () => {},
+  }
+}
+
+function makeThrowingUpdateDisplayNameRepo(): UserRepo {
+  return {
+    listUsers: async () => ({ users: [], hasMore: false }),
+    setUserEnabled: async () => {},
+    createUser: async () => {},
+    resetPassword: async () => {},
+    updateDisplayName: async () => { throw new Error('D1 exploded') },
   }
 }
 
@@ -232,14 +255,14 @@ function makeThrowingUpdatePublicMetadataRepo(): AlbumRepo {
 }
 
 type PermissionRepo = {
-  listPermissions(after?: { albumId: string; userId: string }): Promise<AdminPermissionPage>
+  listAssignmentOptions(after?: { albumId: string; userId: string }): Promise<AssignmentOptions>
   grantPermission(albumId: string, userId: string, createdAt: string): Promise<void>
   revokePermission(albumId: string, userId: string): Promise<void>
 }
 
 function makeEmptyPermissionRepo(): PermissionRepo {
   return {
-    listPermissions: async () => ({ permissions: [], hasMore: false }),
+    listAssignmentOptions: async () => ({ users: [], albums: [], permissions: [], hasMore: false }),
     grantPermission: async () => {},
     revokePermission: async () => {},
   }
@@ -250,7 +273,7 @@ function makePermissionRepo(
   hasMore = false,
 ): PermissionRepo {
   return {
-    listPermissions: async () => ({ permissions, hasMore }),
+    listAssignmentOptions: async () => ({ users: [], albums: [], permissions, hasMore }),
     grantPermission: async () => {},
     revokePermission: async () => {},
   }
@@ -258,7 +281,7 @@ function makePermissionRepo(
 
 function makeThrowingPermissionRepo(): PermissionRepo {
   return {
-    listPermissions: async () => {
+    listAssignmentOptions: async () => {
       throw new Error('D1 exploded')
     },
     grantPermission: async () => {},
@@ -277,7 +300,7 @@ function makeMutationPermissionRepo(): MutationPermissionRepo {
   return {
     grantCalls,
     revokeCalls,
-    listPermissions: async () => ({ permissions: [], hasMore: false }),
+    listAssignmentOptions: async () => ({ users: [], albums: [], permissions: [], hasMore: false }),
     grantPermission: async (albumId, userId, createdAt) => {
       grantCalls.push({ albumId, userId, createdAt })
     },
@@ -289,9 +312,26 @@ function makeMutationPermissionRepo(): MutationPermissionRepo {
 
 function makeThrowingMutationPermissionRepo(): PermissionRepo {
   return {
-    listPermissions: async () => ({ permissions: [], hasMore: false }),
+    listAssignmentOptions: async () => ({ users: [], albums: [], permissions: [], hasMore: false }),
     grantPermission: async () => { throw new Error('D1 exploded') },
     revokePermission: async () => { throw new Error('D1 exploded') },
+  }
+}
+
+function makePermissionRepoWithOptions(
+  options: Partial<AssignmentOptions>,
+  permissions: AdminPermissionSummary[] = [],
+  hasMore = false,
+): PermissionRepo {
+  return {
+    listAssignmentOptions: async () => ({
+      users: options.users ?? [],
+      albums: options.albums ?? [],
+      permissions,
+      hasMore,
+    }),
+    grantPermission: async () => {},
+    revokePermission: async () => {},
   }
 }
 
@@ -1324,7 +1364,7 @@ describe('admin-routes: GET /admin/permissions 400 bad cursor', () => {
 // ---------------------------------------------------------------------------
 
 describe('admin-routes: GET /admin/permissions 500 repo throws', () => {
-  it('repo.listPermissions throws → 500 no-store', async () => {
+  it('repo.listAssignmentOptions throws → 500 no-store', async () => {
     const app = makeApp(goodAuth(), undefined, undefined, makeThrowingPermissionRepo())
     const res = await getAdmin(app, { path: '/admin/permissions' })
     expect(res.status).toBe(500)
@@ -1457,6 +1497,7 @@ const VALID_RESET_BODY = `userId=${VALID_USER_ID}&password=${encodeURIComponent(
 const PBKDF2_HASH_RE = /^pbkdf2-sha256\$100000\$[A-Za-z0-9_-]{22}\$[A-Za-z0-9_-]{43}$/
 const VALID_UPDATE_BODY = `albumId=${VALID_ALBUM_ID}&title=My+Album&expiresAt=&downloadEnabled=0`
 const VALID_UPDATE_BODY_WITH_EXPIRY = `albumId=${VALID_ALBUM_ID}&title=My+Album&expiresAt=${encodeURIComponent('2026-12-31T23:59:59.000Z')}&downloadEnabled=1`
+const VALID_UPDATE_DISPLAY_NAME_BODY = `userId=${VALID_USER_ID}&displayName=${encodeURIComponent(VALID_DISPLAY_NAME)}`
 
 function makeValidPostOptions() {
   return {
@@ -1509,6 +1550,15 @@ function makeValidUpdatePostOptions() {
     origin: VALID_ORIGIN as string | undefined,
     contentType: 'application/x-www-form-urlencoded' as string | undefined,
     body: VALID_UPDATE_BODY as string | undefined,
+  }
+}
+
+function makeValidUpdateDisplayNamePostOptions() {
+  return {
+    token: VALID_TOKEN as string | null,
+    origin: VALID_ORIGIN as string | undefined,
+    contentType: 'application/x-www-form-urlencoded' as string | undefined,
+    body: VALID_UPDATE_DISPLAY_NAME_BODY as string | undefined,
   }
 }
 
@@ -4804,5 +4854,381 @@ describe('GET /admin/sync — trigger metadata', () => {
     const res = await getAdmin(app, { path: '/admin/sync' })
     const body = await res.text()
     expect(body).not.toContain('最終処理リクエストID')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /admin/users/update-display-name — guard
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: POST /admin/users/update-display-name guard', () => {
+  it('no token → 403 Forbidden no-store, updateDisplayName not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/update-display-name', {
+      ...makeValidUpdateDisplayNamePostOptions(),
+      token: null,
+    })
+    await assertForbidden(res)
+    expect(repo.updateDisplayNameCalls).toHaveLength(0)
+  })
+
+  it('non-allowlisted email → 403, updateDisplayName not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(() => ({
+      verifier: async () => ({ email: 'other@example.com' }),
+      allowlist: new Set([ADMIN_EMAIL]),
+    }), repo)
+    const res = await postAdmin(app, '/admin/users/update-display-name', makeValidUpdateDisplayNamePostOptions())
+    await assertForbidden(res)
+    expect(repo.updateDisplayNameCalls).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /admin/users/update-display-name — same-origin
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: POST /admin/users/update-display-name same-origin', () => {
+  it('Origin header absent → 403, updateDisplayName not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/update-display-name', {
+      ...makeValidUpdateDisplayNamePostOptions(),
+      origin: undefined,
+    })
+    await assertForbidden(res)
+    expect(repo.updateDisplayNameCalls).toHaveLength(0)
+  })
+
+  it('Origin = literal "null" → 403, updateDisplayName not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/update-display-name', {
+      ...makeValidUpdateDisplayNamePostOptions(),
+      origin: 'null',
+    })
+    await assertForbidden(res)
+    expect(repo.updateDisplayNameCalls).toHaveLength(0)
+  })
+
+  it('Origin mismatched → 403, updateDisplayName not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/update-display-name', {
+      ...makeValidUpdateDisplayNamePostOptions(),
+      origin: 'https://evil.example',
+    })
+    await assertForbidden(res)
+    expect(repo.updateDisplayNameCalls).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /admin/users/update-display-name — content-type validation
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: POST /admin/users/update-display-name content-type', () => {
+  it('Content-Type missing → 400 no-store, updateDisplayName not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/update-display-name', {
+      ...makeValidUpdateDisplayNamePostOptions(),
+      contentType: undefined,
+    })
+    expect(res.status).toBe(400)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(repo.updateDisplayNameCalls).toHaveLength(0)
+  })
+
+  it('Content-Type application/json → 400, updateDisplayName not called', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/update-display-name', {
+      ...makeValidUpdateDisplayNamePostOptions(),
+      contentType: 'application/json',
+    })
+    expect(res.status).toBe(400)
+    expect(repo.updateDisplayNameCalls).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /admin/users/update-display-name — body validation
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: POST /admin/users/update-display-name body validation', () => {
+  it('missing userId → 400', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/update-display-name', {
+      ...makeValidUpdateDisplayNamePostOptions(),
+      body: `displayName=${encodeURIComponent(VALID_DISPLAY_NAME)}`,
+    })
+    expect(res.status).toBe(400)
+    expect(repo.updateDisplayNameCalls).toHaveLength(0)
+  })
+
+  it('missing displayName → 400', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/update-display-name', {
+      ...makeValidUpdateDisplayNamePostOptions(),
+      body: `userId=${VALID_USER_ID}`,
+    })
+    expect(res.status).toBe(400)
+    expect(repo.updateDisplayNameCalls).toHaveLength(0)
+  })
+
+  it('extra field → 400', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/update-display-name', {
+      ...makeValidUpdateDisplayNamePostOptions(),
+      body: `userId=${VALID_USER_ID}&displayName=${encodeURIComponent(VALID_DISPLAY_NAME)}&extra=x`,
+    })
+    expect(res.status).toBe(400)
+    expect(repo.updateDisplayNameCalls).toHaveLength(0)
+  })
+
+  it('repeated userId → 400', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/update-display-name', {
+      ...makeValidUpdateDisplayNamePostOptions(),
+      body: `userId=${VALID_USER_ID}&userId=user-other-001&displayName=${encodeURIComponent(VALID_DISPLAY_NAME)}`,
+    })
+    expect(res.status).toBe(400)
+    expect(repo.updateDisplayNameCalls).toHaveLength(0)
+  })
+
+  it('repeated displayName → 400', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/update-display-name', {
+      ...makeValidUpdateDisplayNamePostOptions(),
+      body: `userId=${VALID_USER_ID}&displayName=${encodeURIComponent(VALID_DISPLAY_NAME)}&displayName=Other`,
+    })
+    expect(res.status).toBe(400)
+    expect(repo.updateDisplayNameCalls).toHaveLength(0)
+  })
+
+  it('invalid userId → 400', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/update-display-name', {
+      ...makeValidUpdateDisplayNamePostOptions(),
+      body: `userId=!bad!&displayName=${encodeURIComponent(VALID_DISPLAY_NAME)}`,
+    })
+    expect(res.status).toBe(400)
+    expect(repo.updateDisplayNameCalls).toHaveLength(0)
+  })
+
+  it('empty displayName → 400', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/update-display-name', {
+      ...makeValidUpdateDisplayNamePostOptions(),
+      body: `userId=${VALID_USER_ID}&displayName=`,
+    })
+    expect(res.status).toBe(400)
+    expect(repo.updateDisplayNameCalls).toHaveLength(0)
+  })
+
+  it('displayName with leading space → 400', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/update-display-name', {
+      ...makeValidUpdateDisplayNamePostOptions(),
+      body: `userId=${VALID_USER_ID}&displayName=${encodeURIComponent(' Leading')}`,
+    })
+    expect(res.status).toBe(400)
+    expect(repo.updateDisplayNameCalls).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /admin/users/update-display-name — success
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: POST /admin/users/update-display-name success', () => {
+  it('valid request → 303 redirect to /admin/users', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    const res = await postAdmin(app, '/admin/users/update-display-name', makeValidUpdateDisplayNamePostOptions())
+    expect(res.status).toBe(303)
+    expect(res.headers.get('location')).toBe('/admin/users')
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('updateDisplayName called with correct userId and displayName', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    await postAdmin(app, '/admin/users/update-display-name', makeValidUpdateDisplayNamePostOptions())
+    expect(repo.updateDisplayNameCalls).toHaveLength(1)
+    expect(repo.updateDisplayNameCalls[0]?.userId).toBe(VALID_USER_ID)
+    expect(repo.updateDisplayNameCalls[0]?.displayName).toBe(VALID_DISPLAY_NAME)
+  })
+
+  it('updatedAt passed to repo is a canonical ISO timestamp', async () => {
+    const repo = makeMutationUserRepo()
+    const app = makeApp(goodAuth(), repo)
+    await postAdmin(app, '/admin/users/update-display-name', makeValidUpdateDisplayNamePostOptions())
+    const updatedAt = repo.updateDisplayNameCalls[0]?.updatedAt ?? ''
+    expect(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(updatedAt)).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /admin/users/update-display-name — repo / clock errors
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: POST /admin/users/update-display-name errors', () => {
+  it('repo.updateDisplayName throws → 500 no-store', async () => {
+    const app = makeApp(goodAuth(), makeThrowingUpdateDisplayNameRepo())
+    const res = await postAdmin(app, '/admin/users/update-display-name', makeValidUpdateDisplayNamePostOptions())
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('clock throws → 500 no-store', async () => {
+    const throwingClock = () => { throw new Error('clock exploded') }
+    const app = makeApp(goodAuth(), makeMutationUserRepo(), undefined, undefined, throwingClock)
+    const res = await postAdmin(app, '/admin/users/update-display-name', makeValidUpdateDisplayNamePostOptions())
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('500 body does not contain repo error detail', async () => {
+    const app = makeApp(goodAuth(), makeThrowingUpdateDisplayNameRepo())
+    const res = await postAdmin(app, '/admin/users/update-display-name', makeValidUpdateDisplayNamePostOptions())
+    const body = await res.text()
+    expect(body).not.toContain('D1 exploded')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// GET /admin/permissions — assignment UI (select dropdowns)
+// ---------------------------------------------------------------------------
+
+const SAMPLE_ASSIGNMENT_USER_ENABLED = {
+  id: 'user-opt-001',
+  display_name: 'Alice Viewer',
+  enabled: 1 as const,
+}
+
+const SAMPLE_ASSIGNMENT_USER_DISABLED = {
+  id: 'user-opt-002',
+  display_name: 'Bob Disabled',
+  enabled: 0 as const,
+}
+
+const SAMPLE_ASSIGNMENT_ALBUM_ENABLED = {
+  id: 'album-opt-001',
+  title: 'Summer Trip',
+  enabled: 1 as const,
+}
+
+const SAMPLE_ASSIGNMENT_ALBUM_DISABLED = {
+  id: 'album-opt-002',
+  title: 'Winter',
+  enabled: 0 as const,
+}
+
+describe('admin-routes: GET /admin/permissions assignment UI', () => {
+  it('renders <select name="albumId"> for grant form', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, makePermissionRepoWithOptions({}))
+    const res = await getAdmin(app, { path: '/admin/permissions' })
+    const body = await res.text()
+    expect(body).toContain('name="albumId"')
+    expect(body).toMatch(/<select[^>]*name="albumId"/)
+  })
+
+  it('renders <select name="userId"> for grant form', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, makePermissionRepoWithOptions({}))
+    const res = await getAdmin(app, { path: '/admin/permissions' })
+    const body = await res.text()
+    expect(body).toContain('name="userId"')
+    expect(body).toMatch(/<select[^>]*name="userId"/)
+  })
+
+  it('enabled album option renders album title', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, makePermissionRepoWithOptions({
+      albums: [SAMPLE_ASSIGNMENT_ALBUM_ENABLED],
+    }))
+    const res = await getAdmin(app, { path: '/admin/permissions' })
+    const body = await res.text()
+    expect(body).toContain(SAMPLE_ASSIGNMENT_ALBUM_ENABLED.title)
+  })
+
+  it('disabled album option renders (無効) status badge', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, makePermissionRepoWithOptions({
+      albums: [SAMPLE_ASSIGNMENT_ALBUM_DISABLED],
+    }))
+    const res = await getAdmin(app, { path: '/admin/permissions' })
+    const body = await res.text()
+    expect(body).toContain(SAMPLE_ASSIGNMENT_ALBUM_DISABLED.title)
+    expect(body).toContain('無効')
+  })
+
+  it('enabled album does NOT show (無効) badge', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, makePermissionRepoWithOptions({
+      albums: [SAMPLE_ASSIGNMENT_ALBUM_ENABLED],
+      users: [],
+    }))
+    const res = await getAdmin(app, { path: '/admin/permissions' })
+    const body = await res.text()
+    expect(body).toContain(SAMPLE_ASSIGNMENT_ALBUM_ENABLED.title)
+    expect(body).not.toContain('無効')
+  })
+
+  it('enabled user option renders display_name', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, makePermissionRepoWithOptions({
+      users: [SAMPLE_ASSIGNMENT_USER_ENABLED],
+    }))
+    const res = await getAdmin(app, { path: '/admin/permissions' })
+    const body = await res.text()
+    expect(body).toContain(SAMPLE_ASSIGNMENT_USER_ENABLED.display_name)
+  })
+
+  it('disabled user option renders (無効) status badge', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, makePermissionRepoWithOptions({
+      users: [SAMPLE_ASSIGNMENT_USER_DISABLED],
+    }))
+    const res = await getAdmin(app, { path: '/admin/permissions' })
+    const body = await res.text()
+    expect(body).toContain(SAMPLE_ASSIGNMENT_USER_DISABLED.display_name)
+    expect(body).toContain('無効')
+  })
+
+  it('enabled user does NOT show (無効) badge', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, makePermissionRepoWithOptions({
+      users: [SAMPLE_ASSIGNMENT_USER_ENABLED],
+      albums: [],
+    }))
+    const res = await getAdmin(app, { path: '/admin/permissions' })
+    const body = await res.text()
+    expect(body).toContain(SAMPLE_ASSIGNMENT_USER_ENABLED.display_name)
+    expect(body).not.toContain('無効')
+  })
+
+  it('does NOT render password_hash in options page', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, makePermissionRepoWithOptions({
+      users: [SAMPLE_ASSIGNMENT_USER_ENABLED],
+      albums: [SAMPLE_ASSIGNMENT_ALBUM_ENABLED],
+    }))
+    const res = await getAdmin(app, { path: '/admin/permissions' })
+    const body = await res.text()
+    expect(body).not.toContain('password_hash')
+  })
+
+  it('does NOT render photoprism_album_uid in options page', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, makePermissionRepoWithOptions({
+      users: [SAMPLE_ASSIGNMENT_USER_ENABLED],
+      albums: [SAMPLE_ASSIGNMENT_ALBUM_ENABLED],
+    }))
+    const res = await getAdmin(app, { path: '/admin/permissions' })
+    const body = await res.text()
+    expect(body).not.toContain('photoprism_album_uid')
   })
 })
