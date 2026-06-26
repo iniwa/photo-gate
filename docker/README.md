@@ -200,3 +200,9 @@ The daemon consumes this object to trigger an out-of-schedule sync:
 The request object contains only `schema`, `requestId`, `requestedAt`, and
 `kind`. No secrets, admin identity, album title, PhotoPrism UID, or R2
 credentials appear in the object or in any log line.
+
+- **Trigger metadata**: after each sync attempt, the daemon publishes schema 2
+  status to `ops/sync-status.json` with `lastTriggerKind` (`"manual"` or
+  `"scheduled"`) and `lastHandledRequestId` (request ID after a manual sync,
+  or `null`). The local health file remains schema 1 and does not include
+  trigger fields.

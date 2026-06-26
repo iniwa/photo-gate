@@ -1,5 +1,5 @@
 export interface AdminSyncStatus {
-  schema: 1
+  schema: 1 | 2
   publishedAt: string
   albumId: string
   intervalSeconds: number
@@ -11,4 +11,6 @@ export interface AdminSyncStatus {
   lastError: string | null
   consecutiveFailures: number
   runsCompleted: number
+  lastTriggerKind: 'scheduled' | 'manual' | null
+  lastHandledRequestId: string | null
 }

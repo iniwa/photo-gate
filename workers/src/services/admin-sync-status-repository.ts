@@ -7,12 +7,23 @@ const SYNC_STATUS_KEY = 'ops/sync-status.json'
 const LAST_ERROR_FORBIDDEN =
   /http:\/\/|https:\/\/|token|secret|password|authorization|cf-access-jwt-assertion/i
 
-const EXPECTED_KEY_COUNT = 12
-const EXPECTED_KEYS = new Set([
+const SCHEMA_1_KEY_COUNT = 12
+const SCHEMA_2_KEY_COUNT = 14
+
+const SCHEMA_1_KEYS = new Set([
   'schema', 'publishedAt', 'albumId', 'intervalSeconds', 'startedAt',
   'heartbeatAt', 'lastAttemptStartedAt', 'lastAttemptCompletedAt',
   'lastResult', 'lastError', 'consecutiveFailures', 'runsCompleted',
 ])
+
+const SCHEMA_2_KEYS = new Set([
+  'schema', 'publishedAt', 'albumId', 'intervalSeconds', 'startedAt',
+  'heartbeatAt', 'lastAttemptStartedAt', 'lastAttemptCompletedAt',
+  'lastResult', 'lastError', 'consecutiveFailures', 'runsCompleted',
+  'lastTriggerKind', 'lastHandledRequestId',
+])
+
+const TRIGGER_ID_RE = /^[0-9a-f]{32}$/
 
 // Docker daemon emits YYYY-MM-DDTHH:mm:ssZ (no milliseconds).
 // Worker clock emits YYYY-MM-DDTHH:mm:ss.sssZ (milliseconds).
@@ -46,16 +57,30 @@ function isValidLastError(value: unknown): value is string | null {
   return true
 }
 
-function parseSyncStatus(parsed: unknown): AdminSyncStatus | null {
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
-  const obj = parsed as Record<string, unknown>
-  const keys = Object.keys(obj)
-  if (keys.length !== EXPECTED_KEY_COUNT) return null
-  for (const k of keys) {
-    if (!EXPECTED_KEYS.has(k)) return null
-  }
+function isValidTriggerKind(value: unknown): value is 'scheduled' | 'manual' | null {
+  return value === null || value === 'scheduled' || value === 'manual'
+}
 
-  if (obj['schema'] !== 1) return null
+function isValidHandledRequestId(value: unknown): value is string | null {
+  if (value === null) return true
+  return typeof value === 'string' && TRIGGER_ID_RE.test(value)
+}
+
+type CommonFields = {
+  publishedAt: string
+  albumId: string
+  intervalSeconds: number
+  startedAt: string
+  heartbeatAt: string
+  lastAttemptStartedAt: string | null
+  lastAttemptCompletedAt: string | null
+  lastResult: 'ok' | 'failed' | null
+  lastError: string | null
+  consecutiveFailures: number
+  runsCompleted: number
+}
+
+function parseCommonFields(obj: Record<string, unknown>): CommonFields | null {
   if (!isSyncStatusTimestamp(obj['publishedAt'])) return null
   if (!isValidId(obj['albumId'])) return null
   if (!isSafeNonNegativeInt(obj['intervalSeconds'])) return null
@@ -76,7 +101,6 @@ function parseSyncStatus(parsed: unknown): AdminSyncStatus | null {
   if (!isSafeNonNegativeInt(obj['runsCompleted'])) return null
 
   return {
-    schema: 1,
     publishedAt: obj['publishedAt'] as string,
     albumId: obj['albumId'] as string,
     intervalSeconds: obj['intervalSeconds'] as number,
@@ -89,6 +113,42 @@ function parseSyncStatus(parsed: unknown): AdminSyncStatus | null {
     consecutiveFailures: obj['consecutiveFailures'] as number,
     runsCompleted: obj['runsCompleted'] as number,
   }
+}
+
+function parseSyncStatus(parsed: unknown): AdminSyncStatus | null {
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
+  const obj = parsed as Record<string, unknown>
+  const keys = Object.keys(obj)
+  const schema = obj['schema']
+
+  if (schema === 1) {
+    if (keys.length !== SCHEMA_1_KEY_COUNT) return null
+    for (const k of keys) {
+      if (!SCHEMA_1_KEYS.has(k)) return null
+    }
+    const common = parseCommonFields(obj)
+    if (common === null) return null
+    return { schema: 1, ...common, lastTriggerKind: null, lastHandledRequestId: null }
+  }
+
+  if (schema === 2) {
+    if (keys.length !== SCHEMA_2_KEY_COUNT) return null
+    for (const k of keys) {
+      if (!SCHEMA_2_KEYS.has(k)) return null
+    }
+    const common = parseCommonFields(obj)
+    if (common === null) return null
+    if (!isValidTriggerKind(obj['lastTriggerKind'])) return null
+    if (!isValidHandledRequestId(obj['lastHandledRequestId'])) return null
+    return {
+      schema: 2,
+      ...common,
+      lastTriggerKind: obj['lastTriggerKind'] as 'scheduled' | 'manual' | null,
+      lastHandledRequestId: obj['lastHandledRequestId'] as string | null,
+    }
+  }
+
+  return null
 }
 
 function syncStatusReadError(): Error {

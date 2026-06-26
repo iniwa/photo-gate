@@ -1,6 +1,6 @@
 # Current State
 
-Last audited: 2026-06-25.
+Last audited: 2026-06-26.
 
 ## Level
 
@@ -81,11 +81,12 @@ documented for incident use.
   (`CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, `ADMIN_EMAILS`) are registered and
   operator-verified on 2026-06-23; the production admin surface is usable.
   Sync request controls have an accepted ADR (`docs/decisions/2026-06-25-sync-request-controls.md`)
-  and both the Worker-side request writer and Docker-side request consumer are
-  implemented and reviewed locally. The visible Sync Now button, pending
-  indicator, and status schema 2 remain unimplemented. Album creation/deletion
-  and PhotoPrism-coupled album operations, dry-run cleanup, and final hardening
-  remain unimplemented.
+  and the local manual sync administration loop is implemented and reviewed:
+  Worker request writer, Docker request consumer, status schema 2 trigger
+  metadata, pending indicator, and no-JS Sync Now form. Production Worker
+  deploy, Docker image release/stack update, and live manual-sync smoke remain
+  unperformed. Album creation/deletion and PhotoPrism-coupled album operations,
+  dry-run cleanup, and final hardening remain unimplemented.
 
 ## Verification Baseline
 
@@ -93,9 +94,9 @@ documented for incident use.
   in the last production baseline (2026-06-12). The reviewed `/admin`
   authentication foundation, read-only inventories, permission mutations,
   album and user enable/disable controls, user create/password-reset controls,
-  album public metadata update controls, read-only admin ops summary, and
-  read-only admin sync status pass lint, typecheck, build, and 1726 tests /
-  31 files locally (2026-06-25).
+  album public metadata update controls, read-only admin ops summary, read-only
+  admin sync status, and the manual sync UI/status-schema additions pass lint,
+  typecheck, build, and 1844 tests / 32 files locally (2026-06-26).
   Production audit is clean; full `npm audit` remains blocked by devDependency
   advisories in Wrangler/Miniflare. Workers CI checks and deploy succeeded for
   commit `42a7b56`; production smoke confirms the user inventory plus
@@ -104,6 +105,8 @@ documented for incident use.
   the admin sync-status handoff passed 190 tests with 34 expected libvips/pyvips
   skips plus `python -m compileall src` locally (2026-06-25). The Docker-side
   sync request consumer passed 253 tests with 34 expected libvips/pyvips skips
+  plus `python -m compileall src` locally (2026-06-26). The status schema 2 /
+  admin sync UI handoff passed 265 tests with 34 expected libvips/pyvips skips
   plus `python -m compileall src` locally (2026-06-26); Docker image build was
   skipped because Docker Desktop was not running.
 - Live security posture verified 2026-06-11/12: unauthenticated pages

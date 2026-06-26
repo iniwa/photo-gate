@@ -29,9 +29,11 @@ _BASE_STATE = HealthState(
 
 _PUBLISHED_AT = "2026-06-25T00:02:05Z"
 
+_VALID_REQUEST_ID = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
 
-def _payload(state=_BASE_STATE, published_at=_PUBLISHED_AT):
-    return json.loads(build_sync_status(state, published_at))
+
+def _payload(state=_BASE_STATE, published_at=_PUBLISHED_AT, **kwargs):
+    return json.loads(build_sync_status(state, published_at, **kwargs))
 
 
 # ---------------------------------------------------------------------------
@@ -59,8 +61,8 @@ def test_build_is_valid_json():
     assert isinstance(parsed, dict)
 
 
-def test_build_schema_is_1():
-    assert _payload()["schema"] == 1
+def test_build_schema_is_2():
+    assert _payload()["schema"] == 2
 
 
 def test_build_published_at_matches_arg():
@@ -161,6 +163,71 @@ def test_build_runs_completed_zero():
 
 
 # ---------------------------------------------------------------------------
+# Trigger fields — defaults
+# ---------------------------------------------------------------------------
+
+
+def test_build_last_trigger_kind_default_null():
+    assert _payload()["lastTriggerKind"] is None
+
+
+def test_build_last_handled_request_id_default_null():
+    assert _payload()["lastHandledRequestId"] is None
+
+
+# ---------------------------------------------------------------------------
+# Trigger fields — valid values
+# ---------------------------------------------------------------------------
+
+
+def test_build_last_trigger_kind_scheduled():
+    assert _payload(last_trigger_kind="scheduled")["lastTriggerKind"] == "scheduled"
+
+
+def test_build_last_trigger_kind_manual():
+    assert _payload(last_trigger_kind="manual")["lastTriggerKind"] == "manual"
+
+
+def test_build_last_handled_request_id_valid():
+    assert (
+        _payload(last_handled_request_id=_VALID_REQUEST_ID)["lastHandledRequestId"]
+        == _VALID_REQUEST_ID
+    )
+
+
+# ---------------------------------------------------------------------------
+# Trigger fields — validation failures
+# ---------------------------------------------------------------------------
+
+
+def test_rejects_invalid_last_trigger_kind():
+    with pytest.raises(ValueError):
+        build_sync_status(_BASE_STATE, _PUBLISHED_AT, last_trigger_kind="unknown")
+
+
+def test_rejects_bool_last_trigger_kind():
+    with pytest.raises(ValueError):
+        build_sync_status(_BASE_STATE, _PUBLISHED_AT, last_trigger_kind=True)  # type: ignore[arg-type]
+
+
+def test_rejects_last_handled_request_id_uppercase():
+    with pytest.raises(ValueError):
+        build_sync_status(
+            _BASE_STATE, _PUBLISHED_AT, last_handled_request_id="A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4"
+        )
+
+
+def test_rejects_last_handled_request_id_too_short():
+    with pytest.raises(ValueError):
+        build_sync_status(_BASE_STATE, _PUBLISHED_AT, last_handled_request_id="abc123")
+
+
+def test_rejects_bool_last_handled_request_id():
+    with pytest.raises(ValueError):
+        build_sync_status(_BASE_STATE, _PUBLISHED_AT, last_handled_request_id=True)  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
 # Validation: published_at
 # ---------------------------------------------------------------------------
 
@@ -237,7 +304,7 @@ def test_rejects_invalid_last_result():
 
 
 # ---------------------------------------------------------------------------
-# Exact key set
+# Exact key set (14 keys for schema 2)
 # ---------------------------------------------------------------------------
 
 
@@ -255,5 +322,7 @@ def test_exact_keys():
         "lastError",
         "consecutiveFailures",
         "runsCompleted",
+        "lastTriggerKind",
+        "lastHandledRequestId",
     }
     assert set(_payload().keys()) == expected

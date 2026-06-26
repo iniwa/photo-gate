@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-06-25.
+Last updated: 2026-06-26.
 
 ## Current Completion Level
 
@@ -13,6 +13,28 @@ immutable-tag Portainer procedure remains available for incident use.
 ## Current Task
 
 There is no active implementation handoff.
+
+The thirteenth Level 3 implementation handoff is reviewed and complete locally:
+
+- DONE: manual sync admin UI and status schema 2.
+- Docker remote sync status now publishes schema 2 with `lastTriggerKind` and
+  `lastHandledRequestId`, while the local health file remains schema 1 and
+  unchanged for Docker HEALTHCHECK.
+- Worker sync status parsing accepts both schema 1 and schema 2; schema 1 is
+  normalized with null trigger metadata, and schema 2 trigger fields are
+  strictly validated.
+- `GET /admin/sync` now reads pending request state from the fixed private R2
+  key `ops/sync-request.json`, renders a boolean-only pending indicator, and
+  exposes a no-JS form that posts `kind=sync-now` to the already-reviewed
+  `POST /admin/sync/request` route.
+- Pending request IDs/timestamps/raw JSON, R2 details, admin identity, album
+  titles, PhotoPrism UIDs/URLs/tokens, and source photo data are not rendered or
+  logged. The existing POST guard/content-type/form validation was not weakened.
+- DONE: local verification on 2026-06-26 passed Workers lint, typecheck, build,
+  1844 tests / 32 files, production dependency audit, Docker pytest with
+  265 passed / 34 expected libvips/pyvips skips, `python -m compileall src`,
+  and `git diff --check`. Docker build/smoke was skipped because Docker Desktop
+  was not running.
 
 The twelfth Level 3 implementation handoff is reviewed and complete locally:
 
@@ -292,7 +314,9 @@ documented.
   passed 190 tests with 34 expected libvips/pyvips skips and
   `python -m compileall src` locally (2026-06-25). The Docker-side sync request
   consumer passed 253 tests with 34 expected libvips/pyvips skips and
-  `python -m compileall src` locally (2026-06-26); Docker build/smoke was
+  `python -m compileall src` locally (2026-06-26). The status schema 2 /
+  admin sync UI handoff passed 265 tests with 34 expected libvips/pyvips skips
+  and `python -m compileall src` locally (2026-06-26); Docker build/smoke was
   skipped because Docker Desktop was not running. The operator confirmed the
   production Pi is running `0.2.1` on 2026-06-23.
 - Live security posture (2026-06-11/12): unauthenticated pages 303 to
@@ -334,5 +358,6 @@ action list and full status snapshot.
 
 ## Next Priority
 
-Level 2 is complete. Next Level 3 priority is either finishing manual sync UI
-and status schema 2, or continuing broader album administration.
+Level 2 is complete. Next Level 3 priority is either preparing the manual sync
+Worker/Docker deployment and smoke plan, or continuing broader album
+administration.

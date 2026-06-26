@@ -230,3 +230,194 @@ describe('AdminSyncRequestRepository - no extra fields', () => {
     expect(Object.keys(parsed).sort()).toEqual(['kind', 'requestId', 'requestedAt', 'schema'].sort())
   })
 })
+
+// ---------------------------------------------------------------------------
+// getPendingRequest - helpers
+// ---------------------------------------------------------------------------
+
+const VALID_PENDING_JSON = JSON.stringify({
+  schema: 1,
+  requestId: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4',
+  requestedAt: '2026-06-25T00:00:00.000Z',
+  kind: 'sync-now',
+})
+
+function makeGetBucket(
+  object: { text(): Promise<string>; size?: number } | null,
+  throwOnGet = false,
+): R2Bucket {
+  return {
+    get: async () => {
+      if (throwOnGet) throw new Error('R2 get error')
+      return object as R2ObjectBody | null
+    },
+    put: async () => {},
+  } as unknown as R2Bucket
+}
+
+function makeGetObject(text: string, size?: number) {
+  return { text: async () => text, ...(size !== undefined ? { size } : {}) }
+}
+
+async function getPending(json: string, size?: number, throwOnGet = false) {
+  const bucket = makeGetBucket(makeGetObject(json, size), throwOnGet)
+  const repo = new AdminSyncRequestRepository(bucket)
+  return repo.getPendingRequest()
+}
+
+// ---------------------------------------------------------------------------
+// getPendingRequest - fixed key
+// ---------------------------------------------------------------------------
+
+describe('AdminSyncRequestRepository getPendingRequest - fixed key', () => {
+  it('reads exactly ops/sync-request.json', async () => {
+    let capturedKey: string | undefined
+    const bucket = {
+      get: async (key: string) => {
+        capturedKey = key
+        return makeGetObject(VALID_PENDING_JSON)
+      },
+      put: async () => {},
+    } as unknown as R2Bucket
+    const repo = new AdminSyncRequestRepository(bucket)
+    await repo.getPendingRequest()
+    expect(capturedKey).toBe('ops/sync-request.json')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// getPendingRequest - missing
+// ---------------------------------------------------------------------------
+
+describe('AdminSyncRequestRepository getPendingRequest - missing', () => {
+  it('returns missing when R2 returns null', async () => {
+    const bucket = makeGetBucket(null)
+    const repo = new AdminSyncRequestRepository(bucket)
+    const result = await repo.getPendingRequest()
+    expect(result.status).toBe('missing')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// getPendingRequest - found
+// ---------------------------------------------------------------------------
+
+describe('AdminSyncRequestRepository getPendingRequest - found', () => {
+  it('returns found with valid JSON', async () => {
+    const result = await getPending(VALID_PENDING_JSON)
+    expect(result.status).toBe('found')
+  })
+
+  it('found value has schema=1', async () => {
+    const result = await getPending(VALID_PENDING_JSON)
+    if (result.status !== 'found') throw new Error('expected found')
+    expect(result.value.schema).toBe(1)
+  })
+
+  it('found value has requestId', async () => {
+    const result = await getPending(VALID_PENDING_JSON)
+    if (result.status !== 'found') throw new Error('expected found')
+    expect(result.value.requestId).toBe('a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4')
+  })
+
+  it('found value has requestedAt', async () => {
+    const result = await getPending(VALID_PENDING_JSON)
+    if (result.status !== 'found') throw new Error('expected found')
+    expect(result.value.requestedAt).toBe('2026-06-25T00:00:00.000Z')
+  })
+
+  it('found value has kind=sync-now', async () => {
+    const result = await getPending(VALID_PENDING_JSON)
+    if (result.status !== 'found') throw new Error('expected found')
+    expect(result.value.kind).toBe('sync-now')
+  })
+
+  it('accepts object with size exactly 4096', async () => {
+    const result = await getPending(VALID_PENDING_JSON, 4096)
+    expect(result.status).toBe('found')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// getPendingRequest - validation failures
+// ---------------------------------------------------------------------------
+
+describe('AdminSyncRequestRepository getPendingRequest - validation failures', () => {
+  it('throws when R2 get throws', async () => {
+    const bucket = makeGetBucket(null, true)
+    const repo = new AdminSyncRequestRepository(bucket)
+    await expect(repo.getPendingRequest()).rejects.toThrow('sync request read failed')
+  })
+
+  it('throws when object size > 4096', async () => {
+    await expect(getPending(VALID_PENDING_JSON, 4097)).rejects.toThrow('sync request read failed')
+  })
+
+  it('throws on malformed JSON', async () => {
+    await expect(getPending('not-json')).rejects.toThrow('sync request read failed')
+  })
+
+  it('throws on array root', async () => {
+    await expect(getPending('[]')).rejects.toThrow('sync request read failed')
+  })
+
+  it('throws on missing fields (only 3 keys)', async () => {
+    const p = JSON.parse(VALID_PENDING_JSON)
+    delete p['kind']
+    await expect(getPending(JSON.stringify(p))).rejects.toThrow('sync request read failed')
+  })
+
+  it('throws on extra fields (5 keys)', async () => {
+    const p = JSON.parse(VALID_PENDING_JSON)
+    p['extra'] = 'x'
+    await expect(getPending(JSON.stringify(p))).rejects.toThrow('sync request read failed')
+  })
+
+  it('throws when schema !== 1', async () => {
+    const p = JSON.parse(VALID_PENDING_JSON)
+    p['schema'] = 2
+    await expect(getPending(JSON.stringify(p))).rejects.toThrow('sync request read failed')
+  })
+
+  it('throws on requestId with uppercase hex', async () => {
+    const p = JSON.parse(VALID_PENDING_JSON)
+    p['requestId'] = 'A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4'
+    await expect(getPending(JSON.stringify(p))).rejects.toThrow('sync request read failed')
+  })
+
+  it('throws on requestId too short', async () => {
+    const p = JSON.parse(VALID_PENDING_JSON)
+    p['requestId'] = 'abc123'
+    await expect(getPending(JSON.stringify(p))).rejects.toThrow('sync request read failed')
+  })
+
+  it('throws on requestedAt without milliseconds (Docker form)', async () => {
+    const p = JSON.parse(VALID_PENDING_JSON)
+    p['requestedAt'] = '2026-06-25T00:00:00Z'
+    await expect(getPending(JSON.stringify(p))).rejects.toThrow('sync request read failed')
+  })
+
+  it('throws on requestedAt with timezone offset', async () => {
+    const p = JSON.parse(VALID_PENDING_JSON)
+    p['requestedAt'] = '2026-06-25T09:00:00.000+09:00'
+    await expect(getPending(JSON.stringify(p))).rejects.toThrow('sync request read failed')
+  })
+
+  it('throws on wrong kind', async () => {
+    const p = JSON.parse(VALID_PENDING_JSON)
+    p['kind'] = 'other'
+    await expect(getPending(JSON.stringify(p))).rejects.toThrow('sync request read failed')
+  })
+
+  it('error message is sanitized (no requestId)', async () => {
+    const bucket = makeGetBucket(null, true)
+    const repo = new AdminSyncRequestRepository(bucket)
+    try {
+      await repo.getPendingRequest()
+      expect.fail('should have thrown')
+    } catch (err) {
+      expect((err as Error).message).toBe('sync request read failed')
+      expect((err as Error).message).not.toContain('a1b2c3d4')
+    }
+  })
+})

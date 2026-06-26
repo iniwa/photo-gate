@@ -320,7 +320,7 @@ type SyncStatusRepo = {
 }
 
 const SAMPLE_SYNC_STATUS: AdminSyncStatus = {
-  schema: 1,
+  schema: 2,
   publishedAt: '2026-06-25T00:00:00.000Z',
   albumId: 'my-album',
   intervalSeconds: 86400,
@@ -332,6 +332,8 @@ const SAMPLE_SYNC_STATUS: AdminSyncStatus = {
   lastError: null,
   consecutiveFailures: 0,
   runsCompleted: 1,
+  lastTriggerKind: null,
+  lastHandledRequestId: null,
 }
 
 function makeSyncStatusRepo(
@@ -347,24 +349,48 @@ function makeThrowingSyncStatusRepo(): SyncStatusRepo {
   return { getStatus: async () => { throw new Error('R2 exploded') } }
 }
 
+type SyncRequestValue = { schema: 1; requestId: string; requestedAt: string; kind: 'sync-now' }
+
 type SyncRequestRepo = {
-  writeRequest(req: { schema: 1; requestId: string; requestedAt: string; kind: 'sync-now' }): Promise<void>
+  writeRequest(req: SyncRequestValue): Promise<void>
+  getPendingRequest(): Promise<{ status: 'missing' } | { status: 'found'; value: SyncRequestValue }>
 }
 
 type CapturingSyncRequestRepo = SyncRequestRepo & {
-  calls: { schema: 1; requestId: string; requestedAt: string; kind: 'sync-now' }[]
+  calls: SyncRequestValue[]
 }
 
 function makeCapturingSyncRequestRepo(): CapturingSyncRequestRepo {
-  const calls: { schema: 1; requestId: string; requestedAt: string; kind: 'sync-now' }[] = []
+  const calls: SyncRequestValue[] = []
   return {
     calls,
     writeRequest: async (req) => { calls.push(req) },
+    getPendingRequest: async () => ({ status: 'missing' }),
   }
 }
 
 function makeThrowingSyncRequestRepo(): SyncRequestRepo {
-  return { writeRequest: async () => { throw new Error('R2 exploded') } }
+  return {
+    writeRequest: async () => { throw new Error('R2 exploded') },
+    getPendingRequest: async () => ({ status: 'missing' }),
+  }
+}
+
+function makePendingRequestRepo(): SyncRequestRepo {
+  return {
+    writeRequest: async () => {},
+    getPendingRequest: async () => ({
+      status: 'found',
+      value: { schema: 1, requestId: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4', requestedAt: '2026-06-25T00:00:00.000Z', kind: 'sync-now' },
+    }),
+  }
+}
+
+function makeThrowingPendingRequestRepo(): SyncRequestRepo {
+  return {
+    writeRequest: async () => {},
+    getPendingRequest: async () => { throw new Error('R2 exploded') },
+  }
 }
 
 function makeClockSpy() {
@@ -4654,21 +4680,129 @@ describe('POST /admin/sync/request — repo failure', () => {
 })
 
 // ---------------------------------------------------------------------------
-// GET /admin/sync — no visible Sync Now button
+// GET /admin/sync — Sync Now form
 // ---------------------------------------------------------------------------
 
-describe('GET /admin/sync — no visible Sync Now button', () => {
-  it('GET /admin/sync does not contain a form targeting /admin/sync/request', async () => {
+describe('GET /admin/sync — Sync Now form', () => {
+  it('form targets /admin/sync/request', async () => {
     const app = makeApp(goodAuth())
     const res = await getAdmin(app, { path: '/admin/sync' })
     const body = await res.text()
-    expect(body).not.toContain('/admin/sync/request')
+    expect(body).toContain('action="/admin/sync/request"')
   })
 
-  it('GET /admin/sync does not contain a sync-now submit button', async () => {
+  it('form has hidden input kind=sync-now', async () => {
     const app = makeApp(goodAuth())
     const res = await getAdmin(app, { path: '/admin/sync' })
     const body = await res.text()
-    expect(body).not.toContain('sync-now')
+    expect(body).toContain('name="kind"')
+    expect(body).toContain('value="sync-now"')
+  })
+
+  it('form has submit button 今すぐ同期', async () => {
+    const app = makeApp(goodAuth())
+    const res = await getAdmin(app, { path: '/admin/sync' })
+    const body = await res.text()
+    expect(body).toContain('今すぐ同期')
+  })
+
+  it('form uses method=post', async () => {
+    const app = makeApp(goodAuth())
+    const res = await getAdmin(app, { path: '/admin/sync' })
+    const body = await res.text()
+    expect(body).toContain('method="post"')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// GET /admin/sync — pending indicator
+// ---------------------------------------------------------------------------
+
+describe('GET /admin/sync — pending indicator', () => {
+  it('shows 同期リクエスト処理待ち when request is pending', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, makePendingRequestRepo())
+    const res = await getAdmin(app, { path: '/admin/sync' })
+    const body = await res.text()
+    expect(body).toContain('同期リクエスト処理待ち')
+  })
+
+  it('does not show 同期リクエスト処理待ち when no pending request', async () => {
+    const app = makeApp(goodAuth())
+    const res = await getAdmin(app, { path: '/admin/sync' })
+    const body = await res.text()
+    expect(body).not.toContain('同期リクエスト処理待ち')
+  })
+
+  it('does not render requestId in response when pending', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, makePendingRequestRepo())
+    const res = await getAdmin(app, { path: '/admin/sync' })
+    const body = await res.text()
+    expect(body).not.toContain('a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4')
+  })
+
+  it('returns 500 when getPendingRequest throws', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, makeThrowingPendingRequestRepo())
+    const res = await getAdmin(app, { path: '/admin/sync' })
+    expect(res.status).toBe(500)
+  })
+
+  it('returns no-store on 500 from getPendingRequest', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, makeThrowingPendingRequestRepo())
+    const res = await getAdmin(app, { path: '/admin/sync' })
+    expect(res.headers.get('Cache-Control')).toBe('no-store')
+  })
+
+  it('does not render error detail on getPendingRequest 500', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, makeThrowingPendingRequestRepo())
+    const res = await getAdmin(app, { path: '/admin/sync' })
+    const body = await res.text()
+    expect(body).not.toContain('R2 exploded')
+    expect(body).not.toContain('ops/sync-request')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// GET /admin/sync — trigger metadata
+// ---------------------------------------------------------------------------
+
+describe('GET /admin/sync — trigger metadata', () => {
+  it('renders 未報告 when lastTriggerKind is null', async () => {
+    const statusRepo = makeSyncStatusRepo({ status: 'found', value: { ...SAMPLE_SYNC_STATUS, lastTriggerKind: null } })
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, statusRepo)
+    const res = await getAdmin(app, { path: '/admin/sync' })
+    const body = await res.text()
+    expect(body).toContain('未報告')
+  })
+
+  it('renders 定期実行 when lastTriggerKind is scheduled', async () => {
+    const statusRepo = makeSyncStatusRepo({ status: 'found', value: { ...SAMPLE_SYNC_STATUS, lastTriggerKind: 'scheduled' } })
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, statusRepo)
+    const res = await getAdmin(app, { path: '/admin/sync' })
+    const body = await res.text()
+    expect(body).toContain('定期実行')
+  })
+
+  it('renders 手動実行 when lastTriggerKind is manual', async () => {
+    const statusRepo = makeSyncStatusRepo({ status: 'found', value: { ...SAMPLE_SYNC_STATUS, lastTriggerKind: 'manual' } })
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, statusRepo)
+    const res = await getAdmin(app, { path: '/admin/sync' })
+    const body = await res.text()
+    expect(body).toContain('手動実行')
+  })
+
+  it('shows lastHandledRequestId when non-null', async () => {
+    const statusRepo = makeSyncStatusRepo({ status: 'found', value: { ...SAMPLE_SYNC_STATUS, lastHandledRequestId: 'deadbeef12345678deadbeef12345678' } })
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, statusRepo)
+    const res = await getAdmin(app, { path: '/admin/sync' })
+    const body = await res.text()
+    expect(body).toContain('deadbeef12345678deadbeef12345678')
+  })
+
+  it('does not show lastHandledRequestId row when null', async () => {
+    const statusRepo = makeSyncStatusRepo({ status: 'found', value: { ...SAMPLE_SYNC_STATUS, lastHandledRequestId: null } })
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, statusRepo)
+    const res = await getAdmin(app, { path: '/admin/sync' })
+    const body = await res.text()
+    expect(body).not.toContain('最終処理リクエストID')
   })
 })

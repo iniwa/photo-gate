@@ -43,6 +43,10 @@ export interface AdminRouteDeps {
   }
   syncRequestRepo: {
     writeRequest(req: AdminSyncRequest): Promise<void>
+    getPendingRequest(): Promise<
+      | { status: 'missing' }
+      | { status: 'found'; value: AdminSyncRequest }
+    >
   }
   clock: () => Date
 }
@@ -423,11 +427,19 @@ export function createAdminRoutes(
       c.header('Cache-Control', 'no-store')
       return c.text('Internal Server Error', 500)
     }
+    let pendingResult: { status: 'missing' } | { status: 'found'; value: AdminSyncRequest }
+    try {
+      pendingResult = await deps.syncRequestRepo.getPendingRequest()
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+    const isPending = pendingResult.status === 'found'
     c.header('Cache-Control', 'no-store')
     if (result.status === 'missing') {
-      return c.html(<AdminSyncPage syncStatus={null} />)
+      return c.html(<AdminSyncPage syncStatus={null} isPending={isPending} />)
     }
-    return c.html(<AdminSyncPage syncStatus={result.value} />)
+    return c.html(<AdminSyncPage syncStatus={result.value} isPending={isPending} />)
   })
 
   // Sync request writer. Runs AFTER the admin guard, then enforces: strict
@@ -1074,17 +1086,30 @@ function AdminPermissionsPage({ page }: { page: AdminPermissionPage }) {
   )
 }
 
+function triggerKindLabel(kind: 'scheduled' | 'manual' | null): string {
+  if (kind === 'scheduled') return '定期実行'
+  if (kind === 'manual') return '手動実行'
+  return '未報告'
+}
+
 /**
- * Read-only sync status page. Renders only sanitized operational fields.
- * No album title, PhotoPrism UID/URL/token, R2 credentials, or raw JSON.
+ * Sync status page. Renders sanitized operational fields, a pending indicator,
+ * and a no-JS form to trigger a manual sync.
+ * No album title, PhotoPrism UID/URL/token, R2 credentials, raw JSON,
+ * pending request ID, or pending timestamp is rendered.
  */
-function AdminSyncPage({ syncStatus }: { syncStatus: AdminSyncStatus | null }) {
+function AdminSyncPage({ syncStatus, isPending }: { syncStatus: AdminSyncStatus | null; isPending: boolean }) {
   return (
     <Layout title="同期状態">
       <a class="back-link" href="/admin">
         ← 管理コンソールへ
       </a>
       <h1>同期状態</h1>
+      {isPending && (<p class="empty-note">同期リクエスト処理待ち</p>)}
+      <form method="post" action="/admin/sync/request">
+        <input type="hidden" name="kind" value="sync-now" />
+        <button type="submit">今すぐ同期</button>
+      </form>
       {syncStatus === null ? (
         <p class="empty-note">未報告 (status not reported yet)</p>
       ) : (
@@ -1102,6 +1127,10 @@ function AdminSyncPage({ syncStatus }: { syncStatus: AdminSyncStatus | null }) {
               <tr><th>最終エラー</th><td>{syncStatus.lastError ?? 'なし'}</td></tr>
               <tr><th>連続失敗回数</th><td>{syncStatus.consecutiveFailures}</td></tr>
               <tr><th>完了回数</th><td>{syncStatus.runsCompleted}</td></tr>
+              <tr><th>トリガー種別</th><td>{triggerKindLabel(syncStatus.lastTriggerKind)}</td></tr>
+              {syncStatus.lastHandledRequestId !== null && (
+                <tr><th>最終処理リクエストID</th><td>{syncStatus.lastHandledRequestId}</td></tr>
+              )}
             </tbody>
           </table>
         </>

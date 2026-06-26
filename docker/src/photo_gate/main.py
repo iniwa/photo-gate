@@ -219,6 +219,9 @@ async def _publish_sync_status(
     state: "HealthState",
     store: object,
     clock: "Callable[[], datetime]",
+    *,
+    last_trigger_kind: "str | None" = None,
+    last_handled_request_id: "str | None" = None,
 ) -> None:
     """Best-effort R2 publish of sanitized sync status. Never propagates."""
     if store is None:
@@ -226,7 +229,12 @@ async def _publish_sync_status(
     try:
         from .sync_status import build_sync_status, SYNC_STATUS_KEY
         published_at = _utc_now_iso(clock)
-        data = build_sync_status(state, published_at)
+        data = build_sync_status(
+            state,
+            published_at,
+            last_trigger_kind=last_trigger_kind,
+            last_handled_request_id=last_handled_request_id,
+        )
         await store.put(SYNC_STATUS_KEY, data, "application/json")
     except Exception:
         pass
@@ -508,6 +516,7 @@ async def run_sync_daemon(
     runs = 0
     exit_code = 0
     _last_handled_request_id: str | None = None
+    _last_trigger_kind: str | None = None
     # run_sync_once reports the sanitized failure description here so the
     # health file can show why the last attempt failed.
     last_error_box: list[str | None] = [None]
@@ -524,6 +533,9 @@ async def run_sync_daemon(
                 _status_store, clock, _last_handled_request_id, log
             )
 
+            # Determine trigger kind for this attempt.
+            _last_trigger_kind = "manual" if _pending_req is not None else "scheduled"
+
             # Record attempt start
             state = dataclasses.replace(
                 state,
@@ -534,7 +546,13 @@ async def run_sync_daemon(
                 write_health(state, health_path)
             except OSError:
                 pass
-            await _publish_sync_status(state, _status_store, clock)
+            await _publish_sync_status(
+                state,
+                _status_store,
+                clock,
+                last_trigger_kind=_last_trigger_kind,
+                last_handled_request_id=_last_handled_request_id,
+            )
 
             log.info("starting sync attempt %d for album %s", runs + 1, album_id)
             t_start = clock()
@@ -612,7 +630,13 @@ async def run_sync_daemon(
                 write_health(state, health_path)
             except OSError:
                 pass
-            await _publish_sync_status(state, _status_store, clock)
+            await _publish_sync_status(
+                state,
+                _status_store,
+                clock,
+                last_trigger_kind=_last_trigger_kind,
+                last_handled_request_id=_last_handled_request_id,
+            )
 
             if shutdown_event.is_set():
                 break

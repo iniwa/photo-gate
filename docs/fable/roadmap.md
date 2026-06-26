@@ -149,9 +149,9 @@ This is a priority-ordered plan. Update status as implementation progresses.
       publication implemented and reviewed locally 2026-06-25. The manual sync
       request controls ADR was accepted 2026-06-25 with a fixed private R2
       request object design at `ops/sync-request.json`; Worker-side request
-      writing and Docker-side request consumption are implemented and reviewed
-      locally. The visible Sync Now button, pending indicator, and status
-      schema 2 remain.)
+      writing, Docker-side request consumption, status schema 2 trigger
+      metadata, pending indicator, and no-JS Sync Now form are implemented and
+      reviewed locally. Production deploy/release/smoke remains.)
 - [x] Add operational audit information without sensitive-data leakage.
       (Read-only `/admin/ops` aggregate D1 summary implemented and reviewed
       locally 2026-06-25; no row-level identity/title/hash/token/PhotoPrism/R2

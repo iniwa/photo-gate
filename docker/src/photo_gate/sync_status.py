@@ -14,6 +14,8 @@ SYNC_STATUS_KEY = "ops/sync-status.json"
 _DAEMON_TS = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 _SAFE_ID = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$")
 _VALID_LAST_RESULT = frozenset({"ok", "failed"})
+_VALID_TRIGGER_KINDS = frozenset({"scheduled", "manual"})
+_TRIGGER_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 
 
 def _require_daemon_ts(value: object, field: str) -> None:
@@ -39,7 +41,13 @@ def _require_nullable_daemon_ts(value: object, field: str) -> None:
     _require_daemon_ts(value, field)
 
 
-def build_sync_status(state: HealthState, published_at: str) -> bytes:
+def build_sync_status(
+    state: HealthState,
+    published_at: str,
+    *,
+    last_trigger_kind: str | None = None,
+    last_handled_request_id: str | None = None,
+) -> bytes:
     """
     Build and validate the public sync status payload from *state*.
     Returns UTF-8 JSON bytes.
@@ -79,8 +87,22 @@ def build_sync_status(state: HealthState, published_at: str) -> bytes:
             f"runs_completed must be a non-negative int, got {state.runs_completed!r}"
         )
 
+    if last_trigger_kind is not None and last_trigger_kind not in _VALID_TRIGGER_KINDS:
+        raise ValueError(
+            f"last_trigger_kind must be 'scheduled', 'manual', or None, got {last_trigger_kind!r}"
+        )
+
+    if last_handled_request_id is not None:
+        if (
+            not isinstance(last_handled_request_id, str)
+            or not _TRIGGER_ID_RE.match(last_handled_request_id)
+        ):
+            raise ValueError(
+                "last_handled_request_id must be a 32-char lowercase hex string or None"
+            )
+
     payload = {
-        "schema": 1,
+        "schema": 2,
         "publishedAt": published_at,
         "albumId": state.album_id,
         "intervalSeconds": state.interval_seconds,
@@ -92,6 +114,8 @@ def build_sync_status(state: HealthState, published_at: str) -> bytes:
         "lastError": state.last_error,
         "consecutiveFailures": state.consecutive_failures,
         "runsCompleted": state.runs_completed,
+        "lastTriggerKind": last_trigger_kind,
+        "lastHandledRequestId": last_handled_request_id,
     }
 
     return json.dumps(payload, ensure_ascii=False).encode("utf-8")

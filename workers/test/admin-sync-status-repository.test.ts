@@ -19,10 +19,10 @@ function makeObject(text: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Valid payload helper
+// Valid payload helpers
 // ---------------------------------------------------------------------------
 
-function makeValidPayload(overrides: Record<string, unknown> = {}): string {
+function makeValidPayloadV1(overrides: Record<string, unknown> = {}): string {
   const base: Record<string, unknown> = {
     schema: 1,
     publishedAt: '2026-06-25T00:00:00Z',
@@ -36,6 +36,29 @@ function makeValidPayload(overrides: Record<string, unknown> = {}): string {
     lastError: null,
     consecutiveFailures: 0,
     runsCompleted: 1,
+  }
+  return JSON.stringify({ ...base, ...overrides })
+}
+
+// Keep alias for existing tests
+const makeValidPayload = makeValidPayloadV1
+
+function makeValidPayloadV2(overrides: Record<string, unknown> = {}): string {
+  const base: Record<string, unknown> = {
+    schema: 2,
+    publishedAt: '2026-06-25T00:00:00Z',
+    albumId: 'my-album',
+    intervalSeconds: 86400,
+    startedAt: '2026-06-25T00:00:00Z',
+    heartbeatAt: '2026-06-25T00:01:00Z',
+    lastAttemptStartedAt: '2026-06-25T00:00:00Z',
+    lastAttemptCompletedAt: '2026-06-25T00:02:00Z',
+    lastResult: 'ok',
+    lastError: null,
+    consecutiveFailures: 0,
+    runsCompleted: 1,
+    lastTriggerKind: null,
+    lastHandledRequestId: null,
   }
   return JSON.stringify({ ...base, ...overrides })
 }
@@ -77,13 +100,25 @@ describe('AdminSyncStatusRepository - missing', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Found - success
+// Schema 1 - success and normalization
 // ---------------------------------------------------------------------------
 
-describe('AdminSyncStatusRepository - found', () => {
-  it('returns found with valid JSON', async () => {
-    const result = await getRepo(makeValidPayload())
+describe('AdminSyncStatusRepository - schema 1 found', () => {
+  it('returns found with valid schema 1 JSON', async () => {
+    const result = await getRepo(makeValidPayloadV1())
     expect(result.status).toBe('found')
+  })
+
+  it('schema 1 normalizes lastTriggerKind to null', async () => {
+    const result = await getRepo(makeValidPayloadV1())
+    if (result.status !== 'found') throw new Error('expected found')
+    expect(result.value.lastTriggerKind).toBeNull()
+  })
+
+  it('schema 1 normalizes lastHandledRequestId to null', async () => {
+    const result = await getRepo(makeValidPayloadV1())
+    if (result.status !== 'found') throw new Error('expected found')
+    expect(result.value.lastHandledRequestId).toBeNull()
   })
 
   it('accepts Docker second-form timestamp (no ms)', async () => {
@@ -131,6 +166,120 @@ describe('AdminSyncStatusRepository - found', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Schema 2 - success
+// ---------------------------------------------------------------------------
+
+describe('AdminSyncStatusRepository - schema 2 found', () => {
+  it('returns found with valid schema 2 JSON', async () => {
+    const result = await getRepo(makeValidPayloadV2())
+    expect(result.status).toBe('found')
+  })
+
+  it('schema 2 with lastTriggerKind=scheduled', async () => {
+    const result = await getRepo(makeValidPayloadV2({ lastTriggerKind: 'scheduled' }))
+    if (result.status !== 'found') throw new Error('expected found')
+    expect(result.value.lastTriggerKind).toBe('scheduled')
+  })
+
+  it('schema 2 with lastTriggerKind=manual', async () => {
+    const result = await getRepo(makeValidPayloadV2({ lastTriggerKind: 'manual' }))
+    if (result.status !== 'found') throw new Error('expected found')
+    expect(result.value.lastTriggerKind).toBe('manual')
+  })
+
+  it('schema 2 with lastTriggerKind=null', async () => {
+    const result = await getRepo(makeValidPayloadV2({ lastTriggerKind: null }))
+    if (result.status !== 'found') throw new Error('expected found')
+    expect(result.value.lastTriggerKind).toBeNull()
+  })
+
+  it('schema 2 with valid lastHandledRequestId', async () => {
+    const result = await getRepo(makeValidPayloadV2({ lastHandledRequestId: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4' }))
+    if (result.status !== 'found') throw new Error('expected found')
+    expect(result.value.lastHandledRequestId).toBe('a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4')
+  })
+
+  it('schema 2 with lastHandledRequestId=null', async () => {
+    const result = await getRepo(makeValidPayloadV2({ lastHandledRequestId: null }))
+    if (result.status !== 'found') throw new Error('expected found')
+    expect(result.value.lastHandledRequestId).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Schema 2 - validation failures
+// ---------------------------------------------------------------------------
+
+describe('AdminSyncStatusRepository - schema 2 validation failures', () => {
+  it('throws on invalid lastTriggerKind (not a known kind)', async () => {
+    await expect(getRepo(makeValidPayloadV2({ lastTriggerKind: 'unknown' }))).rejects.toThrow()
+  })
+
+  it('throws on lastTriggerKind as boolean', async () => {
+    await expect(getRepo(makeValidPayloadV2({ lastTriggerKind: true }))).rejects.toThrow()
+  })
+
+  it('throws on lastTriggerKind as number', async () => {
+    await expect(getRepo(makeValidPayloadV2({ lastTriggerKind: 1 }))).rejects.toThrow()
+  })
+
+  it('throws on lastHandledRequestId with uppercase hex', async () => {
+    await expect(getRepo(makeValidPayloadV2({ lastHandledRequestId: 'A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4' }))).rejects.toThrow()
+  })
+
+  it('throws on lastHandledRequestId too short', async () => {
+    await expect(getRepo(makeValidPayloadV2({ lastHandledRequestId: 'abc123' }))).rejects.toThrow()
+  })
+
+  it('throws on lastHandledRequestId too long', async () => {
+    await expect(getRepo(makeValidPayloadV2({ lastHandledRequestId: 'a'.repeat(33) }))).rejects.toThrow()
+  })
+
+  it('throws on lastHandledRequestId as boolean', async () => {
+    await expect(getRepo(makeValidPayloadV2({ lastHandledRequestId: true }))).rejects.toThrow()
+  })
+
+  it('throws on lastHandledRequestId as number', async () => {
+    await expect(getRepo(makeValidPayloadV2({ lastHandledRequestId: 0 }))).rejects.toThrow()
+  })
+
+  it('throws on schema 2 missing lastTriggerKind', async () => {
+    const p = JSON.parse(makeValidPayloadV2())
+    delete p['lastTriggerKind']
+    await expect(getRepo(JSON.stringify(p))).rejects.toThrow()
+  })
+
+  it('throws on schema 2 missing lastHandledRequestId', async () => {
+    const p = JSON.parse(makeValidPayloadV2())
+    delete p['lastHandledRequestId']
+    await expect(getRepo(JSON.stringify(p))).rejects.toThrow()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Schema mixing rejected
+// ---------------------------------------------------------------------------
+
+describe('AdminSyncStatusRepository - schema mixing rejected', () => {
+  it('schema 1 with trigger fields (14 keys) throws', async () => {
+    const p = JSON.parse(makeValidPayloadV1())
+    p['lastTriggerKind'] = null
+    p['lastHandledRequestId'] = null
+    await expect(getRepo(JSON.stringify(p))).rejects.toThrow()
+  })
+
+  it('schema 2 with only 12 keys throws', async () => {
+    const p = JSON.parse(makeValidPayloadV1())
+    p['schema'] = 2
+    await expect(getRepo(JSON.stringify(p))).rejects.toThrow()
+  })
+
+  it('throws when schema is 3', async () => {
+    await expect(getRepo(makeValidPayload({ schema: 3 }))).rejects.toThrow()
+  })
+})
+
+// ---------------------------------------------------------------------------
 // R2 and JSON failures
 // ---------------------------------------------------------------------------
 
@@ -151,7 +300,7 @@ describe('AdminSyncStatusRepository - R2/JSON failures', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Schema validation failures
+// Schema validation failures (schema 1 base)
 // ---------------------------------------------------------------------------
 
 describe('AdminSyncStatusRepository - schema validation', () => {
@@ -165,10 +314,6 @@ describe('AdminSyncStatusRepository - schema validation', () => {
     const p = JSON.parse(makeValidPayload())
     p['extra'] = 'value'
     await expect(getRepo(JSON.stringify(p))).rejects.toThrow()
-  })
-
-  it('throws when schema !== 1', async () => {
-    await expect(getRepo(makeValidPayload({ schema: 2 }))).rejects.toThrow()
   })
 
   it('throws on invalid albumId (with spaces)', async () => {

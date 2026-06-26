@@ -1032,8 +1032,8 @@ def test_daemon_manual_sync_updates_health_file(tmp_path):
     assert data["consecutive_failures"] == 0
 
 
-def test_daemon_request_not_in_response_body(tmp_path):
-    """No request field values appear in health file or status publish."""
+def test_daemon_request_id_not_in_health_file(tmp_path):
+    """requestId and request key must never appear in the local health file (schema 1)."""
     health_path = str(tmp_path / "health.json")
     args = _build_parser().parse_args(_VALID_DAEMON_ARGS + [
         "--max-runs", "1",
@@ -1056,12 +1056,53 @@ def test_daemon_request_not_in_response_body(tmp_path):
     with open(health_path) as f:
         content = f.read()
 
-    # requestId must not leak into health file
-    assert "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4" not in content
-    # request key must not leak
-    assert "ops/sync-request.json" not in content
+    assert "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4" not in content, "requestId must not leak into health file"
+    assert "ops/sync-request.json" not in content, "request key must not appear in health file"
 
-    # Status publish bodies should also not contain requestId
-    for _, data, _ in store.calls:
-        body = data.decode("utf-8")
-        assert "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4" not in body
+
+def test_daemon_manual_trigger_kind_in_status(tmp_path):
+    """Manual sync: status publishes lastTriggerKind='manual' and lastHandledRequestId."""
+    args = _daemon_args_with(tmp_path, max_runs=1)
+    store = _FakeStore(request_bytes=_FIXED_REQUEST_BYTES)
+
+    code = asyncio.run(run_sync_daemon(
+        args,
+        config_loader=_FakeConfig,
+        client_factory=lambda cfg: _FakeClient(),
+        store_factory=lambda cfg: object(),
+        sync_fn=_noop_sync,
+        clock=lambda: _FIXED_TS,
+        sleep_fn=_instant_sleep,
+        status_store=store,
+    ))
+
+    assert code == 0
+    assert store.calls, "expected at least one status publish"
+    last_body = _json.loads(store.calls[-1][1])
+    assert last_body["schema"] == 2
+    assert last_body["lastTriggerKind"] == "manual"
+    assert last_body["lastHandledRequestId"] == "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+
+
+def test_daemon_scheduled_trigger_kind_in_status(tmp_path):
+    """Scheduled sync (no pending request): status publishes lastTriggerKind='scheduled'."""
+    args = _daemon_args_with(tmp_path, max_runs=1)
+    store = _FakeStore(request_bytes=None)
+
+    code = asyncio.run(run_sync_daemon(
+        args,
+        config_loader=_FakeConfig,
+        client_factory=lambda cfg: _FakeClient(),
+        store_factory=lambda cfg: object(),
+        sync_fn=_noop_sync,
+        clock=lambda: _FIXED_TS,
+        sleep_fn=_instant_sleep,
+        status_store=store,
+    ))
+
+    assert code == 0
+    assert store.calls, "expected at least one status publish"
+    last_body = _json.loads(store.calls[-1][1])
+    assert last_body["schema"] == 2
+    assert last_body["lastTriggerKind"] == "scheduled"
+    assert last_body["lastHandledRequestId"] is None
