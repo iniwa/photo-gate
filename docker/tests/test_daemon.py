@@ -26,6 +26,8 @@ from photo_gate.main import (
     _publish_sync_status,
     run_sync_daemon,
     _run_healthcheck,
+    _poll_sync_request,
+    _best_effort_delete_request,
 )
 from photo_gate.health import HealthState, write_health
 
@@ -585,14 +587,25 @@ def test_healthcheck_stderr_is_single_sanitized_line(tmp_path, capsys):
 
 
 class _FakeStore:
-    def __init__(self, fail: bool = False):
+    def __init__(self, fail: bool = False, request_bytes: bytes | None = None):
         self.calls: list[tuple[str, bytes, str]] = []
+        self.get_calls: list[str] = []
+        self.delete_calls: list[str] = []
         self._fail = fail
+        self._request_bytes = request_bytes
 
     async def put(self, key: str, data: bytes, content_type: str) -> None:
         if self._fail:
             raise RuntimeError("simulated put failure")
         self.calls.append((key, data, content_type))
+
+    async def get(self, key: str) -> bytes | None:
+        self.get_calls.append(key)
+        return self._request_bytes
+
+    async def delete(self, key: str) -> None:
+        self.delete_calls.append(key)
+        self._request_bytes = None  # simulate deletion clearing the object
 
 
 _HEALTH = HealthState(
@@ -672,3 +685,383 @@ def test_daemon_status_store_none_does_not_raise():
         )
     )
     assert code == 0
+
+
+# ---------------------------------------------------------------------------
+# Sync request polling: shared helpers
+# ---------------------------------------------------------------------------
+
+import json as _json
+
+# requestedAt matches _FIXED_TS so age = 0 (valid)
+_FIXED_REQUEST_BYTES = _json.dumps({
+    "schema": 1,
+    "requestId": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+    "requestedAt": "2026-06-12T00:00:00.000Z",
+    "kind": "sync-now",
+}).encode("utf-8")
+
+# requestedAt is 3601s before _FIXED_TS → stale
+_STALE_REQUEST_BYTES = _json.dumps({
+    "schema": 1,
+    "requestId": "b1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+    "requestedAt": "2026-06-11T22:59:59.000Z",
+    "kind": "sync-now",
+}).encode("utf-8")
+
+
+def _daemon_args_with(tmp_path, max_runs=1, interval_seconds=60):
+    return _build_parser().parse_args(_VALID_DAEMON_ARGS + [
+        "--max-runs", str(max_runs),
+        "--interval-seconds", str(interval_seconds),
+        "--health-file", str(tmp_path / "health.json"),
+    ])
+
+
+async def _instant_sleep(seconds):
+    pass
+
+
+# ---------------------------------------------------------------------------
+# Sync request polling: _poll_sync_request unit tests
+# ---------------------------------------------------------------------------
+
+
+def test_poll_request_store_none_returns_none():
+    result = asyncio.run(
+        _poll_sync_request(None, lambda: _FIXED_TS, None, logging.getLogger("test"))
+    )
+    assert result is None
+
+
+def test_poll_request_no_object_returns_none():
+    store = _FakeStore(request_bytes=None)
+    result = asyncio.run(
+        _poll_sync_request(store, lambda: _FIXED_TS, None, logging.getLogger("test"))
+    )
+    assert result is None
+
+
+def test_poll_request_valid_object_returns_dict():
+    store = _FakeStore(request_bytes=_FIXED_REQUEST_BYTES)
+    result = asyncio.run(
+        _poll_sync_request(store, lambda: _FIXED_TS, None, logging.getLogger("test"))
+    )
+    assert result is not None
+    assert result["requestId"] == "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+
+
+def test_poll_request_stale_returns_none_and_deletes():
+    store = _FakeStore(request_bytes=_STALE_REQUEST_BYTES)
+    result = asyncio.run(
+        _poll_sync_request(store, lambda: _FIXED_TS, None, logging.getLogger("test"))
+    )
+    assert result is None
+    assert len(store.delete_calls) == 1
+
+
+def test_poll_request_malformed_returns_none_and_deletes():
+    store = _FakeStore(request_bytes=b"not json")
+    result = asyncio.run(
+        _poll_sync_request(store, lambda: _FIXED_TS, None, logging.getLogger("test"))
+    )
+    assert result is None
+    assert len(store.delete_calls) == 1
+
+
+def test_poll_request_duplicate_returns_none_and_deletes():
+    store = _FakeStore(request_bytes=_FIXED_REQUEST_BYTES)
+    last_id = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+    result = asyncio.run(
+        _poll_sync_request(store, lambda: _FIXED_TS, last_id, logging.getLogger("test"))
+    )
+    assert result is None
+    assert len(store.delete_calls) == 1
+
+
+def test_poll_request_get_failure_returns_none():
+    class _ThrowingStore(_FakeStore):
+        async def get(self, key):
+            raise RuntimeError("R2 connection error")
+    store = _ThrowingStore()
+    result = asyncio.run(
+        _poll_sync_request(store, lambda: _FIXED_TS, None, logging.getLogger("test"))
+    )
+    assert result is None
+
+
+def test_best_effort_delete_failure_does_not_raise():
+    class _ThrowingStore(_FakeStore):
+        async def delete(self, key):
+            raise RuntimeError("R2 delete error")
+    store = _ThrowingStore()
+    # Must not raise
+    asyncio.run(_best_effort_delete_request(store, logging.getLogger("test")))
+
+
+# ---------------------------------------------------------------------------
+# Sync request polling: daemon integration tests
+# ---------------------------------------------------------------------------
+
+
+def test_daemon_valid_request_triggers_sync(tmp_path):
+    """A valid pending request at loop-start causes a sync attempt."""
+    args = _daemon_args_with(tmp_path, max_runs=1)
+    store = _FakeStore(request_bytes=_FIXED_REQUEST_BYTES)
+    sync_calls = []
+
+    async def counting_sync(*a, **kw):
+        sync_calls.append(1)
+
+    code = asyncio.run(run_sync_daemon(
+        args,
+        config_loader=_FakeConfig,
+        client_factory=lambda cfg: _FakeClient(),
+        store_factory=lambda cfg: object(),
+        sync_fn=counting_sync,
+        clock=lambda: _FIXED_TS,
+        sleep_fn=_instant_sleep,
+        status_store=store,
+    ))
+
+    assert code == 0
+    assert len(sync_calls) == 1
+
+
+def test_daemon_request_deleted_after_sync(tmp_path):
+    """The request object is best-effort deleted after the sync completes."""
+    args = _daemon_args_with(tmp_path, max_runs=1)
+    store = _FakeStore(request_bytes=_FIXED_REQUEST_BYTES)
+
+    code = asyncio.run(run_sync_daemon(
+        args,
+        config_loader=_FakeConfig,
+        client_factory=lambda cfg: _FakeClient(),
+        store_factory=lambda cfg: object(),
+        sync_fn=_noop_sync,
+        clock=lambda: _FIXED_TS,
+        sleep_fn=_instant_sleep,
+        status_store=store,
+    ))
+
+    assert code == 0
+    assert "ops/sync-request.json" in store.delete_calls
+
+
+def test_daemon_stale_request_skipped_sync_still_runs(tmp_path):
+    """A stale request is deleted; the scheduled sync still runs."""
+    args = _daemon_args_with(tmp_path, max_runs=1)
+    store = _FakeStore(request_bytes=_STALE_REQUEST_BYTES)
+    sync_calls = []
+
+    async def counting_sync(*a, **kw):
+        sync_calls.append(1)
+
+    code = asyncio.run(run_sync_daemon(
+        args,
+        config_loader=_FakeConfig,
+        client_factory=lambda cfg: _FakeClient(),
+        store_factory=lambda cfg: object(),
+        sync_fn=counting_sync,
+        clock=lambda: _FIXED_TS,
+        sleep_fn=_instant_sleep,
+        status_store=store,
+    ))
+
+    assert code == 0
+    assert len(sync_calls) == 1  # scheduled sync still ran
+    assert "ops/sync-request.json" in store.delete_calls
+
+
+def test_daemon_duplicate_request_skipped_second_sync_runs(tmp_path):
+    """
+    If the request object is not deleted (delete failed), a second loop
+    iteration recognises the same requestId as a duplicate and skips it.
+    """
+    class _NoDeleteStore(_FakeStore):
+        async def delete(self, key):
+            self.delete_calls.append(key)
+            # Do NOT clear _request_bytes to simulate delete failure
+
+    store = _NoDeleteStore(request_bytes=_FIXED_REQUEST_BYTES)
+    args = _daemon_args_with(tmp_path, max_runs=2)
+    sync_calls = []
+
+    async def counting_sync(*a, **kw):
+        sync_calls.append(1)
+
+    code = asyncio.run(run_sync_daemon(
+        args,
+        config_loader=_FakeConfig,
+        client_factory=lambda cfg: _FakeClient(),
+        store_factory=lambda cfg: object(),
+        sync_fn=counting_sync,
+        clock=lambda: _FIXED_TS,
+        sleep_fn=_instant_sleep,
+        status_store=store,
+    ))
+
+    assert code == 0
+    assert len(sync_calls) == 2  # both runs completed
+    assert store.delete_calls.count("ops/sync-request.json") >= 2
+
+
+def test_daemon_sleep_poll_breaks_early_when_request_appears(tmp_path):
+    """
+    A request discovered during inter-sync sleep should interrupt the sleep and
+    be consumed at the next loop-start poll, without waiting the full interval.
+    """
+    class _AppearingStore(_FakeStore):
+        async def get(self, key):
+            self.get_calls.append(key)
+            # First poll at loop start sees nothing. The mid-sleep poll sees
+            # the request, and the next loop-start poll consumes it.
+            if len(self.get_calls) == 1:
+                return None
+            return self._request_bytes
+
+    store = _AppearingStore(request_bytes=_FIXED_REQUEST_BYTES)
+    args = _daemon_args_with(tmp_path, max_runs=2, interval_seconds=120)
+    sync_calls = []
+    sleep_calls = []
+
+    async def counting_sync(*a, **kw):
+        sync_calls.append(1)
+
+    async def recording_sleep(seconds):
+        sleep_calls.append(seconds)
+
+    code = asyncio.run(run_sync_daemon(
+        args,
+        config_loader=_FakeConfig,
+        client_factory=lambda cfg: _FakeClient(),
+        store_factory=lambda cfg: object(),
+        sync_fn=counting_sync,
+        clock=lambda: _FIXED_TS,
+        sleep_fn=recording_sleep,
+        status_store=store,
+    ))
+
+    assert code == 0
+    assert len(sync_calls) == 2
+    assert sleep_calls == [60]
+    assert store.get_calls.count("ops/sync-request.json") >= 3
+    assert "ops/sync-request.json" in store.delete_calls
+
+
+def test_daemon_request_get_failure_does_not_crash(tmp_path):
+    """R2 GET failure is a warning; daemon continues normally."""
+    class _ThrowingGetStore(_FakeStore):
+        async def get(self, key):
+            raise RuntimeError("R2 connection error")
+
+    store = _ThrowingGetStore()
+    args = _daemon_args_with(tmp_path, max_runs=1)
+    sync_calls = []
+
+    async def counting_sync(*a, **kw):
+        sync_calls.append(1)
+
+    code = asyncio.run(run_sync_daemon(
+        args,
+        config_loader=_FakeConfig,
+        client_factory=lambda cfg: _FakeClient(),
+        store_factory=lambda cfg: object(),
+        sync_fn=counting_sync,
+        clock=lambda: _FIXED_TS,
+        sleep_fn=_instant_sleep,
+        status_store=store,
+    ))
+
+    assert code == 0
+    assert len(sync_calls) == 1  # scheduled sync ran despite poll failure
+
+
+def test_daemon_request_delete_failure_does_not_crash(tmp_path):
+    """R2 DELETE failure is a warning; daemon continues normally."""
+    class _ThrowingDeleteStore(_FakeStore):
+        async def delete(self, key):
+            self.delete_calls.append(key)
+            raise RuntimeError("R2 delete error")
+
+    store = _ThrowingDeleteStore(request_bytes=_FIXED_REQUEST_BYTES)
+    args = _daemon_args_with(tmp_path, max_runs=1)
+
+    code = asyncio.run(run_sync_daemon(
+        args,
+        config_loader=_FakeConfig,
+        client_factory=lambda cfg: _FakeClient(),
+        store_factory=lambda cfg: object(),
+        sync_fn=_noop_sync,
+        clock=lambda: _FIXED_TS,
+        sleep_fn=_instant_sleep,
+        status_store=store,
+    ))
+
+    assert code == 0
+    # delete was attempted despite failure
+    assert "ops/sync-request.json" in store.delete_calls
+
+
+def test_daemon_manual_sync_updates_health_file(tmp_path):
+    """A manual request sync updates health file same as scheduled sync."""
+    health_path = str(tmp_path / "health.json")
+    args = _build_parser().parse_args(_VALID_DAEMON_ARGS + [
+        "--max-runs", "1",
+        "--health-file", health_path,
+        "--interval-seconds", "60",
+    ])
+    store = _FakeStore(request_bytes=_FIXED_REQUEST_BYTES)
+
+    asyncio.run(run_sync_daemon(
+        args,
+        config_loader=_FakeConfig,
+        client_factory=lambda cfg: _FakeClient(),
+        store_factory=lambda cfg: object(),
+        sync_fn=_noop_sync,
+        clock=lambda: _FIXED_TS,
+        sleep_fn=_instant_sleep,
+        status_store=store,
+    ))
+
+    with open(health_path) as f:
+        data = _json.load(f)
+
+    assert data["runs_completed"] == 1
+    assert data["last_result"] == "ok"
+    assert data["consecutive_failures"] == 0
+
+
+def test_daemon_request_not_in_response_body(tmp_path):
+    """No request field values appear in health file or status publish."""
+    health_path = str(tmp_path / "health.json")
+    args = _build_parser().parse_args(_VALID_DAEMON_ARGS + [
+        "--max-runs", "1",
+        "--health-file", health_path,
+        "--interval-seconds", "60",
+    ])
+    store = _FakeStore(request_bytes=_FIXED_REQUEST_BYTES)
+
+    asyncio.run(run_sync_daemon(
+        args,
+        config_loader=_FakeConfig,
+        client_factory=lambda cfg: _FakeClient(),
+        store_factory=lambda cfg: object(),
+        sync_fn=_noop_sync,
+        clock=lambda: _FIXED_TS,
+        sleep_fn=_instant_sleep,
+        status_store=store,
+    ))
+
+    with open(health_path) as f:
+        content = f.read()
+
+    # requestId must not leak into health file
+    assert "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4" not in content
+    # request key must not leak
+    assert "ops/sync-request.json" not in content
+
+    # Status publish bodies should also not contain requestId
+    for _, data, _ in store.calls:
+        body = data.decode("utf-8")
+        assert "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4" not in body

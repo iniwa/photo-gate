@@ -441,3 +441,124 @@ def test_ops_directory_traversal_rejected():
     store, _ = _make_store()
     with pytest.raises(ValueError):
         asyncio.run(store.put("ops/../albums/album-x/manifest.json", b"data", "application/json"))
+
+
+# ---------------------------------------------------------------------------
+# Request key: ops/sync-request.json — get
+# ---------------------------------------------------------------------------
+
+_REQUEST_KEY = "ops/sync-request.json"
+_REQUEST_DATA = b'{"schema": 1, "requestId": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4", "requestedAt": "2026-06-12T00:00:00.000Z", "kind": "sync-now"}'
+
+
+def test_request_key_get_returns_bytes():
+    store, stubber = _make_store()
+    import io
+    stubber.add_response(
+        "get_object",
+        {"Body": io.BytesIO(_REQUEST_DATA), "ContentLength": len(_REQUEST_DATA)},
+        expected_params={"Bucket": _BUCKET, "Key": _REQUEST_KEY},
+    )
+    with stubber:
+        result = asyncio.run(store.get(_REQUEST_KEY))
+    assert result == _REQUEST_DATA
+    stubber.assert_no_pending_responses()
+
+
+def test_request_key_get_missing_returns_none():
+    store, stubber = _make_store()
+    stubber.add_client_error(
+        "get_object",
+        service_error_code="NoSuchKey",
+        expected_params={"Bucket": _BUCKET, "Key": _REQUEST_KEY},
+    )
+    with stubber:
+        result = asyncio.run(store.get(_REQUEST_KEY))
+    assert result is None
+    stubber.assert_no_pending_responses()
+
+
+def test_request_key_get_r2_error_raises_object_store_error():
+    from photo_gate.object_store import ObjectStoreError
+    store, stubber = _make_store()
+    stubber.add_client_error(
+        "get_object",
+        service_error_code="InternalError",
+        expected_params={"Bucket": _BUCKET, "Key": _REQUEST_KEY},
+    )
+    with stubber:
+        with pytest.raises(ObjectStoreError):
+            asyncio.run(store.get(_REQUEST_KEY))
+
+
+def test_get_rejects_non_allowed_ops_key():
+    store, _ = _make_store()
+    with pytest.raises(ValueError):
+        asyncio.run(store.get("ops/other.json"))
+
+
+def test_get_rejects_arbitrary_key():
+    store, _ = _make_store()
+    with pytest.raises(ValueError):
+        asyncio.run(store.get("unknown/key.json"))
+
+
+# ---------------------------------------------------------------------------
+# Request key: ops/sync-request.json — delete
+# ---------------------------------------------------------------------------
+
+
+def test_request_key_delete_succeeds():
+    store, stubber = _make_store()
+    stubber.add_response(
+        "delete_object",
+        {},
+        expected_params={"Bucket": _BUCKET, "Key": _REQUEST_KEY},
+    )
+    with stubber:
+        asyncio.run(store.delete(_REQUEST_KEY))
+    stubber.assert_no_pending_responses()
+
+
+def test_request_key_delete_r2_error_raises_object_store_error():
+    from photo_gate.object_store import ObjectStoreError
+    store, stubber = _make_store()
+    stubber.add_client_error(
+        "delete_object",
+        service_error_code="InternalError",
+        expected_params={"Bucket": _BUCKET, "Key": _REQUEST_KEY},
+    )
+    with stubber:
+        with pytest.raises(ObjectStoreError):
+            asyncio.run(store.delete(_REQUEST_KEY))
+
+
+def test_delete_rejects_non_allowed_ops_key():
+    store, _ = _make_store()
+    with pytest.raises(ValueError):
+        asyncio.run(store.delete("ops/other.json"))
+
+
+def test_delete_rejects_arbitrary_key():
+    store, _ = _make_store()
+    with pytest.raises(ValueError):
+        asyncio.run(store.delete("unknown/key.json"))
+
+
+def test_status_key_accepted_by_get():
+    store, stubber = _make_store()
+    import io
+    stubber.add_response(
+        "get_object",
+        {"Body": io.BytesIO(b"{}"), "ContentLength": 2},
+        expected_params={"Bucket": _BUCKET, "Key": _STATUS_KEY},
+    )
+    with stubber:
+        result = asyncio.run(store.get(_STATUS_KEY))
+    assert result == b"{}"
+
+
+def test_other_ops_key_rejected_by_get():
+    store, _ = _make_store()
+    with pytest.raises(ValueError):
+        asyncio.run(store.get("ops/something-else.json"))

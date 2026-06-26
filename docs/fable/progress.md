@@ -14,6 +14,24 @@ immutable-tag Portainer procedure remains available for incident use.
 
 There is no active implementation handoff.
 
+The twelfth Level 3 implementation handoff is reviewed and complete locally:
+
+- DONE: Docker-side consumer for manual sync requests at the fixed private R2
+  key `ops/sync-request.json`.
+- The daemon polls at loop start and during inter-sync sleep, validates schema-1
+  request objects strictly, triggers the configured single-album sync without
+  interrupting an in-flight sync, and best-effort deletes handled, stale,
+  duplicate, or invalid request objects.
+- R2 request GET/DELETE failures are isolated to sanitized warnings and do not
+  affect scheduled sync behavior, local health state, or Docker HEALTHCHECK.
+- Codex review added regression coverage proving sleep-time polling breaks the
+  interval early when a request appears, and proving duplicate delete is retried
+  when a handled request remains after delete failure.
+- DONE: local verification on 2026-06-26 passed Docker pytest with 253 passed /
+  34 expected libvips/pyvips skips, `python -m compileall src`, and
+  `git diff --check`. Docker build/smoke was skipped because Docker Desktop was
+  not running.
+
 The eleventh Level 3 implementation handoff is reviewed and complete locally:
 
 - DONE: admin-only `POST /admin/sync/request` writes a schema-1 manual sync
@@ -272,7 +290,10 @@ documented.
   authenticated admin access on 2026-06-23.
 - Docker: sync `0.2.1` is published multi-arch. The admin sync-status handoff
   passed 190 tests with 34 expected libvips/pyvips skips and
-  `python -m compileall src` locally (2026-06-25). The operator confirmed the
+  `python -m compileall src` locally (2026-06-25). The Docker-side sync request
+  consumer passed 253 tests with 34 expected libvips/pyvips skips and
+  `python -m compileall src` locally (2026-06-26); Docker build/smoke was
+  skipped because Docker Desktop was not running. The operator confirmed the
   production Pi is running `0.2.1` on 2026-06-23.
 - Live security posture (2026-06-11/12): unauthenticated pages 303 to
   `/`; `/img` + reserved routes 401 `no-store`; cross-origin and
@@ -313,5 +334,5 @@ action list and full status snapshot.
 
 ## Next Priority
 
-Level 2 is complete. Select the next Level 3 priority from remaining broader
-album administration or sync request controls.
+Level 2 is complete. Next Level 3 priority is either finishing manual sync UI
+and status schema 2, or continuing broader album administration.

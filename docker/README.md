@@ -149,6 +149,7 @@ Release images are published to GitHub Container Registry as
 - `photo_gate.sync` — sync orchestration: list → download → re-encode → validate → upload → manifest
 - `photo_gate.models` — typed dataclasses shared across modules
 - `photo_gate.sync_status` — builds sanitized sync status payload for R2 (`ops/sync-status.json`)
+- `photo_gate.sync_request` — validates manual sync request objects read from R2 (`ops/sync-request.json`)
 
 Tests run entirely without network access, real PhotoPrism, R2, or credentials.
 
@@ -166,3 +167,36 @@ ops/sync-status.json
 - Status publish is best-effort: failure does not affect sync success/failure semantics or Docker HEALTHCHECK
 - If R2 credentials or configuration are unavailable at daemon startup, the object is not published; local health file behavior remains the source of Docker HEALTHCHECK truth
 - The object contains only aggregate/operational fields; no PID, album title, PhotoPrism UID/URL/token, R2 credentials, or source photo data
+
+## Manual Sync Requests
+
+The Worker writes a schema-1 request object to private R2 at the fixed key
+`ops/sync-request.json` when an admin submits `POST /admin/sync/request`.
+The daemon consumes this object to trigger an out-of-schedule sync:
+
+- **Poll points**: once at the top of each main loop iteration (before the
+  scheduled sync attempt) and once per `REQUEST_POLL_INTERVAL` seconds (60 s)
+  during the inter-sync sleep.
+- **Validation**: the daemon strictly validates the request before acting:
+  schema=1, requestId matches `[0-9a-f]{32}`, requestedAt is a valid UTC
+  timestamp (millisecond or second form, no offsets), kind=sync-now, exactly
+  4 fields, object size ≤ 4096 bytes.
+- **Staleness**: requests with `requestedAt` more than 3600 seconds in the
+  past are deleted and skipped. Requests more than 60 seconds in the future
+  are also deleted and skipped.
+- **Delete-after-handling**: after a valid request triggers a sync, the daemon
+  best-effort deletes `ops/sync-request.json`. Failure is logged as a warning
+  and swallowed.
+- **Duplicate guard**: the handled `requestId` is remembered in daemon memory
+  for the process lifetime. If the same ID is seen again (e.g. delete failed),
+  the request is deleted and skipped.
+- **Failure isolation**: GET or DELETE failures for the request object log a
+  sanitized warning and do not affect scheduled sync behavior, health state,
+  or Docker HEALTHCHECK.
+- **No extra sync**: an invalid, stale, or duplicate request is never executed.
+  A running sync is never interrupted. A valid request submitted during a sync
+  is picked up at the next poll point after the sync completes.
+
+The request object contains only `schema`, `requestId`, `requestedAt`, and
+`kind`. No secrets, admin identity, album title, PhotoPrism UID, or R2
+credentials appear in the object or in any log line.

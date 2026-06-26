@@ -160,6 +160,61 @@ def _utc_now_iso(clock: Callable[[], datetime]) -> str:
     return clock().strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+async def _poll_sync_request(
+    store: object,
+    clock: "Callable[[], datetime]",
+    last_handled_id: "str | None",
+    log: "logging.Logger",
+) -> "dict | None":
+    """
+    Poll R2 for a pending sync request object.
+
+    Returns the parsed request dict when a valid, non-stale, non-duplicate
+    request is found. Returns None for missing, invalid, stale, or duplicate
+    requests, deleting them best-effort in those cases. Never raises.
+    """
+    if store is None:
+        return None
+    from .sync_request import (
+        SYNC_REQUEST_KEY,
+        validate_sync_request,
+        check_request_timing,
+    )
+    try:
+        data = await store.get(SYNC_REQUEST_KEY)
+    except Exception:
+        log.warning("request poll failed")
+        return None
+    if data is None:
+        return None
+    req, reason = validate_sync_request(data)
+    if reason is not None:
+        log.warning("request ignored: %s", reason)
+        await _best_effort_delete_request(store, log)
+        return None
+    timing_reason = check_request_timing(req, clock())
+    if timing_reason is not None:
+        log.warning("request ignored: %s", timing_reason)
+        await _best_effort_delete_request(store, log)
+        return None
+    if req["requestId"] == last_handled_id:
+        log.warning("request ignored: duplicate")
+        await _best_effort_delete_request(store, log)
+        return None
+    return req
+
+
+async def _best_effort_delete_request(store: object, log: "logging.Logger") -> None:
+    """Best-effort delete of the sync request object. Never raises."""
+    if store is None:
+        return
+    from .sync_request import SYNC_REQUEST_KEY
+    try:
+        await store.delete(SYNC_REQUEST_KEY)
+    except Exception:
+        log.warning("request delete failed")
+
+
 async def _publish_sync_status(
     state: "HealthState",
     store: object,
@@ -452,14 +507,22 @@ async def run_sync_daemon(
 
     runs = 0
     exit_code = 0
+    _last_handled_request_id: str | None = None
     # run_sync_once reports the sanitized failure description here so the
     # health file can show why the last attempt failed.
     last_error_box: list[str | None] = [None]
+
+    from .sync_request import REQUEST_POLL_INTERVAL
 
     try:
         while not shutdown_event.is_set():
             if args.max_runs > 0 and runs >= args.max_runs:
                 break
+
+            # Poll for a pending manual sync request before each sync attempt.
+            _pending_req = await _poll_sync_request(
+                _status_store, clock, _last_handled_request_id, log
+            )
 
             # Record attempt start
             state = dataclasses.replace(
@@ -490,6 +553,12 @@ async def run_sync_daemon(
 
             duration = (clock() - t_start).total_seconds()
             runs += 1
+
+            # Post-sync: if this run was triggered by a manual request,
+            # best-effort delete the request object and record the handled ID.
+            if _pending_req is not None:
+                _last_handled_request_id = _pending_req["requestId"]
+                await _best_effort_delete_request(_status_store, log)
 
             if attempt_code == 2:
                 # Config/arg error -- will never fix itself; exit immediately
@@ -550,18 +619,38 @@ async def run_sync_daemon(
             if args.max_runs > 0 and runs >= args.max_runs:
                 break
 
-            # Sleep interruptibly: race the (injectable) sleep against
-            # shutdown, then cancel whichever is still pending.
-            waiter = asyncio.create_task(shutdown_event.wait())
-            sleeper = asyncio.create_task(sleep_fn(float(args.interval_seconds)))
-            try:
-                await asyncio.wait(
-                    {waiter, sleeper}, return_when=asyncio.FIRST_COMPLETED
-                )
-            finally:
-                for task in (waiter, sleeper):
-                    task.cancel()
-                await asyncio.gather(waiter, sleeper, return_exceptions=True)
+            # Interruptible polling sleep: sleep for interval_seconds total but
+            # wake every REQUEST_POLL_INTERVAL seconds to check for manual
+            # sync requests. Breaks early when a valid request is found or
+            # shutdown is signalled.
+            _sleep_elapsed = 0.0
+            _sleep_total = float(args.interval_seconds)
+            while _sleep_elapsed < _sleep_total and not shutdown_event.is_set():
+                _chunk = min(float(REQUEST_POLL_INTERVAL), _sleep_total - _sleep_elapsed)
+                waiter = asyncio.create_task(shutdown_event.wait())
+                sleeper = asyncio.create_task(sleep_fn(_chunk))
+                try:
+                    await asyncio.wait(
+                        {waiter, sleeper}, return_when=asyncio.FIRST_COMPLETED
+                    )
+                finally:
+                    for task in (waiter, sleeper):
+                        task.cancel()
+                    await asyncio.gather(waiter, sleeper, return_exceptions=True)
+                if shutdown_event.is_set():
+                    break
+                _sleep_elapsed += _chunk
+                # Poll mid-sleep only when there is still time remaining;
+                # the loop-start poll handles the case where sleep completes.
+                if _sleep_elapsed < _sleep_total:
+                    _mid_req = await _poll_sync_request(
+                        _status_store, clock, _last_handled_request_id, log
+                    )
+                    if _mid_req is not None:
+                        # Valid request found; break out early. The request
+                        # object is NOT deleted here — it will be consumed at
+                        # the next loop-start poll.
+                        break
 
     except asyncio.CancelledError:
         pass

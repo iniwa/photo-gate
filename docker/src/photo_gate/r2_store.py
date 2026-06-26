@@ -38,6 +38,7 @@ _SUFFIX_CONTENT_TYPE: dict[str, str] = {
 _IMMUTABLE_CACHE = "public, max-age=31536000, immutable"
 _MANIFEST_CACHE = "private, no-cache"
 _STATUS_KEY = "ops/sync-status.json"
+_REQUEST_KEY = "ops/sync-request.json"
 _STATUS_CACHE = "private, no-cache"
 
 
@@ -102,6 +103,8 @@ def _validate_key(key: str) -> None:
         raise ValueError(f"key contains control characters: {key!r}")
     if key == _STATUS_KEY:
         return
+    if key == _REQUEST_KEY:
+        return
     if not _ALLOWED_KEY.match(key):
         raise ValueError(
             f"key does not match any allowed schema path "
@@ -156,6 +159,16 @@ class R2ObjectStore:
         bucket = self._config.bucket
         await asyncio.to_thread(self._put_sync, bucket, key, data, content_type, cache)
 
+    async def get(self, key: str) -> bytes | None:
+        _validate_key(key)
+        bucket = self._config.bucket
+        return await asyncio.to_thread(self._get_sync, bucket, key)
+
+    async def delete(self, key: str) -> None:
+        _validate_key(key)
+        bucket = self._config.bucket
+        await asyncio.to_thread(self._delete_sync, bucket, key)
+
     def _put_sync(
         self,
         bucket: str,
@@ -175,4 +188,28 @@ class R2ObjectStore:
         except (BotoCoreError, ClientError) as exc:
             raise ObjectStoreError(
                 f"R2 put failed: bucket={bucket!r} key={key!r}"
+            ) from exc
+
+    def _get_sync(self, bucket: str, key: str) -> bytes | None:
+        try:
+            resp = self._s3.get_object(Bucket=bucket, Key=key)
+            return resp["Body"].read()
+        except ClientError as exc:
+            code = exc.response.get("Error", {}).get("Code", "")
+            if code in ("NoSuchKey", "404", "NotFound"):
+                return None
+            raise ObjectStoreError(
+                f"R2 get failed: bucket={bucket!r} key={key!r}"
+            ) from exc
+        except BotoCoreError as exc:
+            raise ObjectStoreError(
+                f"R2 get failed: bucket={bucket!r} key={key!r}"
+            ) from exc
+
+    def _delete_sync(self, bucket: str, key: str) -> None:
+        try:
+            self._s3.delete_object(Bucket=bucket, Key=key)
+        except (BotoCoreError, ClientError) as exc:
+            raise ObjectStoreError(
+                f"R2 delete failed: bucket={bucket!r} key={key!r}"
             ) from exc

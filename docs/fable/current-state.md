@@ -81,10 +81,11 @@ documented for incident use.
   (`CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, `ADMIN_EMAILS`) are registered and
   operator-verified on 2026-06-23; the production admin surface is usable.
   Sync request controls have an accepted ADR (`docs/decisions/2026-06-25-sync-request-controls.md`)
-  and the Worker-side request writer is implemented locally; Docker request
-  consumption remains unimplemented. Album creation/deletion and PhotoPrism-coupled
-  album operations, Docker-side sync request consumption, dry-run cleanup, and
-  final hardening remain unimplemented.
+  and both the Worker-side request writer and Docker-side request consumer are
+  implemented and reviewed locally. The visible Sync Now button, pending
+  indicator, and status schema 2 remain unimplemented. Album creation/deletion
+  and PhotoPrism-coupled album operations, dry-run cleanup, and final hardening
+  remain unimplemented.
 
 ## Verification Baseline
 
@@ -101,7 +102,10 @@ documented for incident use.
   enable/disable POST routes fail closed with 403/no-store without config.
 - Docker: sync `0.2.1` reports 183 tests green in the published baseline;
   the admin sync-status handoff passed 190 tests with 34 expected libvips/pyvips
-  skips plus `python -m compileall src` locally (2026-06-25).
+  skips plus `python -m compileall src` locally (2026-06-25). The Docker-side
+  sync request consumer passed 253 tests with 34 expected libvips/pyvips skips
+  plus `python -m compileall src` locally (2026-06-26); Docker image build was
+  skipped because Docker Desktop was not running.
 - Live security posture verified 2026-06-11/12: unauthenticated pages
   303 to `/`; `/img` and reserved routes 401 `no-store`; cross-origin
   and `Origin: null` POSTs 403; direct R2 access refused; manifest and
