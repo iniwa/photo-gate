@@ -14,7 +14,14 @@ immutable-tag Portainer procedure remains available for incident use.
 
 There is no active implementation handoff.
 
-The thirteenth Level 3 implementation handoff is reviewed and complete locally:
+The manual sync release is deployed and live-smoke verified in production:
+
+- DONE: Worker commit `a1a5c2e` is deployed as version`r`n  `b30250aa-0289-4758-b1fe-3376beba0afe` (2026-06-26).
+- DONE: Docker sync `0.3.0` is published and running in the Portainer stack`r`n  (2026-06-26).
+- DONE: the operator pressed the manual sync button from `/admin/sync`; the`r`n  daemon consumed the request, synced 234/234, uploaded cover and manifest, and`r`n  reported success in 136.5s.
+- DONE: `/admin/sync` reported no pending request, 0 failures, 1 completed`r`n  run, manual trigger kind, and a non-null handled request ID.
+
+The thirteenth Level 3 implementation handoff is reviewed and complete in production:
 
 - DONE: manual sync admin UI and status schema 2.
 - Docker remote sync status now publishes schema 2 with `lastTriggerKind` and
@@ -33,8 +40,8 @@ The thirteenth Level 3 implementation handoff is reviewed and complete locally:
 - DONE: local verification on 2026-06-26 passed Workers lint, typecheck, build,
   1844 tests / 32 files, production dependency audit, Docker pytest with
   265 passed / 34 expected libvips/pyvips skips, `python -m compileall src`,
-  and `git diff --check`. Docker build/smoke was skipped because Docker Desktop
-  was not running.
+  and `git diff --check`. Docker build/smoke was skipped locally because Docker
+  Desktop was not running; docker-ci later built and published `sync-v0.3.0`.
 
 The twelfth Level 3 implementation handoff is reviewed and complete locally:
 
@@ -310,15 +317,17 @@ documented.
   return the expected 403/no-store. The operator subsequently configured the
   Access application, registered all three Worker values, and verified
   authenticated admin access on 2026-06-23.
-- Docker: sync `0.2.1` is published multi-arch. The admin sync-status handoff
+- Docker: sync `0.3.0` is published multi-arch and running in production. The`r`n  admin sync-status handoff
   passed 190 tests with 34 expected libvips/pyvips skips and
   `python -m compileall src` locally (2026-06-25). The Docker-side sync request
   consumer passed 253 tests with 34 expected libvips/pyvips skips and
   `python -m compileall src` locally (2026-06-26). The status schema 2 /
   admin sync UI handoff passed 265 tests with 34 expected libvips/pyvips skips
   and `python -m compileall src` locally (2026-06-26); Docker build/smoke was
-  skipped because Docker Desktop was not running. The operator confirmed the
-  production Pi is running `0.2.1` on 2026-06-23.
+  skipped locally because Docker Desktop was not running. The operator confirmed
+  the production Pi is running `0.3.0` on 2026-06-26 and live manual sync
+  completed successfully: 234/234 synced, cover and manifest uploaded, pending
+  state cleared, failures stayed 0, and trigger kind showed manual.
 - Live security posture (2026-06-11/12): unauthenticated pages 303 to
   `/`; `/img` + reserved routes 401 `no-store`; cross-origin and
   `Origin: null` POSTs 403; direct R2 refused; no URL/token/EXIF/GPS/XMP
@@ -358,6 +367,6 @@ action list and full status snapshot.
 
 ## Next Priority
 
-Level 2 is complete. Next Level 3 priority is either preparing the manual sync
-Worker/Docker deployment and smoke plan, or continuing broader album
-administration.
+Level 2 is complete. Manual sync deployment and smoke are complete. Next Level 3
+priority is broader album administration, audit/history depth, or safe cleanup
+design.

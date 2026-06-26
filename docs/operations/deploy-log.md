@@ -36,6 +36,7 @@
 | 2026-06-12 | `0.1.7` | `0403c46` | (スキップ) | cover.webp 生成。Pi では未稼働のまま 0.2.0 に置換 |
 | 2026-06-12 | `0.2.0` | `5db4c8e` | 2026-06-15 | sync-daemon + HEALTHCHECK + 運用ログ。本番で 234/234 同期成功(R2 キー再発行後)。ただし httpx の INFO ログがプレビュートークンを露出する不具合あり → 0.2.1 で修正 |
 | 2026-06-15 | `0.2.1` | (sync-v0.2.1) | (確認 2026-06-23) | ログ漏えい修正: ルートロガーを WARNING に戻し photo_gate.* のみ INFO。Portainer で稼働中 |
+| 2026-06-26 | `0.3.0` | `c225cd8` / `sync-v0.3.0` | 2026-06-26 | 手動同期リリース。Portainer を 0.3.0 に更新し、/admin/sync から手動同期を実行。daemon が request を消費し、234/234 sync、cover + manifest upload、attempt 1 succeeded in 136.5s。/admin/sync は pending なし・failures 0・runsCompleted 1・manual trigger・handled request ID 非 null を確認 |
 
 公開済みだが Pi で稼働しなかったタグ: `0.1.0`〜`0.1.2`(初期イテレー
 ション)、`0.1.3`/`0.1.4` は CI ゲートで失敗したため未公開(欠番)、

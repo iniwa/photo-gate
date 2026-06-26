@@ -26,14 +26,14 @@ documented for incident use.
 - R2 `photo-gate`, private. One album: 234 thumbs (640 WebP) + 234
   previews (fit_1920 source, JPEG) + manifest.json, all metadata-free.
 - Sync: Portainer stack `iniwa-photo-gate` on a Raspberry Pi 4 running
-  `ghcr.io/iniwa/photo-gate-sync:0.2.1` with the native sync daemon,
+  `ghcr.io/iniwa/photo-gate-sync:0.3.0` with the native sync daemon,
   healthcheck, and
   `PHOTOPRISM_PREVIEW_SIZE=fit_1920`, scheduled at the default 86400-second
   interval.
-- Sync `0.2.1` is published for `linux/amd64` and `linux/arm64` and the
-  operator confirmed it is deployed on the Pi on 2026-06-23. It fixes the
-  httpx log leak that exposed short-lived PhotoPrism preview URLs/tokens in
-  Portainer logs.
+- Sync `0.3.0` is published for `linux/amd64` and `linux/arm64` and the
+  operator confirmed it is deployed on the Pi on 2026-06-26. It includes the
+  manual sync request consumer and status schema 2 publication; the previous
+  `0.2.1` log leak fix remains in place.
 - PhotoPrism serves static thumbs up to 1920 px; dynamic previews stay
   disabled by operator choice (Pi load).
 
@@ -86,11 +86,12 @@ documented for incident use.
   request writer (`POST /admin/sync/request`), status schema 2 rendering,
   pending indicator, and no-JS Sync Now form (`GET /admin/sync`). Production
   Worker deploy completed 2026-06-26 (version `b30250aa`, commit `a1a5c2e`);
-  unauthenticated smoke checks pass. The Docker request consumer is implemented
-  locally but not yet released to production; Docker image release (sync `0.3.0`),
-  Portainer stack update, and live manual-sync smoke remain unperformed (Phase C
-  not yet approved). Album creation/deletion and PhotoPrism-coupled album
-  operations, dry-run cleanup, and final hardening remain unimplemented.
+  unauthenticated smoke checks pass. Docker sync `0.3.0` is released and running
+  in Portainer, and live manual-sync smoke completed 2026-06-26: the admin
+  request was consumed by the daemon, sync completed 234/234, cover and manifest
+  uploaded, pending state cleared, failures remained 0, runs completed reached 1,
+  and trigger kind showed manual. Album creation/deletion and PhotoPrism-coupled
+  album operations, dry-run cleanup, and final hardening remain unimplemented.
 
 ## Verification Baseline
 
@@ -107,14 +108,18 @@ documented for incident use.
   confirms viewer login page, /albums redirect, /img 401 no-store, /api 401
   no-store, /admin Cloudflare Access intercept, and authenticated /admin/sync
   browser rendering all pass.
-- Docker: sync `0.2.1` reports 183 tests green in the published baseline;
+- Docker: sync `0.3.0` is published and running in production; sync`r`n  `0.2.1` reports 183 tests green in the previous published baseline;
   the admin sync-status handoff passed 190 tests with 34 expected libvips/pyvips
   skips plus `python -m compileall src` locally (2026-06-25). The Docker-side
   sync request consumer passed 253 tests with 34 expected libvips/pyvips skips
   plus `python -m compileall src` locally (2026-06-26). The status schema 2 /
   admin sync UI handoff passed 265 tests with 34 expected libvips/pyvips skips
   plus `python -m compileall src` locally (2026-06-26); Docker image build was
-  skipped because Docker Desktop was not running.
+  skipped locally because Docker Desktop was not running, then docker-ci built and
+  published `sync-v0.3.0`. Production live smoke on 2026-06-26 confirmed manual
+  sync success: 234/234 synced, cover and manifest uploaded, and `/admin/sync`
+  reported no pending request, 0 failures, 1 run completed, manual trigger, and
+  a non-null handled request ID.
 - Live security posture verified 2026-06-11/12: unauthenticated pages
   303 to `/`; `/img` and reserved routes 401 `no-store`; cross-origin
   and `Origin: null` POSTs 403; direct R2 access refused; manifest and

@@ -127,7 +127,7 @@ This is a priority-ordered plan. Update status as implementation progresses.
 
 ### 6. Administration
 
-- [ ] Protect `/admin` with Cloudflare Access JWT validation and admin email
+- [x] Protect `/admin` with Cloudflare Access JWT validation and admin email
       allowlist.
       (Worker-side validation, allowlist, fail-closed tests, and operator
       documentation are implemented, reviewed, and deployed 2026-06-15.
@@ -141,17 +141,16 @@ This is a priority-ordered plan. Update status as implementation progresses.
       controls implemented and reviewed 2026-06-19. Idempotent user
       enable/disable controls implemented and reviewed 2026-06-23. User
       creation/password reset and album public metadata update controls
-      implemented and reviewed locally 2026-06-24. Read-only admin ops summary
-      implemented and reviewed locally 2026-06-25. Album creation/deletion and
+      implemented and reviewed locally 2026-06-24. Album creation/deletion and
       PhotoPrism-coupled album operations remain.)
-- [ ] Implement sync request/status administration.
-      (Read-only `/admin/sync` status page plus Docker best-effort R2 status
-      publication implemented and reviewed locally 2026-06-25. The manual sync
-      request controls ADR was accepted 2026-06-25 with a fixed private R2
-      request object design at `ops/sync-request.json`; Worker-side request
-      writing, Docker-side request consumption, status schema 2 trigger
-      metadata, pending indicator, and no-JS Sync Now form are implemented and
-      reviewed locally. Production deploy/release/smoke remains.)
+- [x] Implement sync request/status administration.
+      (Read-only `/admin/sync` status page, Docker best-effort R2 status
+      publication, fixed private request object at `ops/sync-request.json`,
+      Worker-side request writing, Docker-side request consumption, status
+      schema 2 trigger metadata, pending indicator, and no-JS Sync Now form are
+      implemented, deployed, and live-smoke verified 2026-06-26. Production
+      smoke: manual request consumed, 234/234 synced, cover and manifest
+      uploaded, pending cleared, failures 0, runsCompleted 1, manual trigger.)
 - [x] Add operational audit information without sensitive-data leakage.
       (Read-only `/admin/ops` aggregate D1 summary implemented and reviewed
       locally 2026-06-25; no row-level identity/title/hash/token/PhotoPrism/R2
