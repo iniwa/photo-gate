@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from photo_gate.main import _build_parser, _describe_error, run_sync_once
+from photo_gate.main import _build_parser, _describe_error, run_publish_catalog, run_sync_once
 from photo_gate.photoprism_client import PhotoPrismError
 
 # ---------------------------------------------------------------------------
@@ -610,3 +610,319 @@ def test_runtime_failure_does_not_leak_secrets(capsys):
     captured = capsys.readouterr()
     assert injected_secret not in captured.out
     assert injected_secret not in captured.err
+
+
+# ---------------------------------------------------------------------------
+# publish-catalog — helpers
+# ---------------------------------------------------------------------------
+
+
+import types as _types
+
+
+def _make_album(raw_uid="albumUid001", title="Test Album", photo_count=3, updated_at=None):
+    return _types.SimpleNamespace(
+        raw_uid=raw_uid,
+        title=title,
+        photo_count=photo_count,
+        updated_at=updated_at,
+    )
+
+
+class _FakePublishClient:
+    def __init__(self, albums=None):
+        self._albums = albums or []
+        self.closed = False
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        self.closed = True
+
+    async def list_albums(self):
+        return self._albums
+
+
+class _FakePublishStore:
+    def __init__(self):
+        self.puts: list = []
+
+    async def put(self, key, data, content_type):
+        self.puts.append((key, data, content_type))
+
+
+_PUBLISH_CATALOG_ARGS = ["publish-catalog"]
+_FAKE_CATALOG_BYTES = b'{"schema":1,"publishedAt":"2026-06-26T00:00:00Z","albums":[]}'
+
+
+def _make_publish_fn(return_bytes=_FAKE_CATALOG_BYTES):
+    def publish_fn(albums, published_at):
+        return return_bytes
+    return publish_fn
+
+
+# ---------------------------------------------------------------------------
+# publish-catalog — parser
+# ---------------------------------------------------------------------------
+
+
+def test_publish_catalog_help_exits_with_zero():
+    parser = _build_parser()
+    with pytest.raises(SystemExit) as exc_info:
+        parser.parse_args(["publish-catalog", "--help"])
+    assert exc_info.value.code == 0
+
+
+# ---------------------------------------------------------------------------
+# publish-catalog — config failure
+# ---------------------------------------------------------------------------
+
+
+def test_publish_catalog_config_error_returns_2():
+    from photo_gate.config import ConfigError
+
+    parser = _build_parser()
+    args = parser.parse_args(_PUBLISH_CATALOG_ARGS)
+
+    code = asyncio.run(run_publish_catalog(
+        args,
+        config_loader=lambda: (_ for _ in ()).throw(ConfigError("R2_BUCKET not set")),
+        client_factory=lambda cfg: pytest.fail("must not be called"),
+        store_factory=lambda cfg: pytest.fail("must not be called"),
+    ))
+
+    assert code == 2
+
+
+# ---------------------------------------------------------------------------
+# publish-catalog — client failure
+# ---------------------------------------------------------------------------
+
+
+def test_publish_catalog_client_list_failure_returns_1():
+    from photo_gate.photoprism_client import PhotoPrismError
+
+    class _FailingClient:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def list_albums(self):
+            raise PhotoPrismError("PhotoPrism album list returned HTTP 503")
+
+    parser = _build_parser()
+    args = parser.parse_args(_PUBLISH_CATALOG_ARGS)
+
+    code = asyncio.run(run_publish_catalog(
+        args,
+        config_loader=_FakeConfig,
+        client_factory=lambda cfg: _FailingClient(),
+        store_factory=lambda cfg: _FakePublishStore(),
+        clock=lambda: _FIXED_TS,
+    ))
+
+    assert code == 1
+
+
+def test_publish_catalog_client_failure_message_is_sanitized(capsys):
+    injected_secret = "SECRET-TOKEN-VALUE-ABC"
+
+    class _LeakingClient:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def list_albums(self):
+            raise RuntimeError(f"token={injected_secret}")
+
+    parser = _build_parser()
+    args = parser.parse_args(_PUBLISH_CATALOG_ARGS)
+
+    asyncio.run(run_publish_catalog(
+        args,
+        config_loader=_FakeConfig,
+        client_factory=lambda cfg: _LeakingClient(),
+        store_factory=lambda cfg: _FakePublishStore(),
+        clock=lambda: _FIXED_TS,
+    ))
+
+    captured = capsys.readouterr()
+    assert injected_secret not in captured.out
+    assert injected_secret not in captured.err
+
+
+# ---------------------------------------------------------------------------
+# publish-catalog — catalog build failure
+# ---------------------------------------------------------------------------
+
+
+def test_publish_catalog_build_failure_returns_1():
+    from photo_gate.album_catalog import CatalogError
+
+    parser = _build_parser()
+    args = parser.parse_args(_PUBLISH_CATALOG_ARGS)
+
+    def failing_publish(albums, published_at):
+        raise CatalogError("duplicate catalogId detected before R2 write")
+
+    code = asyncio.run(run_publish_catalog(
+        args,
+        config_loader=_FakeConfig,
+        client_factory=lambda cfg: _FakePublishClient(),
+        store_factory=lambda cfg: _FakePublishStore(),
+        publish_fn=failing_publish,
+        clock=lambda: _FIXED_TS,
+    ))
+
+    assert code == 1
+
+
+# ---------------------------------------------------------------------------
+# publish-catalog — store failure
+# ---------------------------------------------------------------------------
+
+
+def test_publish_catalog_store_failure_returns_1():
+    from photo_gate.object_store import ObjectStoreError
+
+    class _FailingStore:
+        async def put(self, key, data, content_type):
+            raise ObjectStoreError("R2 put failed")
+
+    parser = _build_parser()
+    args = parser.parse_args(_PUBLISH_CATALOG_ARGS)
+
+    code = asyncio.run(run_publish_catalog(
+        args,
+        config_loader=_FakeConfig,
+        client_factory=lambda cfg: _FakePublishClient([_make_album()]),
+        store_factory=lambda cfg: _FailingStore(),
+        publish_fn=_make_publish_fn(),
+        clock=lambda: _FIXED_TS,
+    ))
+
+    assert code == 1
+
+
+# ---------------------------------------------------------------------------
+# publish-catalog — success
+# ---------------------------------------------------------------------------
+
+
+def test_publish_catalog_success_returns_0():
+    fake_store = _FakePublishStore()
+    parser = _build_parser()
+    args = parser.parse_args(_PUBLISH_CATALOG_ARGS)
+
+    code = asyncio.run(run_publish_catalog(
+        args,
+        config_loader=_FakeConfig,
+        client_factory=lambda cfg: _FakePublishClient([_make_album()]),
+        store_factory=lambda cfg: fake_store,
+        publish_fn=_make_publish_fn(),
+        clock=lambda: _FIXED_TS,
+    ))
+
+    assert code == 0
+
+
+def test_publish_catalog_success_prints_count(capsys):
+    albums = [_make_album("uid001"), _make_album("uid002"), _make_album("uid003")]
+    parser = _build_parser()
+    args = parser.parse_args(_PUBLISH_CATALOG_ARGS)
+
+    asyncio.run(run_publish_catalog(
+        args,
+        config_loader=_FakeConfig,
+        client_factory=lambda cfg: _FakePublishClient(albums),
+        store_factory=lambda cfg: _FakePublishStore(),
+        publish_fn=_make_publish_fn(),
+        clock=lambda: _FIXED_TS,
+    ))
+
+    captured = capsys.readouterr()
+    assert "count=3" in captured.out
+
+
+def test_publish_catalog_success_writes_to_catalog_key():
+    fake_store = _FakePublishStore()
+    catalog_bytes = b'{"schema":1}'
+    parser = _build_parser()
+    args = parser.parse_args(_PUBLISH_CATALOG_ARGS)
+
+    asyncio.run(run_publish_catalog(
+        args,
+        config_loader=_FakeConfig,
+        client_factory=lambda cfg: _FakePublishClient([_make_album()]),
+        store_factory=lambda cfg: fake_store,
+        publish_fn=lambda albums, ts: catalog_bytes,
+        clock=lambda: _FIXED_TS,
+    ))
+
+    assert len(fake_store.puts) == 1
+    key, data, content_type = fake_store.puts[0]
+    assert key == "ops/album-catalog.json"
+    assert data == catalog_bytes
+    assert content_type == "application/json"
+
+
+def test_publish_catalog_passes_published_at_to_publish_fn():
+    received_ts: list[str] = []
+    parser = _build_parser()
+    args = parser.parse_args(_PUBLISH_CATALOG_ARGS)
+
+    def tracking_publish(albums, published_at):
+        received_ts.append(published_at)
+        return _FAKE_CATALOG_BYTES
+
+    asyncio.run(run_publish_catalog(
+        args,
+        config_loader=_FakeConfig,
+        client_factory=lambda cfg: _FakePublishClient(),
+        store_factory=lambda cfg: _FakePublishStore(),
+        publish_fn=tracking_publish,
+        clock=lambda: _FIXED_TS,
+    ))
+
+    assert len(received_ts) == 1
+    # FIXED_TS is 2026-06-09T09:00:00Z
+    assert received_ts[0] == "2026-06-09T09:00:00Z"
+
+
+def test_publish_catalog_client_closed_on_success():
+    fake_client = _FakePublishClient()
+    parser = _build_parser()
+    args = parser.parse_args(_PUBLISH_CATALOG_ARGS)
+
+    asyncio.run(run_publish_catalog(
+        args,
+        config_loader=_FakeConfig,
+        client_factory=lambda cfg: fake_client,
+        store_factory=lambda cfg: _FakePublishStore(),
+        publish_fn=_make_publish_fn(),
+        clock=lambda: _FIXED_TS,
+    ))
+
+    assert fake_client.closed
+
+
+def test_publish_catalog_client_closed_on_failure():
+    from photo_gate.photoprism_client import PhotoPrismError
+
+    fake_client = _FakePublishClient()
+
+    class _BadList(_FakePublishClient):
+        async def list_albums(self):
+            raise PhotoPrismError("list failed")
+
+    real_client = _BadList()
+    parser = _build_parser()
+    args = parser.parse_args(_PUBLISH_CATALOG_ARGS)
+
+    asyncio.run(run_publish_catalog(
+        args,
+        config_loader=_FakeConfig,
+        client_factory=lambda cfg: real_client,
+        store_factory=lambda cfg: _FakePublishStore(),
+        publish_fn=_make_publish_fn(),
+        clock=lambda: _FIXED_TS,
+    ))
+
+    assert real_client.closed

@@ -21,6 +21,24 @@ The manual sync release is deployed and live-smoke verified in production:
 - DONE: the operator pressed the manual sync button from `/admin/sync`; the`r`n  daemon consumed the request, synced 234/234, uploaded cover and manifest, and`r`n  reported success in 136.5s.
 - DONE: `/admin/sync` reported no pending request, 0 failures, 1 completed`r`n  run, manual trigger kind, and a non-null handled request ID.
 
+The sixteenth Level 3 implementation handoff is reviewed and complete locally:
+
+- DONE: Docker `photo-gate-sync publish-catalog` builds a sanitized PhotoPrism
+  album catalog and writes it to the fixed private R2 key
+  `ops/album-catalog.json`.
+- The catalog exposes only schema, publishedAt, hashed `catalogId`, title,
+  optional photo count, and optional updatedAt. Raw PhotoPrism album UIDs,
+  tokens, URLs, R2 credentials, and source photo data are not written or logged.
+- Codex review tightened album `UpdatedAt` parsing so offset timestamps and
+  timezone-less timestamps are rejected; only UTC `Z` timestamps are accepted
+  and normalized to Docker seconds form.
+- This is Track A1 for browser-complete sync. It does not change Worker UI,
+  sync target selection, Portainer configuration, production Docker image tags,
+  or reupload suppression.
+- DONE: local verification on 2026-06-26 passed Docker pytest with 333 passed /
+  34 expected libvips/pyvips skips, `python -m compileall src`,
+  `git diff --check`, and confirmed no Workers or migration diff.
+
 The fifteenth Level 3 implementation handoff is reviewed, deployed, and smoke-tested in production:
 
 - DONE: D1-only admin album creation via `POST /admin/albums/create` is deployed in Worker version `3c4d4f8e` (commit `cd990ae`).
@@ -399,7 +417,9 @@ action list and full status snapshot.
 
 ## Next Priority
 
-Level 2 is complete. Manual sync deployment and smoke are complete. The next
-Level 3 priority is ADR Phase 3 planning: safe PhotoPrism album catalog
-publication by Docker to private R2, followed by admin UI integration. Worker
-must still not contact PhotoPrism, NAS, Docker, or Portainer directly.
+Level 2 is complete. Manual sync deployment and smoke are complete. Track A1
+(album catalog publication by Docker to private R2) is implemented locally. The
+next Level 3 priority is Track A2: define and implement browser-owned safe sync
+targets so Docker can sync albums without Portainer album-ID variables. Worker
+must still not contact PhotoPrism, NAS, Docker, or Portainer directly. Reupload
+suppression remains a separate later track.

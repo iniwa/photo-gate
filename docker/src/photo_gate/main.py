@@ -35,6 +35,7 @@ _UTC = timezone.utc
 # httpx exceptions are intentionally NOT listed: their messages can embed
 # request URLs, which include the PhotoPrism preview token.
 _SANITIZED_ERROR_TYPES = frozenset({
+    "CatalogError",
     "ClientError",
     "ConfigError",
     "MetadataValidationError",
@@ -126,6 +127,12 @@ def _build_parser() -> argparse.ArgumentParser:
     daemon.add_argument("--interval-seconds", type=int, default=86400, metavar="N")
     daemon.add_argument("--health-file", default="/tmp/photo-gate-health.json", metavar="PATH")
     daemon.add_argument("--max-runs", type=int, default=0, metavar="N")
+
+    # publish-catalog subcommand
+    sub.add_parser(
+        "publish-catalog",
+        help="Publish sanitized PhotoPrism album catalog to private R2 (ops/album-catalog.json)",
+    )
 
     # healthcheck subcommand
     hc = sub.add_parser("healthcheck", help="Check daemon health file (for Docker HEALTHCHECK)")
@@ -384,6 +391,83 @@ async def run_sync_once(
         return 1
 
     print(f"Sync complete: album={args.album_id!r}")
+    return 0
+
+
+_CATALOG_KEY = "ops/album-catalog.json"
+
+
+async def run_publish_catalog(
+    args: argparse.Namespace,
+    *,
+    config_loader: Callable | None = None,
+    client_factory: Callable | None = None,
+    store_factory: Callable | None = None,
+    publish_fn: Callable | None = None,
+    clock: Callable[[], datetime] | None = None,
+) -> int:
+    """
+    Async composition function for publish-catalog.
+
+    Reads all PhotoPrism albums, builds a sanitized catalog, and writes it to
+    ops/album-catalog.json in private R2. Factories are injectable for testing.
+    Returns exit code:
+      0 — success
+      1 — runtime failure
+      2 — configuration error
+    """
+    from .config import ConfigError
+
+    if config_loader is None:
+        from .config import load_config
+        config_loader = load_config
+
+    try:
+        config = config_loader()
+    except ConfigError as exc:
+        print(f"Configuration error: {exc}", file=sys.stderr)
+        return 2
+
+    if client_factory is None:
+        from .photoprism_client import PhotoPrismClient
+
+        def client_factory(cfg):
+            return PhotoPrismClient(
+                base_url=cfg.photoprism_url,
+                token=cfg.photoprism_token,
+                cf_client_id=cfg.cf_client_id,
+                cf_client_secret=cfg.cf_client_secret,
+            )
+
+    if store_factory is None:
+        from .r2_store import R2ObjectStore
+
+        def store_factory(cfg):
+            return R2ObjectStore(cfg.r2)
+
+    if publish_fn is None:
+        from .album_catalog import build_catalog_bytes
+        publish_fn = build_catalog_bytes
+
+    if clock is None:
+        clock = lambda: datetime.now(tz=_UTC)
+
+    album_count = 0
+    try:
+        published_at = clock().strftime("%Y-%m-%dT%H:%M:%SZ")
+        client = client_factory(config)
+        async with client:
+            albums = await client.list_albums()
+            album_count = len(albums)
+            data = publish_fn(albums, published_at)
+        store = store_factory(config)
+        await store.put(_CATALOG_KEY, data, "application/json")
+    except Exception as exc:
+        described = _describe_error(exc)
+        print(f"Publish catalog failed: {described}", file=sys.stderr)
+        return 1
+
+    print(f"Published album catalog: count={album_count}")
     return 0
 
 
@@ -759,6 +843,8 @@ def main() -> None:
         sys.exit(asyncio.run(run_sync_daemon(args)))
     elif args.command == "healthcheck":
         sys.exit(_run_healthcheck(args))
+    elif args.command == "publish-catalog":
+        sys.exit(asyncio.run(run_publish_catalog(args)))
     else:
         parser.print_help()
         sys.exit(2)

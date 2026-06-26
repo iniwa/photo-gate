@@ -4,7 +4,7 @@ import json
 import httpx
 import pytest
 
-from photo_gate.photoprism_client import PhotoPrismClient, PhotoPrismError
+from photo_gate.photoprism_client import PhotoPrismAlbum, PhotoPrismClient, PhotoPrismError
 
 
 class _MockTransport(httpx.AsyncBaseTransport):
@@ -365,5 +365,343 @@ def test_preview_transport_error_excludes_preview_token():
                     "a" * 40, secret_preview_token, "fit_720"
                 )
         assert secret_preview_token not in str(exc_info.value)
+
+    asyncio.run(run())
+
+
+# ---------------------------------------------------------------------------
+# list_albums
+# ---------------------------------------------------------------------------
+
+
+def _album_json(
+    uid,
+    title="Test Album",
+    photo_count=10,
+    updated_at="2026-06-26T12:00:00Z",
+):
+    return {"UID": uid, "Title": title, "PhotoCount": photo_count, "UpdatedAt": updated_at}
+
+
+def test_list_albums_single_page():
+    albums = [_album_json("albumUid001")]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert "/api/v1/albums" in str(request.url)
+        return httpx.Response(
+            200,
+            headers={"X-Count": "1", "X-Limit": "2"},
+            content=json.dumps(albums).encode(),
+        )
+
+    async def run():
+        async with _make_client(handler) as client:
+            result = await client.list_albums()
+        assert len(result) == 1
+        assert isinstance(result[0], PhotoPrismAlbum)
+        assert result[0].raw_uid == "albumUid001"
+        assert result[0].title == "Test Album"
+        assert result[0].photo_count == 10
+        assert result[0].updated_at == "2026-06-26T12:00:00Z"
+
+    asyncio.run(run())
+
+
+def test_list_albums_pagination():
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        offset = int(request.url.params.get("offset", 0))
+        calls.append(offset)
+        if offset == 0:
+            body = [_album_json("albumUid001"), _album_json("albumUid002")]
+            return httpx.Response(
+                200,
+                headers={"X-Count": "2", "X-Limit": "2"},
+                content=json.dumps(body).encode(),
+            )
+        else:
+            body = [_album_json("albumUid003")]
+            return httpx.Response(
+                200,
+                headers={"X-Count": "1", "X-Limit": "2"},
+                content=json.dumps(body).encode(),
+            )
+
+    async def run():
+        async with _make_client(handler) as client:
+            result = await client.list_albums()
+        assert calls == [0, 2]
+        assert len(result) == 3
+        assert {a.raw_uid for a in result} == {"albumUid001", "albumUid002", "albumUid003"}
+
+    asyncio.run(run())
+
+
+def test_list_albums_empty_page():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"X-Count": "0", "X-Limit": "2"},
+            content=b"[]",
+        )
+
+    async def run():
+        async with _make_client(handler) as client:
+            result = await client.list_albums()
+        assert result == []
+
+    asyncio.run(run())
+
+
+def test_list_albums_missing_photo_count_becomes_none():
+    body = [{"UID": "albumUid001", "Title": "Album"}]  # no PhotoCount
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"X-Count": "1", "X-Limit": "2"},
+            content=json.dumps(body).encode(),
+        )
+
+    async def run():
+        async with _make_client(handler) as client:
+            result = await client.list_albums()
+        assert result[0].photo_count is None
+
+    asyncio.run(run())
+
+
+def test_list_albums_missing_updated_at_becomes_none():
+    body = [{"UID": "albumUid001", "Title": "Album", "PhotoCount": 5}]  # no UpdatedAt
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"X-Count": "1", "X-Limit": "2"},
+            content=json.dumps(body).encode(),
+        )
+
+    async def run():
+        async with _make_client(handler) as client:
+            result = await client.list_albums()
+        assert result[0].updated_at is None
+
+    asyncio.run(run())
+
+
+def test_list_albums_normalizes_millisecond_updated_at():
+    body = [_album_json("albumUid001", updated_at="2026-06-26T12:00:00.123Z")]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"X-Count": "1", "X-Limit": "2"},
+            content=json.dumps(body).encode(),
+        )
+
+    async def run():
+        async with _make_client(handler) as client:
+            result = await client.list_albums()
+        assert result[0].updated_at == "2026-06-26T12:00:00Z"
+
+    asyncio.run(run())
+
+
+def test_list_albums_rejects_missing_uid():
+    body = [{"Title": "No UID Album", "PhotoCount": 1}]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"X-Count": "1", "X-Limit": "2"},
+            content=json.dumps(body).encode(),
+        )
+
+    async def run():
+        with pytest.raises(PhotoPrismError, match="UID"):
+            async with _make_client(handler) as client:
+                await client.list_albums()
+
+    asyncio.run(run())
+
+
+def test_list_albums_rejects_unsafe_uid():
+    body = [_album_json("../../evil")]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"X-Count": "1", "X-Limit": "2"},
+            content=json.dumps(body).encode(),
+        )
+
+    async def run():
+        with pytest.raises(PhotoPrismError, match="unsafe"):
+            async with _make_client(handler) as client:
+                await client.list_albums()
+
+    asyncio.run(run())
+
+
+def test_list_albums_rejects_invalid_title():
+    body = [{"UID": "albumUid001", "Title": "", "PhotoCount": 1}]  # empty title
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"X-Count": "1", "X-Limit": "2"},
+            content=json.dumps(body).encode(),
+        )
+
+    async def run():
+        with pytest.raises(PhotoPrismError, match="title"):
+            async with _make_client(handler) as client:
+                await client.list_albums()
+
+    asyncio.run(run())
+
+
+def test_list_albums_rejects_negative_photo_count():
+    body = [_album_json("albumUid001", photo_count=-1)]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"X-Count": "1", "X-Limit": "2"},
+            content=json.dumps(body).encode(),
+        )
+
+    async def run():
+        with pytest.raises(PhotoPrismError, match="negative"):
+            async with _make_client(handler) as client:
+                await client.list_albums()
+
+    asyncio.run(run())
+
+
+def test_list_albums_rejects_offset_updated_at():
+    body = [_album_json("albumUid001", updated_at="2026-06-26T12:00:00+09:00")]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"X-Count": "1", "X-Limit": "2"},
+            content=json.dumps(body).encode(),
+        )
+
+    async def run():
+        with pytest.raises(PhotoPrismError, match="UTC timestamp"):
+            async with _make_client(handler) as client:
+                await client.list_albums()
+
+    asyncio.run(run())
+
+
+def test_list_albums_rejects_naive_updated_at():
+    body = [_album_json("albumUid001", updated_at="2026-06-26T12:00:00")]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"X-Count": "1", "X-Limit": "2"},
+            content=json.dumps(body).encode(),
+        )
+
+    async def run():
+        with pytest.raises(PhotoPrismError, match="UTC timestamp"):
+            async with _make_client(handler) as client:
+                await client.list_albums()
+
+    asyncio.run(run())
+
+
+def test_list_albums_http_error():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, content=b"Forbidden")
+
+    async def run():
+        with pytest.raises(PhotoPrismError, match="403"):
+            async with _make_client(handler) as client:
+                await client.list_albums()
+
+    asyncio.run(run())
+
+
+def test_list_albums_rejects_malformed_entry():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"X-Count": "1", "X-Limit": "2"},
+            content=b'["not-an-object"]',
+        )
+
+    async def run():
+        with pytest.raises(PhotoPrismError, match="malformed"):
+            async with _make_client(handler) as client:
+                await client.list_albums()
+
+    asyncio.run(run())
+
+
+def test_list_albums_error_excludes_uid():
+    """Raw UID must not appear in PhotoPrismError messages."""
+    secret_uid = "secretAlbumUidValue"
+    body = [{"UID": secret_uid, "Title": "", "PhotoCount": 1}]  # invalid title
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"X-Count": "1", "X-Limit": "2"},
+            content=json.dumps(body).encode(),
+        )
+
+    async def run():
+        async with _make_client(handler) as client:
+            try:
+                await client.list_albums()
+            except PhotoPrismError as exc:
+                assert secret_uid not in str(exc)
+                return
+        raise AssertionError("Expected PhotoPrismError")
+
+    asyncio.run(run())
+
+
+def test_list_albums_sends_authorization_header():
+    received: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        received.append(request.headers.get("authorization", ""))
+        return httpx.Response(
+            200,
+            headers={"X-Count": "0", "X-Limit": "2"},
+            content=b"[]",
+        )
+
+    async def run():
+        async with _make_client(handler) as client:
+            await client.list_albums()
+        assert received[0] == "Bearer test-token"
+
+    asyncio.run(run())
+
+
+def test_list_albums_result_is_frozen_dataclass():
+    body = [_album_json("albumUid001")]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"X-Count": "1", "X-Limit": "2"},
+            content=json.dumps(body).encode(),
+        )
+
+    async def run():
+        async with _make_client(handler) as client:
+            result = await client.list_albums()
+        from dataclasses import FrozenInstanceError
+        with pytest.raises((FrozenInstanceError, AttributeError)):
+            result[0].raw_uid = "mutated"
 
     asyncio.run(run())

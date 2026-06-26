@@ -96,9 +96,13 @@ documented for incident use.
   permission assignment. ADR Phase 2 admin album creation is implemented and
   reviewed locally: `POST /admin/albums/create` inserts a D1-only row with
   `enabled = 0`, accepts `photoprism_album_uid` only on create, and does not
-  touch PhotoPrism, NAS, Docker, Portainer, or R2. Album deletion,
-  PhotoPrism-coupled album operations, dry-run cleanup, and final hardening
-  remain unimplemented.
+  touch PhotoPrism, NAS, Docker, Portainer, or R2. Track A1 for
+  browser-complete sync is implemented and reviewed locally: Docker
+  `photo-gate-sync publish-catalog` writes a sanitized album catalog to private
+  R2 at `ops/album-catalog.json`, using hashed catalog IDs and excluding raw
+  PhotoPrism UIDs, URLs, tokens, credentials, and source photo data. Album
+  deletion, browser-owned sync targets, Worker catalog UI integration, reupload
+  suppression, dry-run cleanup, and final hardening remain unimplemented.
 
 ## Verification Baseline
 
@@ -125,10 +129,13 @@ documented for incident use.
   admin sync UI handoff passed 265 tests with 34 expected libvips/pyvips skips
   plus `python -m compileall src` locally (2026-06-26); Docker image build was
   skipped locally because Docker Desktop was not running, then docker-ci built and
-  published `sync-v0.3.0`. Production live smoke on 2026-06-26 confirmed manual
-  sync success: 234/234 synced, cover and manifest uploaded, and `/admin/sync`
-  reported no pending request, 0 failures, 1 run completed, manual trigger, and
-  a non-null handled request ID.
+  published `sync-v0.3.0`. Production live smoke on 2026-06-26 confirmed
+  manual sync success: 234/234 synced, cover and manifest uploaded, and
+  `/admin/sync` reported no pending request, 0 failures, 1 run completed,
+  manual trigger, and a non-null handled request ID. The local Docker
+  album-catalog publisher passed 333 tests with 34 expected libvips/pyvips skips
+  plus `python -m compileall src` on 2026-06-26; it is not yet released or
+  deployed.
 - Live security posture verified 2026-06-11/12: unauthenticated pages
   303 to `/`; `/img` and reserved routes 401 `no-store`; cross-origin
   and `Origin: null` POSTs 403; direct R2 access refused; manifest and

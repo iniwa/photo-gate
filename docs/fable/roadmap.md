@@ -144,8 +144,10 @@ This is a priority-ordered plan. Update status as implementation progresses.
       implemented and reviewed locally 2026-06-24. User display-name editing
       and browser-friendly permission assignment dropdowns implemented and
       reviewed locally 2026-06-26. D1-only album creation with explicit
-      `enabled = 0` implemented and reviewed locally 2026-06-26. Album
-      deletion and PhotoPrism-coupled album operations remain.)
+      `enabled = 0` implemented and reviewed locally 2026-06-26. Docker
+      Track A1 album catalog publication to private R2 implemented and reviewed
+      locally 2026-06-26. Album deletion, browser-owned sync targets, Worker
+      catalog UI integration, and reupload suppression remain.)
 - [x] Implement sync request/status administration.
       (Read-only `/admin/sync` status page, Docker best-effort R2 status
       publication, fixed private request object at `ops/sync-request.json`,

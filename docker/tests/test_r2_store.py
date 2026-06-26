@@ -562,3 +562,63 @@ def test_other_ops_key_rejected_by_get():
     store, _ = _make_store()
     with pytest.raises(ValueError):
         asyncio.run(store.get("ops/something-else.json"))
+
+
+# ---------------------------------------------------------------------------
+# Catalog key: ops/album-catalog.json
+# ---------------------------------------------------------------------------
+
+_CATALOG_KEY = "ops/album-catalog.json"
+_CATALOG_DATA = b'{"schema":1,"publishedAt":"2026-06-26T00:00:00Z","albums":[]}'
+_CATALOG_CONTENT_TYPE = "application/json"
+_CATALOG_CACHE = "private, no-cache"
+
+
+def test_catalog_key_accepted_for_put():
+    store, stubber = _make_store()
+    stubber.add_response(
+        "put_object",
+        {},
+        expected_params={
+            "Bucket": _BUCKET,
+            "Key": _CATALOG_KEY,
+            "Body": _CATALOG_DATA,
+            "ContentType": _CATALOG_CONTENT_TYPE,
+            "CacheControl": _CATALOG_CACHE,
+        },
+    )
+    with stubber:
+        asyncio.run(store.put(_CATALOG_KEY, _CATALOG_DATA, _CATALOG_CONTENT_TYPE))
+    stubber.assert_no_pending_responses()
+
+
+def test_catalog_key_cache_control_is_private_no_cache():
+    from photo_gate.r2_store import _cache_control
+    assert _cache_control(_CATALOG_KEY) == "private, no-cache"
+
+
+def test_catalog_key_content_type_must_be_json():
+    store, _ = _make_store()
+    with pytest.raises(ValueError, match="content type"):
+        asyncio.run(store.put(_CATALOG_KEY, _CATALOG_DATA, "text/plain"))
+
+
+def test_catalog_key_accepted_for_get():
+    store, stubber = _make_store()
+    import io
+    stubber.add_response(
+        "get_object",
+        {"Body": io.BytesIO(_CATALOG_DATA), "ContentLength": len(_CATALOG_DATA)},
+        expected_params={"Bucket": _BUCKET, "Key": _CATALOG_KEY},
+    )
+    with stubber:
+        result = asyncio.run(store.get(_CATALOG_KEY))
+    assert result == _CATALOG_DATA
+
+
+def test_other_ops_keys_still_rejected_after_catalog():
+    store, _ = _make_store()
+    with pytest.raises(ValueError):
+        asyncio.run(store.put("ops/unknown.json", b"data", "application/json"))
+    with pytest.raises(ValueError):
+        asyncio.run(store.get("ops/something-else.json"))

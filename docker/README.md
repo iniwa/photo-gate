@@ -47,6 +47,49 @@ Optional environment variables (must both be set or both absent):
 
 ## CLI
 
+### publish-catalog
+
+Reads all PhotoPrism albums and publishes a sanitized display catalog to private R2.
+
+```sh
+photo-gate-sync publish-catalog
+```
+
+- Reads PhotoPrism albums via `GET /api/v1/albums`.
+- Builds a sanitized catalog: raw PhotoPrism UIDs are replaced by opaque `catalogId` values
+  (lowercase SHA-256 hex digest of the raw UID). The published JSON contains no UID, token, URL,
+  NAS path, original filename, location metadata, R2 credential, or source photo data.
+- Writes the catalog to the fixed private R2 key `ops/album-catalog.json`
+  (`Content-Type: application/json`, `Cache-Control: private, no-cache`).
+- On success, prints `Published album catalog: count=N`.
+- On failure, prints a sanitized error line and exits non-zero.
+
+**Published schema (version 1):**
+
+```json
+{
+  "schema": 1,
+  "publishedAt": "2026-06-26T00:00:00Z",
+  "albums": [
+    {
+      "catalogId": "64-char lowercase hex sha256 of the PhotoPrism album UID",
+      "title": "Album display title",
+      "photoCount": 42,
+      "updatedAt": "2026-06-26T00:00:00Z"
+    }
+  ]
+}
+```
+
+- `catalogId`: opaque, stable, derived from the raw PhotoPrism UID via SHA-256.
+- `photoCount` and `updatedAt` may be `null` when PhotoPrism does not provide a safe value.
+- Albums are sorted by `title` then `catalogId` for deterministic output.
+- This command does **not** change daemon sync targets (still configured via Portainer variables).
+- Reupload suppression is **not** part of this change; sync-once and sync-daemon re-upload all
+  photos on each run, same as before.
+
+### sync-once
+
 ```sh
 photo-gate-sync sync-once \
   --album-id ALBUM_ID \
@@ -140,7 +183,7 @@ Release images are published to GitHub Container Registry as
 ## Architecture
 
 - `photo_gate.config` — AppConfig and load_config (environment variable loader)
-- `photo_gate.main` — CLI entrypoint (`photo-gate-sync sync-once`)
+- `photo_gate.main` — CLI entrypoint (`photo-gate-sync`)
 - `photo_gate.photoprism_client` — async httpx client for PhotoPrism API
 - `photo_gate.image_processor` — pyvips re-encoding and metadata validation
 - `photo_gate.manifest` — deterministic manifest.json builder
@@ -148,6 +191,7 @@ Release images are published to GitHub Container Registry as
 - `photo_gate.r2_store` — R2Config and R2ObjectStore (boto3 S3-compatible, SigV4, asyncio.to_thread)
 - `photo_gate.sync` — sync orchestration: list → download → re-encode → validate → upload → manifest
 - `photo_gate.models` — typed dataclasses shared across modules
+- `photo_gate.album_catalog` — catalog builder: converts PhotoPrism album rows to sanitized JSON (`ops/album-catalog.json`)
 - `photo_gate.sync_status` — builds sanitized sync status payload for R2 (`ops/sync-status.json`)
 - `photo_gate.sync_request` — validates manual sync request objects read from R2 (`ops/sync-request.json`)
 
@@ -206,3 +250,25 @@ credentials appear in the object or in any log line.
   `"scheduled"`) and `lastHandledRequestId` (request ID after a manual sync,
   or `null`). The local health file remains schema 1 and does not include
   trigger fields.
+
+## Album Catalog
+
+The `publish-catalog` command writes a sanitized album catalog to private R2 at the fixed key:
+
+```text
+ops/album-catalog.json
+```
+
+- Content-Type: `application/json`
+- Cache-Control: `private, no-cache`
+- Written by `photo-gate-sync publish-catalog`; the Worker reads it in a later phase (A3)
+
+The object contains only safe display fields. The published JSON must never include:
+raw PhotoPrism UIDs, PhotoPrism URLs, API tokens, preview tokens, NAS paths, original filenames,
+location metadata, R2 endpoint/bucket/credentials, admin identity, or source photo rows.
+
+`catalogId` values are opaque SHA-256 hex digests of raw UIDs. Docker can recompute the mapping
+from catalog ID to real UID when it needs to resolve a sync target later (Track A2).
+
+This command does **not** change daemon sync targets. Portainer album variables remain the sole
+sync target until Track A2 is implemented. Reupload suppression is not part of this change.
