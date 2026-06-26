@@ -21,9 +21,9 @@ The manual sync release is deployed and live-smoke verified in production:
 - DONE: the operator pressed the manual sync button from `/admin/sync`; the`r`n  daemon consumed the request, synced 234/234, uploaded cover and manifest, and`r`n  reported success in 136.5s.
 - DONE: `/admin/sync` reported no pending request, 0 failures, 1 completed`r`n  run, manual trigger kind, and a non-null handled request ID.
 
-The fifteenth Level 3 implementation handoff is reviewed and complete locally:
+The fifteenth Level 3 implementation handoff is reviewed, deployed, and smoke-tested in production:
 
-- DONE: D1-only admin album creation via `POST /admin/albums/create`.
+- DONE: D1-only admin album creation via `POST /admin/albums/create` is deployed in Worker version `3c4d4f8e` (commit `cd990ae`).
 - The route uses the existing admin guard, strict same-origin check, exact
   URL-encoded Content-Type check, exact five-field validation, canonical
   timestamps from the Worker clock, and a single parameterized `albums` INSERT.
@@ -33,7 +33,7 @@ The fifteenth Level 3 implementation handoff is reviewed and complete locally:
   access PhotoPrism, NAS, Docker, Portainer, R2, permissions, users, or sessions.
 - DONE: local verification on 2026-06-26 passed Workers lint, typecheck, build,
   2041 tests / 32 files, production dependency audit, `git diff --check`, and
-  confirmed no Docker or migration diff.
+  confirmed no Docker or migration diff. Production deploy on 2026-06-26 succeeded with unauthenticated smoke checks: `/` 200, `/albums` 303 to `/`, `/img/probe-nonexistent` 401 no-store, `/api/probe` 401 no-store, and `/admin` Cloudflare Access 302.
 
 The fourteenth Level 3 implementation handoff is reviewed and complete locally:
 
@@ -346,9 +346,9 @@ documented.
   files locally (2026-06-26). Full devDependency audit may still report
   Wrangler/Miniflare transitive advisories; production dependency audit reports
   0 vulnerabilities.
-  Production Worker commit `a1a5c2e` is deployed as version `b30250aa`; live
-  includes manual sync controls but not the later local-only admin browser
-  management additions.
+  Production Worker commit `cd990ae` is deployed as version `3c4d4f8e`; live
+  includes manual sync controls, user display-name editing, permission assignment
+  dropdowns, and D1-only album creation.
 - Docker: sync `0.3.0` is published multi-arch and running in production. The`r`n  admin sync-status handoff
   passed 190 tests with 34 expected libvips/pyvips skips and
   `python -m compileall src` locally (2026-06-25). The Docker-side sync request

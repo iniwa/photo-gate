@@ -27,6 +27,7 @@
 | 2026-06-23 | `495c9ae6-3cf5-4a04-a8f0-d93017468811` | `42a7b56` 相当 | `wrangler rollback` (OAuth) | ロールバック検証後リストア。スモーク全 5 項目合格。その後シークレット復旧版に更新 |
 | 2026-06-23 | `08e567cf-76a8-4151-8f76-d92783b73af0` | `42a7b56` 相当 | Dashboard / `wrangler secret put` | ロールバックで消失した Access シークレット 3 件を復旧。AUD をダッシュボード値で再登録し、管理コンソール復旧確認済み。本番はこの版で稼働中 |
 | 2026-06-26 | `b30250aa-0289-4758-b1fe-3376beba0afe` | `a1a5c2e` | 手動 `wrangler deploy` (OAuth) | Worker 側の手動同期機能(request writer, status schema 2 rendering, admin sync UI)を本番デプロイ。Docker daemon consumer は未リリース。未認証スモーク全 5 項目合格。/admin/sync 認証済みブラウザ確認済み(ステータスページ + manual sync ボタン表示) |
+| 2026-06-26 | `3c4d4f8e-e13f-4ebd-8ab0-213639b7f90b` | `cd990ae` | 手動 `wrangler deploy` (OAuth) | 管理ブラウザ機能追加を本番デプロイ。ユーザー表示名編集、権限割当ドロップダウン、D1-only アルバム作成 (`enabled=0`, `photoprism_album_uid` create-only) を含む。未認証スモーク 5 項目合格。 |
 
 ## Docker sync (ghcr.io/iniwa/photo-gate-sync)
 

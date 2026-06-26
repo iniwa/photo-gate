@@ -16,9 +16,9 @@ documented for incident use.
 ## Production Topology
 
 - Workers viewer: https://share-photo.iniwach.com
-  (commit `a1a5c2e`; active version `b30250aa-0289-4758-b1fe-3376beba0afe`;
+  (commit `cd990ae`; active version `3c4d4f8e-e13f-4ebd-8ab0-213639b7f90b`;
   manually deployed 2026-06-26; cron 18:00 UTC session cleanup).
-  Includes manual sync request writer, admin sync UI, and status schema 2.
+  Includes manual sync request writer, admin sync UI, status schema 2, user display-name editing, permission assignment dropdowns, and D1-only album creation.
   The former `photo-gate.iniwaiwana.workers.dev` route is disabled and returns 404.
 - D1 `photo-gate` (APAC, id `de77cb73-497a-4a41-bd1c-151fd907be3f`),
   2 migrations applied. One user, one album, one permission row (real
@@ -86,7 +86,7 @@ documented for incident use.
   and the Worker-side manual sync administration surface is deployed to production:
   request writer (`POST /admin/sync/request`), status schema 2 rendering,
   pending indicator, and no-JS Sync Now form (`GET /admin/sync`). Production
-  Worker deploy completed 2026-06-26 (version `b30250aa`, commit `a1a5c2e`);
+  Worker deploy completed 2026-06-26 (version `3c4d4f8e`, commit `cd990ae`);
   unauthenticated smoke checks pass. Docker sync `0.3.0` is released and running
   in Portainer, and live manual-sync smoke completed 2026-06-26: the admin
   request was consumed by the daemon, sync completed 234/234, cover and manifest
@@ -113,7 +113,7 @@ documented for incident use.
   files locally (2026-06-26).
   Production audit is clean; full `npm audit` remains blocked by devDependency
   advisories in Wrangler/Miniflare. Workers manual deploy succeeded for commit
-  `a1a5c2e` (version `b30250aa`, 2026-06-26); unauthenticated production smoke
+  `cd990ae` (version `3c4d4f8e`, 2026-06-26); unauthenticated production smoke
   confirms viewer login page, /albums redirect, /img 401 no-store, /api 401
   no-store, /admin Cloudflare Access intercept, and authenticated /admin/sync
   browser rendering all pass.
