@@ -196,7 +196,7 @@ class PhotoPrismClient:
             try:
                 response = await self._client.get(
                     "/api/v1/albums",
-                    params={"count": self._page_size, "offset": offset},
+                    params={"count": self._page_size, "offset": offset, "type": "album"},
                 )
             except httpx.HTTPError as exc:
                 raise PhotoPrismError("PhotoPrism album list request failed") from exc
@@ -221,6 +221,12 @@ class PhotoPrismClient:
             for item in results:
                 if not isinstance(item, dict):
                     raise PhotoPrismError("PhotoPrism album entry is malformed")
+
+                type_val = item.get("Type")
+                if type_val is None:
+                    type_val = item.get("type")
+                if not isinstance(type_val, str) or type_val != "album":
+                    continue
 
                 uid = item.get("UID") or item.get("Uid") or ""
                 if not uid:

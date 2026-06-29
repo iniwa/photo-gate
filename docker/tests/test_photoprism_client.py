@@ -379,8 +379,9 @@ def _album_json(
     title="Test Album",
     photo_count=10,
     updated_at="2026-06-26T12:00:00Z",
+    album_type="album",
 ):
-    return {"UID": uid, "Title": title, "PhotoCount": photo_count, "UpdatedAt": updated_at}
+    return {"UID": uid, "Type": album_type, "Title": title, "PhotoCount": photo_count, "UpdatedAt": updated_at}
 
 
 def test_list_albums_single_page():
@@ -455,7 +456,7 @@ def test_list_albums_empty_page():
 
 
 def test_list_albums_missing_photo_count_becomes_none():
-    body = [{"UID": "albumUid001", "Title": "Album"}]  # no PhotoCount
+    body = [{"UID": "albumUid001", "Type": "album", "Title": "Album"}]  # no PhotoCount
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -473,7 +474,7 @@ def test_list_albums_missing_photo_count_becomes_none():
 
 
 def test_list_albums_missing_updated_at_becomes_none():
-    body = [{"UID": "albumUid001", "Title": "Album", "PhotoCount": 5}]  # no UpdatedAt
+    body = [{"UID": "albumUid001", "Type": "album", "Title": "Album", "PhotoCount": 5}]  # no UpdatedAt
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -509,7 +510,7 @@ def test_list_albums_normalizes_millisecond_updated_at():
 
 
 def test_list_albums_rejects_missing_uid():
-    body = [{"Title": "No UID Album", "PhotoCount": 1}]
+    body = [{"Type": "album", "Title": "No UID Album", "PhotoCount": 1}]
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -545,7 +546,7 @@ def test_list_albums_rejects_unsafe_uid():
 
 
 def test_list_albums_rejects_invalid_title():
-    body = [{"UID": "albumUid001", "Title": "", "PhotoCount": 1}]  # empty title
+    body = [{"UID": "albumUid001", "Type": "album", "Title": "", "PhotoCount": 1}]  # empty title
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -647,7 +648,7 @@ def test_list_albums_rejects_malformed_entry():
 def test_list_albums_error_excludes_uid():
     """Raw UID must not appear in PhotoPrismError messages."""
     secret_uid = "secretAlbumUidValue"
-    body = [{"UID": secret_uid, "Title": "", "PhotoCount": 1}]  # invalid title
+    body = [{"UID": secret_uid, "Type": "album", "Title": "", "PhotoCount": 1}]  # invalid title
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -703,5 +704,228 @@ def test_list_albums_result_is_frozen_dataclass():
         from dataclasses import FrozenInstanceError
         with pytest.raises((FrozenInstanceError, AttributeError)):
             result[0].raw_uid = "mutated"
+
+    asyncio.run(run())
+
+
+# ---------------------------------------------------------------------------
+# list_albums — type filter
+# ---------------------------------------------------------------------------
+
+
+def test_list_albums_sends_type_param():
+    """Request must include type=album query parameter."""
+    received_params: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        received_params.append(dict(request.url.params))
+        return httpx.Response(
+            200,
+            headers={"X-Count": "0", "X-Limit": "2"},
+            content=b"[]",
+        )
+
+    async def run():
+        async with _make_client(handler) as client:
+            await client.list_albums()
+        assert received_params[0].get("type") == "album"
+
+    asyncio.run(run())
+
+
+def test_list_albums_skips_folder_type():
+    body = [_album_json("albumUid001", album_type="folder")]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"X-Count": "1", "X-Limit": "2"},
+            content=json.dumps(body).encode(),
+        )
+
+    async def run():
+        async with _make_client(handler) as client:
+            result = await client.list_albums()
+        assert result == []
+
+    asyncio.run(run())
+
+
+def test_list_albums_skips_non_album_types():
+    """Folder, month, state, country, city, label, moment entries are all skipped."""
+    non_album_types = ["folder", "month", "state", "country", "city", "label", "moment"]
+    body = [_album_json(f"albumUid{i:03d}", album_type=t) for i, t in enumerate(non_album_types)]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"X-Count": str(len(body)), "X-Limit": "500"},
+            content=json.dumps(body).encode(),
+        )
+
+    async def run():
+        async with _make_client(handler, page_size=500) as client:
+            result = await client.list_albums()
+        assert result == []
+
+    asyncio.run(run())
+
+
+def test_list_albums_skips_missing_type():
+    body = [{"UID": "albumUid001", "Title": "No Type", "PhotoCount": 1}]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"X-Count": "1", "X-Limit": "2"},
+            content=json.dumps(body).encode(),
+        )
+
+    async def run():
+        async with _make_client(handler) as client:
+            result = await client.list_albums()
+        assert result == []
+
+    asyncio.run(run())
+
+
+def test_list_albums_skips_null_type():
+    body = [{"UID": "albumUid001", "Type": None, "Title": "Null Type", "PhotoCount": 1}]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"X-Count": "1", "X-Limit": "2"},
+            content=json.dumps(body).encode(),
+        )
+
+    async def run():
+        async with _make_client(handler) as client:
+            result = await client.list_albums()
+        assert result == []
+
+    asyncio.run(run())
+
+
+def test_list_albums_skips_empty_string_type():
+    body = [{"UID": "albumUid001", "Type": "", "Title": "Empty Type", "PhotoCount": 1}]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"X-Count": "1", "X-Limit": "2"},
+            content=json.dumps(body).encode(),
+        )
+
+    async def run():
+        async with _make_client(handler) as client:
+            result = await client.list_albums()
+        assert result == []
+
+    asyncio.run(run())
+
+
+def test_list_albums_skips_non_string_type():
+    body = [{"UID": "albumUid001", "Type": 1, "Title": "Int Type", "PhotoCount": 1}]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"X-Count": "1", "X-Limit": "2"},
+            content=json.dumps(body).encode(),
+        )
+
+    async def run():
+        async with _make_client(handler) as client:
+            result = await client.list_albums()
+        assert result == []
+
+    asyncio.run(run())
+
+
+def test_list_albums_accepts_lowercase_type_field():
+    """Lowercase 'type' key with value 'album' is also accepted."""
+    body = [{"UID": "albumUid001", "type": "album", "Title": "Lowercase Key", "PhotoCount": 5}]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"X-Count": "1", "X-Limit": "2"},
+            content=json.dumps(body).encode(),
+        )
+
+    async def run():
+        async with _make_client(handler) as client:
+            result = await client.list_albums()
+        assert len(result) == 1
+        assert result[0].title == "Lowercase Key"
+
+    asyncio.run(run())
+
+
+def test_list_albums_skips_malformed_non_album_entry():
+    """Folder entry with unsafe UID is silently skipped; valid album entry is returned."""
+    body = [
+        {"UID": "../../evil", "Type": "folder", "Title": "Bad Folder", "PhotoCount": 1},
+        _album_json("albumUid001"),
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"X-Count": "2", "X-Limit": "500"},
+            content=json.dumps(body).encode(),
+        )
+
+    async def run():
+        async with _make_client(handler, page_size=500) as client:
+            result = await client.list_albums()
+        assert len(result) == 1
+        assert result[0].raw_uid == "albumUid001"
+
+    asyncio.run(run())
+
+
+def test_list_albums_malformed_album_entry_still_fails():
+    """An entry with Type 'album' but an unsafe UID still raises PhotoPrismError."""
+    body = [_album_json("../../evil")]  # Type: "album", unsafe UID
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"X-Count": "1", "X-Limit": "2"},
+            content=json.dumps(body).encode(),
+        )
+
+    async def run():
+        with pytest.raises(PhotoPrismError, match="unsafe"):
+            async with _make_client(handler) as client:
+                await client.list_albums()
+
+    asyncio.run(run())
+
+
+def test_list_albums_includes_only_type_album_in_mixed_response():
+    """Mix of album and non-album types — only album entries are returned."""
+    body = [
+        _album_json("albumUid001"),
+        _album_json("folderUid001", album_type="folder"),
+        _album_json("albumUid002"),
+        _album_json("momentUid001", album_type="moment"),
+        _album_json("albumUid003"),
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"X-Count": "5", "X-Limit": "500"},
+            content=json.dumps(body).encode(),
+        )
+
+    async def run():
+        async with _make_client(handler, page_size=500) as client:
+            result = await client.list_albums()
+        assert len(result) == 3
+        assert {a.raw_uid for a in result} == {"albumUid001", "albumUid002", "albumUid003"}
 
     asyncio.run(run())
