@@ -11,7 +11,7 @@ def build_manifest(
     generated_at: datetime,
 ) -> str:
     """
-    Returns a deterministic UTF-8 JSON string matching schemaVersion 1.
+    Returns a deterministic UTF-8 JSON string matching schemaVersion 2.
     Photos are sorted by taken_at then uid.
     Raises ValueError on duplicate photo UIDs.
     The caller supplies generated_at; this function never reads the clock.
@@ -30,7 +30,7 @@ def build_manifest(
     )
 
     manifest: dict = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "albumId": album.album_id,
         "title": album.title,
         "source": {
@@ -54,6 +54,7 @@ def build_manifest(
         "photos": [
             {
                 "id": photo.uid,
+                "sourceHash": photo.hash,
                 "title": photo.title,
                 "thumb": f"thumbs/{photo.uid}.webp",
                 "preview": f"previews/{photo.uid}.jpg",

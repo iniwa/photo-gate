@@ -9,6 +9,7 @@ from .manifest import build_manifest
 from .models import AlbumIdentity, ImageSettings, PhotoPrismPhoto
 from .object_store import ObjectStore
 from .photoprism_client import PhotoPrismClient, PhotoPrismError
+from .reupload import build_prev_photo_hashes
 
 _log = logging.getLogger(__name__)
 
@@ -70,14 +71,14 @@ async def sync_album(
 ) -> None:
     """
     Sync one album:
-      1. List photos from PhotoPrism.
-      2. For each photo: download fit_720 + the preview source size,
-         re-encode, validate, upload.
-      3. If the album is non-empty, generate and upload the cover webp from
-         the first photo's fit_720 preview to albums/<id>/cover.webp.
-      4. Upload manifest only after all image uploads (including the cover) succeed.
+      1. Read previous manifest for reupload suppression (cache miss on any error).
+      2. List photos from PhotoPrism.
+      3. For each photo: skip if proven unchanged; otherwise download fit_720 +
+         the preview source size, re-encode, validate, and upload.
+      4. If the album is non-empty, generate and upload the cover webp.
+      5. Upload manifest only after all image uploads (including the cover) succeed.
 
-    If any step for any photo fails the exception propagates and manifest is not uploaded.
+    If any required step fails the exception propagates and manifest is not uploaded.
     Concurrency limits simultaneous per-photo downloads; default is conservative for Pi.
     """
     if concurrency < 1:
@@ -88,14 +89,29 @@ async def sync_album(
             f"{sorted(_SOURCE_SIZE_PX)}"
         )
 
+    manifest_key = f"albums/{album.album_id}/manifest.json"
+
+    # Load previous manifest for reupload suppression; treat any read error as a
+    # safe cache miss so a store failure never prevents a normal sync.
+    try:
+        prev_raw = await store.get(manifest_key)
+    except Exception:
+        prev_raw = None
+    prev_hashes = build_prev_photo_hashes(prev_raw, album, settings)
+
     processor = ImageProcessor()
     photos, preview_token = await client.list_album_photos(album.photoprism_album_uid)
     _log.info("album %s: %d photos to sync", album.album_id, len(photos))
 
     sem = asyncio.Semaphore(concurrency)
-    _done = [0]
+    _uploaded = [0]
+    _skipped = [0]
 
     async def process_one(photo: PhotoPrismPhoto) -> None:
+        if prev_hashes.get(photo.uid) == photo.hash:
+            _skipped[0] += 1
+            return
+
         async with sem:
             thumb_src = await client.download_preview(
                 photo.hash, preview_token, _THUMB_SOURCE_SIZE
@@ -119,12 +135,17 @@ async def sync_album(
 
             await store.put(thumb_key, thumb_data, "image/webp")
             await store.put(preview_key, preview_data, "image/jpeg")
-            _done[0] += 1
-            _log.info("synced %s (%d/%d)", photo.uid, _done[0], len(photos))
+            _uploaded[0] += 1
+            _log.info("synced %s (%d/%d)", photo.uid, _uploaded[0], len(photos))
 
     async with asyncio.TaskGroup() as tg:
         for photo in photos:
             tg.create_task(process_one(photo))
+
+    _log.info(
+        "album %s: uploaded=%d skipped=%d total=%d",
+        album.album_id, _uploaded[0], _skipped[0], len(photos),
+    )
 
     if photos:
         cover_photo = photos[0]
@@ -139,6 +160,5 @@ async def sync_album(
         _log.info("uploaded cover for album %s", album.album_id)
 
     manifest_json = build_manifest(album, photos, settings, generated_at)
-    manifest_key = f"albums/{album.album_id}/manifest.json"
     await store.put(manifest_key, manifest_json.encode("utf-8"), "application/json")
     _log.info("uploaded manifest for album %s", album.album_id)

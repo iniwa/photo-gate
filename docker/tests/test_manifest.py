@@ -33,9 +33,9 @@ def _photo(uid: str, taken_at: str = "2026-06-01T10:00:00+00:00") -> PhotoPrismP
 # ---------------------------------------------------------------------------
 
 
-def test_schema_version_is_one():
+def test_schema_version_is_two():
     doc = json.loads(build_manifest(_ALBUM, [], _SETTINGS, _FIXED_TS))
-    assert doc["schemaVersion"] == 1
+    assert doc["schemaVersion"] == 2
 
 
 def test_album_id_and_title():
@@ -87,6 +87,12 @@ def test_photo_entry_uses_uid_as_id():
     photos = [_photo("pp_abc001")]
     doc = json.loads(build_manifest(_ALBUM, photos, _SETTINGS, _FIXED_TS))
     assert doc["photos"][0]["id"] == "pp_abc001"
+
+
+def test_photo_entry_includes_source_hash():
+    photos = [_photo("pp_abc001")]
+    doc = json.loads(build_manifest(_ALBUM, photos, _SETTINGS, _FIXED_TS))
+    assert doc["photos"][0]["sourceHash"] == "a" * 40
 
 
 def test_photo_relative_paths():

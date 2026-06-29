@@ -39,16 +39,32 @@ _SETTINGS = ImageSettings()
 
 
 class _FakeStore:
-    """Records put calls in order."""
+    """Records put calls in order. Supports pre-loaded objects for get()."""
 
-    def __init__(self, fail_on_key: str | None = None):
+    def __init__(
+        self,
+        fail_on_key: str | None = None,
+        initial_objects: dict[str, bytes] | None = None,
+        get_raises: bool = False,
+    ):
         self._fail_on_key = fail_on_key
+        self._objects: dict[str, bytes] = dict(initial_objects or {})
+        self._get_raises = get_raises
         self.puts: list[tuple[str, str]] = []  # (key, content_type)
 
     async def put(self, key: str, data: bytes, content_type: str) -> None:
         if self._fail_on_key and key.endswith(self._fail_on_key):
             raise RuntimeError(f"Injected failure for key {key!r}")
         self.puts.append((key, content_type))
+        self._objects[key] = data
+
+    async def get(self, key: str) -> bytes | None:
+        if self._get_raises:
+            raise RuntimeError("Injected get failure")
+        return self._objects.get(key)
+
+    async def delete(self, key: str) -> None:
+        self._objects.pop(key, None)
 
 
 # ---------------------------------------------------------------------------
@@ -584,3 +600,439 @@ def test_cover_uses_first_photo_thumb_source():
     assert w == h, (
         f"Cover should be square (from first photo 700x700), got {w}x{h}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Reupload suppression tests
+# ---------------------------------------------------------------------------
+
+
+def _schema2_manifest(
+    album_id: str,
+    album_uid: str,
+    photos: list[tuple[str, str]],  # (uid, source_hash)
+    settings: ImageSettings | None = None,
+) -> bytes:
+    """Build a valid schema 2 manifest as bytes for pre-loading into _FakeStore."""
+    s = settings or _SETTINGS
+    doc = {
+        "schemaVersion": 2,
+        "albumId": album_id,
+        "title": "Test Album",
+        "source": {"type": "photoprism", "albumUid": album_uid},
+        "generatedAt": "2026-06-09T09:00:00+00:00",
+        "images": {
+            "thumb": {
+                "longEdge": s.thumb.long_edge,
+                "format": s.thumb.format,
+                "quality": s.thumb.quality,
+            },
+            "preview": {
+                "longEdge": s.preview.long_edge,
+                "format": s.preview.format,
+                "quality": s.preview.quality,
+            },
+            "stripExif": True,
+        },
+        "photos": [
+            {
+                "id": uid,
+                "sourceHash": source_hash,
+                "title": "Test",
+                "thumb": f"thumbs/{uid}.webp",
+                "preview": f"previews/{uid}.jpg",
+                "takenAt": "2026-06-01T10:00:00+00:00",
+                "width": 4,
+                "height": 4,
+            }
+            for uid, source_hash in photos
+        ],
+    }
+    return json.dumps(doc).encode("utf-8")
+
+
+def _make_tracking_client(
+    photos_json: list[dict], preview_bytes: bytes
+) -> tuple["PhotoPrismClient", list[str]]:
+    """Like _make_photoprism_client but also records hashes requested for /api/v1/t/."""
+    download_hashes: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "/api/v1/photos" in url:
+            return httpx.Response(
+                200,
+                headers={
+                    "X-Preview-Token": "preview_tok",
+                    "X-Count": str(len(photos_json)),
+                    "X-Limit": "500",
+                },
+                content=json.dumps(photos_json).encode(),
+            )
+        if "/api/v1/t/" in url:
+            parts = url.rstrip("/").split("/")
+            download_hashes.append(parts[-3])
+            return httpx.Response(
+                200,
+                headers={"content-type": "image/jpeg"},
+                content=preview_bytes,
+            )
+        return httpx.Response(404, content=b"not found")
+
+    client = PhotoPrismClient(
+        base_url="http://photoprism.test",
+        token="test-token",
+        _transport=_MockTransport(handler),
+    )
+    return client, download_hashes
+
+
+@skip_no_pyvips
+def test_unchanged_photo_not_downloaded():
+    """When a photo's hash matches the previous schema 2 manifest, no download is issued."""
+    uid = "uid001abc"
+    hash_val = "1" * 40
+    photos_json = [_photo_entry(uid, hash_val)]
+    prev_manifest = _schema2_manifest(
+        _ALBUM.album_id, _ALBUM.photoprism_album_uid, [(uid, hash_val)]
+    )
+    store = _FakeStore(initial_objects={f"albums/{_ALBUM.album_id}/manifest.json": prev_manifest})
+    client, download_hashes = _make_tracking_client(photos_json, _tiny_jpeg())
+
+    async def run():
+        async with client:
+            await sync_album(client, _ALBUM, store, _SETTINGS, _FIXED_TS)
+
+    asyncio.run(run())
+
+    # Cover still requires one download (cover photo = first photo)
+    # No thumb/preview download for the skipped photo
+    photo_downloads = [h for h in download_hashes if h == hash_val]
+    assert len(photo_downloads) == 1, (
+        f"Expected exactly 1 download (cover), got {len(photo_downloads)}: {download_hashes}"
+    )
+
+
+@skip_no_pyvips
+def test_unchanged_photo_thumb_preview_not_put():
+    """Skipped photo thumb and preview must not be PUT to the store."""
+    uid = "uid001abc"
+    hash_val = "1" * 40
+    photos_json = [_photo_entry(uid, hash_val)]
+    prev_manifest = _schema2_manifest(
+        _ALBUM.album_id, _ALBUM.photoprism_album_uid, [(uid, hash_val)]
+    )
+    store = _FakeStore(initial_objects={f"albums/{_ALBUM.album_id}/manifest.json": prev_manifest})
+    client = _make_photoprism_client(photos_json, _tiny_jpeg())
+
+    async def run():
+        async with client:
+            await sync_album(client, _ALBUM, store, _SETTINGS, _FIXED_TS)
+
+    asyncio.run(run())
+
+    put_keys = [k for k, _ in store.puts]
+    assert not any(f"thumbs/{uid}" in k for k in put_keys), (
+        f"Thumb was PUT for skipped photo: {put_keys}"
+    )
+    assert not any(f"previews/{uid}" in k for k in put_keys), (
+        f"Preview was PUT for skipped photo: {put_keys}"
+    )
+
+
+@skip_no_pyvips
+def test_all_skipped_cover_still_uploaded():
+    """Cover must be regenerated and PUT even when all photo thumb/preview pairs are skipped."""
+    uid = "uid001abc"
+    hash_val = "1" * 40
+    photos_json = [_photo_entry(uid, hash_val)]
+    prev_manifest = _schema2_manifest(
+        _ALBUM.album_id, _ALBUM.photoprism_album_uid, [(uid, hash_val)]
+    )
+    store = _FakeStore(initial_objects={f"albums/{_ALBUM.album_id}/manifest.json": prev_manifest})
+    client = _make_photoprism_client(photos_json, _tiny_jpeg())
+
+    async def run():
+        async with client:
+            await sync_album(client, _ALBUM, store, _SETTINGS, _FIXED_TS)
+
+    asyncio.run(run())
+
+    put_keys = [k for k, _ in store.puts]
+    assert any("cover.webp" in k for k in put_keys), (
+        f"Cover.webp was not uploaded despite non-empty album: {put_keys}"
+    )
+
+
+@skip_no_pyvips
+def test_all_skipped_manifest_still_final():
+    """Manifest must be uploaded as the last PUT even when all photo pairs are skipped."""
+    uid = "uid001abc"
+    hash_val = "1" * 40
+    photos_json = [_photo_entry(uid, hash_val)]
+    prev_manifest = _schema2_manifest(
+        _ALBUM.album_id, _ALBUM.photoprism_album_uid, [(uid, hash_val)]
+    )
+    store = _FakeStore(initial_objects={f"albums/{_ALBUM.album_id}/manifest.json": prev_manifest})
+    client = _make_photoprism_client(photos_json, _tiny_jpeg())
+
+    async def run():
+        async with client:
+            await sync_album(client, _ALBUM, store, _SETTINGS, _FIXED_TS)
+
+    asyncio.run(run())
+
+    assert store.puts, "No uploads recorded"
+    last_key, last_ct = store.puts[-1]
+    assert last_key.endswith("manifest.json"), (
+        f"Expected manifest as last upload, got {last_key!r}"
+    )
+    assert last_ct == "application/json"
+
+
+@skip_no_pyvips
+def test_partial_skip():
+    """Changed photos are processed; only matching-hash photos are skipped."""
+    uid_a = "uid001abc"
+    uid_b = "uid002abc"
+    hash_a = "1" * 40
+    hash_b_old = "2" * 40
+    hash_b_new = "3" * 40
+
+    photos_json = [
+        _photo_entry(uid_a, hash_a),   # same hash → skip
+        _photo_entry(uid_b, hash_b_new),  # changed hash → process
+    ]
+    prev_manifest = _schema2_manifest(
+        _ALBUM.album_id, _ALBUM.photoprism_album_uid,
+        [(uid_a, hash_a), (uid_b, hash_b_old)],
+    )
+    store = _FakeStore(initial_objects={f"albums/{_ALBUM.album_id}/manifest.json": prev_manifest})
+    client = _make_photoprism_client(photos_json, _tiny_jpeg())
+
+    async def run():
+        async with client:
+            await sync_album(client, _ALBUM, store, _SETTINGS, _FIXED_TS)
+
+    asyncio.run(run())
+
+    put_keys = [k for k, _ in store.puts]
+    assert not any(f"thumbs/{uid_a}" in k for k in put_keys), (
+        f"Skipped photo {uid_a!r} thumb was PUT: {put_keys}"
+    )
+    assert not any(f"previews/{uid_a}" in k for k in put_keys), (
+        f"Skipped photo {uid_a!r} preview was PUT: {put_keys}"
+    )
+    assert any(f"thumbs/{uid_b}" in k for k in put_keys), (
+        f"Changed photo {uid_b!r} thumb was not PUT: {put_keys}"
+    )
+    assert any(f"previews/{uid_b}" in k for k in put_keys), (
+        f"Changed photo {uid_b!r} preview was not PUT: {put_keys}"
+    )
+    assert put_keys[-1].endswith("manifest.json"), "Manifest must be last upload"
+
+
+@skip_no_pyvips
+def test_cache_miss_schema_1_manifest():
+    """A schema 1 previous manifest must be treated as a cache miss (all photos processed)."""
+    uid = "uid001abc"
+    hash_val = "1" * 40
+    photos_json = [_photo_entry(uid, hash_val)]
+    schema1_manifest = json.dumps({
+        "schemaVersion": 1,
+        "albumId": _ALBUM.album_id,
+        "source": {"type": "photoprism", "albumUid": _ALBUM.photoprism_album_uid},
+        "generatedAt": "2026-06-09T09:00:00+00:00",
+        "images": {
+            "thumb": {"longEdge": 640, "format": "webp", "quality": 80},
+            "preview": {"longEdge": 3840, "format": "jpg", "quality": 88},
+            "stripExif": True,
+        },
+        "photos": [{"id": uid, "thumb": f"thumbs/{uid}.webp", "preview": f"previews/{uid}.jpg"}],
+    }).encode()
+    store = _FakeStore(initial_objects={f"albums/{_ALBUM.album_id}/manifest.json": schema1_manifest})
+    client = _make_photoprism_client(photos_json, _tiny_jpeg())
+
+    async def run():
+        async with client:
+            await sync_album(client, _ALBUM, store, _SETTINGS, _FIXED_TS)
+
+    asyncio.run(run())
+
+    put_keys = [k for k, _ in store.puts]
+    assert any(f"thumbs/{uid}" in k for k in put_keys), (
+        "Photo should be processed (cache miss) when prev manifest is schema 1"
+    )
+
+
+@skip_no_pyvips
+def test_cache_miss_malformed_json():
+    """Malformed JSON previous manifest must be treated as a cache miss."""
+    uid = "uid001abc"
+    hash_val = "1" * 40
+    photos_json = [_photo_entry(uid, hash_val)]
+    store = _FakeStore(
+        initial_objects={f"albums/{_ALBUM.album_id}/manifest.json": b"not json {{{"}
+    )
+    client = _make_photoprism_client(photos_json, _tiny_jpeg())
+
+    async def run():
+        async with client:
+            await sync_album(client, _ALBUM, store, _SETTINGS, _FIXED_TS)
+
+    asyncio.run(run())
+
+    put_keys = [k for k, _ in store.puts]
+    assert any(f"thumbs/{uid}" in k for k in put_keys), (
+        "Photo should be processed when prev manifest is malformed JSON"
+    )
+
+
+@skip_no_pyvips
+def test_cache_miss_wrong_album_id():
+    """A previous manifest with a different albumId must be treated as a cache miss."""
+    uid = "uid001abc"
+    hash_val = "1" * 40
+    photos_json = [_photo_entry(uid, hash_val)]
+    prev_manifest = _schema2_manifest(
+        "different-album", _ALBUM.photoprism_album_uid, [(uid, hash_val)]
+    )
+    store = _FakeStore(initial_objects={f"albums/{_ALBUM.album_id}/manifest.json": prev_manifest})
+    client = _make_photoprism_client(photos_json, _tiny_jpeg())
+
+    async def run():
+        async with client:
+            await sync_album(client, _ALBUM, store, _SETTINGS, _FIXED_TS)
+
+    asyncio.run(run())
+
+    put_keys = [k for k, _ in store.puts]
+    assert any(f"thumbs/{uid}" in k for k in put_keys), (
+        "Photo should be processed when albumId mismatches"
+    )
+
+
+@skip_no_pyvips
+def test_cache_miss_store_get_exception():
+    """A store.get exception must not propagate; sync proceeds as a full cache miss."""
+    uid = "uid001abc"
+    hash_val = "1" * 40
+    photos_json = [_photo_entry(uid, hash_val)]
+    store = _FakeStore(get_raises=True)
+    client = _make_photoprism_client(photos_json, _tiny_jpeg())
+
+    async def run():
+        async with client:
+            await sync_album(client, _ALBUM, store, _SETTINGS, _FIXED_TS)
+
+    asyncio.run(run())  # must not raise
+
+    put_keys = [k for k, _ in store.puts]
+    assert any(f"thumbs/{uid}" in k for k in put_keys), (
+        "Photo should be processed when store.get raises"
+    )
+    assert put_keys[-1].endswith("manifest.json")
+
+
+@skip_no_pyvips
+def test_cache_miss_duplicate_uid_in_prev_manifest():
+    """Duplicate photo UIDs in the previous manifest invalidate it as a cache miss."""
+    uid = "uid001abc"
+    hash_val = "1" * 40
+    photos_json = [_photo_entry(uid, hash_val)]
+    doc = {
+        "schemaVersion": 2,
+        "albumId": _ALBUM.album_id,
+        "title": "Test",
+        "source": {"type": "photoprism", "albumUid": _ALBUM.photoprism_album_uid},
+        "generatedAt": "2026-06-09T09:00:00+00:00",
+        "images": {
+            "thumb": {"longEdge": 640, "format": "webp", "quality": 80},
+            "preview": {"longEdge": 3840, "format": "jpg", "quality": 88},
+            "stripExif": True,
+        },
+        "photos": [
+            {"id": uid, "sourceHash": hash_val, "thumb": f"thumbs/{uid}.webp", "preview": f"previews/{uid}.jpg"},
+            {"id": uid, "sourceHash": hash_val, "thumb": f"thumbs/{uid}.webp", "preview": f"previews/{uid}.jpg"},
+        ],
+    }
+    store = _FakeStore(
+        initial_objects={f"albums/{_ALBUM.album_id}/manifest.json": json.dumps(doc).encode()}
+    )
+    client = _make_photoprism_client(photos_json, _tiny_jpeg())
+
+    async def run():
+        async with client:
+            await sync_album(client, _ALBUM, store, _SETTINGS, _FIXED_TS)
+
+    asyncio.run(run())
+
+    put_keys = [k for k, _ in store.puts]
+    assert any(f"thumbs/{uid}" in k for k in put_keys), (
+        "Photo should be processed when prev manifest has duplicate UIDs"
+    )
+
+
+@skip_no_pyvips
+def test_manifest_schema_version_is_two():
+    """The uploaded manifest must be schemaVersion 2."""
+    uid = "uid001abc"
+    hash_val = "1" * 40
+    photos_json = [_photo_entry(uid, hash_val)]
+    client = _make_photoprism_client(photos_json, _tiny_jpeg())
+
+    class _CapturingStore(_FakeStore):
+        def __init__(self):
+            super().__init__()
+            self.manifest_bytes: bytes | None = None
+
+        async def put(self, key: str, data: bytes, content_type: str) -> None:
+            await super().put(key, data, content_type)
+            if key.endswith("manifest.json"):
+                self.manifest_bytes = data
+
+    store = _CapturingStore()
+
+    async def run():
+        async with client:
+            await sync_album(client, _ALBUM, store, _SETTINGS, _FIXED_TS)
+
+    asyncio.run(run())
+
+    assert store.manifest_bytes is not None
+    doc = json.loads(store.manifest_bytes)
+    assert doc["schemaVersion"] == 2, f"Expected schemaVersion 2, got {doc.get('schemaVersion')}"
+
+
+@skip_no_pyvips
+def test_manifest_photo_entry_has_source_hash():
+    """Each photo entry in the uploaded manifest must include sourceHash."""
+    uid = "uid001abc"
+    hash_val = "1" * 40
+    photos_json = [_photo_entry(uid, hash_val)]
+    client = _make_photoprism_client(photos_json, _tiny_jpeg())
+
+    class _CapturingStore(_FakeStore):
+        def __init__(self):
+            super().__init__()
+            self.manifest_bytes: bytes | None = None
+
+        async def put(self, key: str, data: bytes, content_type: str) -> None:
+            await super().put(key, data, content_type)
+            if key.endswith("manifest.json"):
+                self.manifest_bytes = data
+
+    store = _CapturingStore()
+
+    async def run():
+        async with client:
+            await sync_album(client, _ALBUM, store, _SETTINGS, _FIXED_TS)
+
+    asyncio.run(run())
+
+    assert store.manifest_bytes is not None
+    doc = json.loads(store.manifest_bytes)
+    assert doc["photos"], "Expected at least one photo entry"
+    entry = doc["photos"][0]
+    assert "sourceHash" in entry, f"sourceHash missing from photo entry: {entry}"
+    assert entry["sourceHash"] == hash_val

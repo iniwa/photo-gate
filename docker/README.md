@@ -85,8 +85,8 @@ photo-gate-sync publish-catalog
 - `photoCount` and `updatedAt` may be `null` when PhotoPrism does not provide a safe value.
 - Albums are sorted by `title` then `catalogId` for deterministic output.
 - This command does **not** change daemon sync targets (still configured via Portainer variables).
-- Reupload suppression is **not** part of this change; sync-once and sync-daemon re-upload all
-  photos on each run, same as before.
+- Reupload suppression (`schemaVersion: 2` manifests) avoids re-downloading and re-uploading
+  unchanged photo pairs on repeated syncs. See `photo_gate.reupload`.
 
 ### sync-once
 
@@ -190,6 +190,7 @@ Release images are published to GitHub Container Registry as
 - `photo_gate.object_store` — ObjectStore Protocol and ObjectStoreError
 - `photo_gate.r2_store` — R2Config and R2ObjectStore (boto3 S3-compatible, SigV4, asyncio.to_thread)
 - `photo_gate.sync` — sync orchestration: list → download → re-encode → validate → upload → manifest
+- `photo_gate.reupload` — reupload suppression: parses previous schema 2 manifest; returns skip map for unchanged photos
 - `photo_gate.models` — typed dataclasses shared across modules
 - `photo_gate.album_catalog` — catalog builder: converts PhotoPrism album rows to sanitized JSON (`ops/album-catalog.json`)
 - `photo_gate.sync_status` — builds sanitized sync status payload for R2 (`ops/sync-status.json`)
