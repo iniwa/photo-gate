@@ -5,6 +5,7 @@ import { normalizeEmail, parseAdminAllowlist } from '../src/middleware/require-a
 import type { AdminAuthConfig } from '../src/types/admin-auth.js'
 import type { AdminUserPage, AdminUserSummary } from '../src/types/admin-user.js'
 import type { AdminAlbumPage, AdminAlbumSummary } from '../src/types/admin-album.js'
+import type { AlbumForSync } from '../src/services/admin-album-repository.js'
 import type { AdminPermissionSummary, AssignmentOptions } from '../src/types/admin-permission.js'
 import type { Env } from '../src/types/env.js'
 import type { AdminOpsSummary } from '../src/types/admin-ops.js'
@@ -189,6 +190,7 @@ type AlbumRepo = {
   setAlbumEnabled(albumId: string, enabled: number, updatedAt: string): Promise<void>
   updatePublicMetadata(albumId: string, title: string, expiresAt: string | null, downloadEnabled: number, updatedAt: string): Promise<void>
   createAlbum(albumId: string, title: string, photoprismAlbumUid: string, expiresAt: string | null, downloadEnabled: 0 | 1, createdAt: string, updatedAt: string): Promise<void>
+  getAlbumForSync(albumId: string): Promise<AlbumForSync | null>
 }
 
 type MutationAlbumRepo = AlbumRepo & {
@@ -203,6 +205,7 @@ function makeEmptyAlbumRepo(): AlbumRepo {
     setAlbumEnabled: async () => {},
     updatePublicMetadata: async () => {},
     createAlbum: async () => {},
+    getAlbumForSync: async () => null,
   }
 }
 
@@ -215,6 +218,7 @@ function makeAlbumRepo(
     setAlbumEnabled: async () => {},
     updatePublicMetadata: async () => {},
     createAlbum: async () => {},
+    getAlbumForSync: async () => null,
   }
 }
 
@@ -226,6 +230,7 @@ function makeThrowingAlbumRepo(): AlbumRepo {
     setAlbumEnabled: async () => {},
     updatePublicMetadata: async () => {},
     createAlbum: async () => {},
+    getAlbumForSync: async () => null,
   }
 }
 
@@ -245,6 +250,7 @@ function makeMutationAlbumRepo(): MutationAlbumRepo {
     createAlbum: async (albumId, title, photoprismAlbumUid, expiresAt, downloadEnabled, createdAt, updatedAt) => {
       createAlbumCalls.push({ albumId, title, photoprismAlbumUid, expiresAt, downloadEnabled, createdAt, updatedAt })
     },
+    getAlbumForSync: async () => null,
   }
 }
 
@@ -254,6 +260,7 @@ function makeThrowingSetEnabledAlbumRepo(): AlbumRepo {
     setAlbumEnabled: async () => { throw new Error('D1 exploded') },
     updatePublicMetadata: async () => {},
     createAlbum: async () => {},
+    getAlbumForSync: async () => null,
   }
 }
 
@@ -263,6 +270,7 @@ function makeThrowingUpdatePublicMetadataRepo(): AlbumRepo {
     setAlbumEnabled: async () => {},
     updatePublicMetadata: async () => { throw new Error('D1 exploded') },
     createAlbum: async () => {},
+    getAlbumForSync: async () => null,
   }
 }
 
@@ -272,6 +280,7 @@ function makeThrowingCreateAlbumRepo(): AlbumRepo {
     setAlbumEnabled: async () => {},
     updatePublicMetadata: async () => {},
     createAlbum: async () => { throw new Error('D1 exploded') },
+    getAlbumForSync: async () => null,
   }
 }
 
@@ -460,6 +469,38 @@ function makeClockSpy() {
   return { clock, getCallCount: () => callCount }
 }
 
+type SyncTargetRepo = {
+  upsertTarget(albumId: string, catalogId: string, title: string, expiresAt: string | null, downloadEnabled: 0 | 1, publishedAt: string): Promise<void>
+  removeTarget(albumId: string, publishedAt: string): Promise<void>
+}
+
+type CapturingSyncTargetRepo = SyncTargetRepo & {
+  upsertCalls: { albumId: string; catalogId: string; title: string; expiresAt: string | null; downloadEnabled: 0 | 1; publishedAt: string }[]
+  removeCalls: { albumId: string; publishedAt: string }[]
+}
+
+function makeCapturingSyncTargetRepo(): CapturingSyncTargetRepo {
+  const upsertCalls: { albumId: string; catalogId: string; title: string; expiresAt: string | null; downloadEnabled: 0 | 1; publishedAt: string }[] = []
+  const removeCalls: { albumId: string; publishedAt: string }[] = []
+  return {
+    upsertCalls,
+    removeCalls,
+    upsertTarget: async (albumId, catalogId, title, expiresAt, downloadEnabled, publishedAt) => {
+      upsertCalls.push({ albumId, catalogId, title, expiresAt, downloadEnabled, publishedAt })
+    },
+    removeTarget: async (albumId, publishedAt) => {
+      removeCalls.push({ albumId, publishedAt })
+    },
+  }
+}
+
+function makeThrowingSyncTargetRepo(): SyncTargetRepo {
+  return {
+    upsertTarget: async () => { throw new Error('R2 exploded') },
+    removeTarget: async () => { throw new Error('R2 exploded') },
+  }
+}
+
 function makeApp(
   resolveAuth: ResolveAuth,
   userRepo?: UserRepo,
@@ -469,6 +510,7 @@ function makeApp(
   opsRepo?: OpsRepo,
   syncStatusRepo?: SyncStatusRepo,
   syncRequestRepo?: SyncRequestRepo,
+  syncTargetRepo?: SyncTargetRepo,
 ): Hono {
   const app = new Hono()
   app.route(
@@ -481,6 +523,7 @@ function makeApp(
       opsRepo: opsRepo ?? makeOpsRepo(),
       syncStatusRepo: syncStatusRepo ?? makeSyncStatusRepo(),
       syncRequestRepo: syncRequestRepo ?? makeCapturingSyncRequestRepo(),
+      syncTargetRepo: syncTargetRepo ?? makeCapturingSyncTargetRepo(),
     })),
   )
   return app
@@ -5693,5 +5736,370 @@ describe('admin-routes: POST /admin/albums/create errors', () => {
     expect(res.headers.get('cache-control')).toBe('no-store')
     expect(await res.text()).toBe('Internal Server Error')
     expect(repo.createAlbumCalls).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /admin/albums/sync-target-upsert
+// ---------------------------------------------------------------------------
+
+const VALID_CATALOG_ID = 'a'.repeat(64)
+const SYNC_TARGET_ALBUM_ID = 'ise-ryokou-id'
+const VALID_UPSERT_BODY = `albumId=${SYNC_TARGET_ALBUM_ID}&catalogId=${VALID_CATALOG_ID}`
+
+function makeValidSyncTargetUpsertOptions() {
+  return {
+    token: VALID_TOKEN as string | null,
+    origin: VALID_ORIGIN as string | undefined,
+    contentType: 'application/x-www-form-urlencoded' as string | undefined,
+    body: VALID_UPSERT_BODY as string | undefined,
+  }
+}
+
+function makeAlbumRepoWithSync(album: AlbumForSync | null): AlbumRepo {
+  return {
+    listAlbums: async () => ({ albums: [], hasMore: false }),
+    setAlbumEnabled: async () => {},
+    updatePublicMetadata: async () => {},
+    createAlbum: async () => {},
+    getAlbumForSync: async () => album,
+  }
+}
+
+function makeThrowingGetAlbumForSyncRepo(): AlbumRepo {
+  return {
+    listAlbums: async () => ({ albums: [], hasMore: false }),
+    setAlbumEnabled: async () => {},
+    updatePublicMetadata: async () => {},
+    createAlbum: async () => {},
+    getAlbumForSync: async () => { throw new Error('D1 exploded') },
+  }
+}
+
+const SAMPLE_ALBUM_FOR_SYNC: AlbumForSync = {
+  id: SYNC_TARGET_ALBUM_ID,
+  title: 'Ise ryokou',
+  expires_at: null,
+  download_enabled: 0,
+}
+
+describe('admin-routes: POST /admin/albums/sync-target-upsert guard', () => {
+  it('no token → 403 Forbidden no-store', async () => {
+    const app = makeApp(goodAuth())
+    const res = await postAdmin(app, '/admin/albums/sync-target-upsert', {
+      ...makeValidSyncTargetUpsertOptions(),
+      token: null,
+    })
+    await assertForbidden(res)
+  })
+
+  it('Origin absent → 403', async () => {
+    const app = makeApp(goodAuth())
+    const res = await postAdmin(app, '/admin/albums/sync-target-upsert', {
+      ...makeValidSyncTargetUpsertOptions(),
+      origin: undefined,
+    })
+    await assertForbidden(res)
+  })
+})
+
+describe('admin-routes: POST /admin/albums/sync-target-upsert content-type', () => {
+  it('Content-Type missing → 400 no-store', async () => {
+    const app = makeApp(goodAuth())
+    const res = await postAdmin(app, '/admin/albums/sync-target-upsert', {
+      ...makeValidSyncTargetUpsertOptions(),
+      contentType: undefined,
+    })
+    expect(res.status).toBe(400)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+})
+
+describe('admin-routes: POST /admin/albums/sync-target-upsert body validation', () => {
+  it('missing albumId → 400 no-store', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepoWithSync(SAMPLE_ALBUM_FOR_SYNC))
+    const res = await postAdmin(app, '/admin/albums/sync-target-upsert', {
+      ...makeValidSyncTargetUpsertOptions(),
+      body: `catalogId=${VALID_CATALOG_ID}`,
+    })
+    expect(res.status).toBe(400)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('missing catalogId → 400 no-store', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepoWithSync(SAMPLE_ALBUM_FOR_SYNC))
+    const res = await postAdmin(app, '/admin/albums/sync-target-upsert', {
+      ...makeValidSyncTargetUpsertOptions(),
+      body: `albumId=${SYNC_TARGET_ALBUM_ID}`,
+    })
+    expect(res.status).toBe(400)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('invalid albumId → 400 no-store', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepoWithSync(SAMPLE_ALBUM_FOR_SYNC))
+    const res = await postAdmin(app, '/admin/albums/sync-target-upsert', {
+      ...makeValidSyncTargetUpsertOptions(),
+      body: `albumId=!bad!&catalogId=${VALID_CATALOG_ID}`,
+    })
+    expect(res.status).toBe(400)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('invalid catalogId (not 64 hex) → 400 no-store', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepoWithSync(SAMPLE_ALBUM_FOR_SYNC))
+    const res = await postAdmin(app, '/admin/albums/sync-target-upsert', {
+      ...makeValidSyncTargetUpsertOptions(),
+      body: `albumId=${SYNC_TARGET_ALBUM_ID}&catalogId=tooshort`,
+    })
+    expect(res.status).toBe(400)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('catalogId with uppercase → 400 no-store', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepoWithSync(SAMPLE_ALBUM_FOR_SYNC))
+    const res = await postAdmin(app, '/admin/albums/sync-target-upsert', {
+      ...makeValidSyncTargetUpsertOptions(),
+      body: `albumId=${SYNC_TARGET_ALBUM_ID}&catalogId=${'A'.repeat(64)}`,
+    })
+    expect(res.status).toBe(400)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('extra field → 400 no-store', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepoWithSync(SAMPLE_ALBUM_FOR_SYNC))
+    const res = await postAdmin(app, '/admin/albums/sync-target-upsert', {
+      ...makeValidSyncTargetUpsertOptions(),
+      body: `${VALID_UPSERT_BODY}&extra=val`,
+    })
+    expect(res.status).toBe(400)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+})
+
+describe('admin-routes: POST /admin/albums/sync-target-upsert success', () => {
+  it('success → 303 to /admin/albums', async () => {
+    const targetRepo = makeCapturingSyncTargetRepo()
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepoWithSync(SAMPLE_ALBUM_FOR_SYNC), undefined, undefined, undefined, undefined, undefined, targetRepo)
+    const res = await postAdmin(app, '/admin/albums/sync-target-upsert', makeValidSyncTargetUpsertOptions())
+    expect(res.status).toBe(303)
+    expect(res.headers.get('location')).toBe('/admin/albums')
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('success → upsertTarget called with correct albumId and catalogId', async () => {
+    const targetRepo = makeCapturingSyncTargetRepo()
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepoWithSync(SAMPLE_ALBUM_FOR_SYNC), undefined, undefined, undefined, undefined, undefined, targetRepo)
+    await postAdmin(app, '/admin/albums/sync-target-upsert', makeValidSyncTargetUpsertOptions())
+    expect(targetRepo.upsertCalls).toHaveLength(1)
+    expect(targetRepo.upsertCalls[0]!.albumId).toBe(SYNC_TARGET_ALBUM_ID)
+    expect(targetRepo.upsertCalls[0]!.catalogId).toBe(VALID_CATALOG_ID)
+  })
+
+  it('success → upsertTarget called with D1 album title', async () => {
+    const targetRepo = makeCapturingSyncTargetRepo()
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepoWithSync(SAMPLE_ALBUM_FOR_SYNC), undefined, undefined, undefined, undefined, undefined, targetRepo)
+    await postAdmin(app, '/admin/albums/sync-target-upsert', makeValidSyncTargetUpsertOptions())
+    expect(targetRepo.upsertCalls[0]!.title).toBe('Ise ryokou')
+  })
+
+  it('success → photoprism_album_uid never appears in body or upsert args', async () => {
+    const targetRepo = makeCapturingSyncTargetRepo()
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepoWithSync(SAMPLE_ALBUM_FOR_SYNC), undefined, undefined, undefined, undefined, undefined, targetRepo)
+    const res = await postAdmin(app, '/admin/albums/sync-target-upsert', makeValidSyncTargetUpsertOptions())
+    const body = await res.text()
+    expect(body).not.toContain('photoprism')
+    const call = targetRepo.upsertCalls[0]!
+    expect(JSON.stringify(call)).not.toContain('uid')
+  })
+})
+
+describe('admin-routes: POST /admin/albums/sync-target-upsert errors', () => {
+  it('unknown album (getAlbumForSync returns null) → 500 no-store', async () => {
+    const targetRepo = makeCapturingSyncTargetRepo()
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepoWithSync(null), undefined, undefined, undefined, undefined, undefined, targetRepo)
+    const res = await postAdmin(app, '/admin/albums/sync-target-upsert', makeValidSyncTargetUpsertOptions())
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(targetRepo.upsertCalls).toHaveLength(0)
+  })
+
+  it('D1 throws → 500 no-store, upsertTarget not called', async () => {
+    const targetRepo = makeCapturingSyncTargetRepo()
+    const app = makeApp(goodAuth(), undefined, makeThrowingGetAlbumForSyncRepo(), undefined, undefined, undefined, undefined, undefined, targetRepo)
+    const res = await postAdmin(app, '/admin/albums/sync-target-upsert', makeValidSyncTargetUpsertOptions())
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await res.text()).toBe('Internal Server Error')
+    expect(targetRepo.upsertCalls).toHaveLength(0)
+  })
+
+  it('R2 repo throws → 500 no-store', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepoWithSync(SAMPLE_ALBUM_FOR_SYNC), undefined, undefined, undefined, undefined, undefined, makeThrowingSyncTargetRepo())
+    const res = await postAdmin(app, '/admin/albums/sync-target-upsert', makeValidSyncTargetUpsertOptions())
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await res.text()).toBe('Internal Server Error')
+  })
+
+  it('clock throws → 500 no-store, upsertTarget not called', async () => {
+    const targetRepo = makeCapturingSyncTargetRepo()
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepoWithSync(SAMPLE_ALBUM_FOR_SYNC), undefined, () => { throw new Error('clock detail') }, undefined, undefined, undefined, targetRepo)
+    const res = await postAdmin(app, '/admin/albums/sync-target-upsert', makeValidSyncTargetUpsertOptions())
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await res.text()).toBe('Internal Server Error')
+    expect(targetRepo.upsertCalls).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /admin/albums/sync-target-remove
+// ---------------------------------------------------------------------------
+
+const VALID_REMOVE_BODY = `albumId=${SYNC_TARGET_ALBUM_ID}`
+
+function makeValidSyncTargetRemoveOptions() {
+  return {
+    token: VALID_TOKEN as string | null,
+    origin: VALID_ORIGIN as string | undefined,
+    contentType: 'application/x-www-form-urlencoded' as string | undefined,
+    body: VALID_REMOVE_BODY as string | undefined,
+  }
+}
+
+describe('admin-routes: POST /admin/albums/sync-target-remove guard', () => {
+  it('no token → 403 Forbidden no-store', async () => {
+    const app = makeApp(goodAuth())
+    const res = await postAdmin(app, '/admin/albums/sync-target-remove', {
+      ...makeValidSyncTargetRemoveOptions(),
+      token: null,
+    })
+    await assertForbidden(res)
+  })
+
+  it('Origin absent → 403', async () => {
+    const app = makeApp(goodAuth())
+    const res = await postAdmin(app, '/admin/albums/sync-target-remove', {
+      ...makeValidSyncTargetRemoveOptions(),
+      origin: undefined,
+    })
+    await assertForbidden(res)
+  })
+})
+
+describe('admin-routes: POST /admin/albums/sync-target-remove content-type', () => {
+  it('Content-Type missing → 400 no-store', async () => {
+    const app = makeApp(goodAuth())
+    const res = await postAdmin(app, '/admin/albums/sync-target-remove', {
+      ...makeValidSyncTargetRemoveOptions(),
+      contentType: undefined,
+    })
+    expect(res.status).toBe(400)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+})
+
+describe('admin-routes: POST /admin/albums/sync-target-remove body validation', () => {
+  it('missing albumId → 400 no-store', async () => {
+    const app = makeApp(goodAuth())
+    const res = await postAdmin(app, '/admin/albums/sync-target-remove', {
+      ...makeValidSyncTargetRemoveOptions(),
+      body: 'extra=val',
+    })
+    expect(res.status).toBe(400)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('invalid albumId → 400 no-store', async () => {
+    const app = makeApp(goodAuth())
+    const res = await postAdmin(app, '/admin/albums/sync-target-remove', {
+      ...makeValidSyncTargetRemoveOptions(),
+      body: 'albumId=!bad!',
+    })
+    expect(res.status).toBe(400)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('extra field → 400 no-store', async () => {
+    const app = makeApp(goodAuth())
+    const res = await postAdmin(app, '/admin/albums/sync-target-remove', {
+      ...makeValidSyncTargetRemoveOptions(),
+      body: `${VALID_REMOVE_BODY}&extra=val`,
+    })
+    expect(res.status).toBe(400)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+})
+
+describe('admin-routes: POST /admin/albums/sync-target-remove success', () => {
+  it('success → 303 to /admin/albums', async () => {
+    const targetRepo = makeCapturingSyncTargetRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, targetRepo)
+    const res = await postAdmin(app, '/admin/albums/sync-target-remove', makeValidSyncTargetRemoveOptions())
+    expect(res.status).toBe(303)
+    expect(res.headers.get('location')).toBe('/admin/albums')
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('success → removeTarget called with albumId', async () => {
+    const targetRepo = makeCapturingSyncTargetRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, targetRepo)
+    await postAdmin(app, '/admin/albums/sync-target-remove', makeValidSyncTargetRemoveOptions())
+    expect(targetRepo.removeCalls).toHaveLength(1)
+    expect(targetRepo.removeCalls[0]!.albumId).toBe(SYNC_TARGET_ALBUM_ID)
+  })
+})
+
+describe('admin-routes: POST /admin/albums/sync-target-remove errors', () => {
+  it('R2 repo throws → 500 no-store', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, makeThrowingSyncTargetRepo())
+    const res = await postAdmin(app, '/admin/albums/sync-target-remove', makeValidSyncTargetRemoveOptions())
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await res.text()).toBe('Internal Server Error')
+  })
+
+  it('clock throws → 500 no-store, removeTarget not called', async () => {
+    const targetRepo = makeCapturingSyncTargetRepo()
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, () => { throw new Error('clock') }, undefined, undefined, undefined, targetRepo)
+    const res = await postAdmin(app, '/admin/albums/sync-target-remove', makeValidSyncTargetRemoveOptions())
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(targetRepo.removeCalls).toHaveLength(0)
+  })
+})
+
+describe('admin-routes: GET /admin/albums sync-target form rendering', () => {
+  it('album rows include sync-target-upsert form', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM]))
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const html = await res.text()
+    expect(html).toContain('sync-target-upsert')
+  })
+
+  it('album rows include sync-target-remove form', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM]))
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const html = await res.text()
+    expect(html).toContain('sync-target-remove')
+  })
+
+  it('catalogId field is rendered per album row', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM]))
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const html = await res.text()
+    expect(html).toContain('catalogId')
+  })
+
+  it('sync-target forms do not render photoprism_album_uid', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM]))
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const html = await res.text()
+    // The sync-target forms must not expose raw UIDs; the existing create form
+    // legitimately has a photoprismAlbumUid field (non-goal in A2 handoff).
+    // We check that the sync-target form section has no uid leak.
+    const syncTargetSection = html.slice(html.indexOf('sync-target-upsert'))
+    expect(syncTargetSection).not.toContain('photoprism_album_uid')
   })
 })

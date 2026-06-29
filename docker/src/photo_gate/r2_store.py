@@ -40,6 +40,7 @@ _MANIFEST_CACHE = "private, no-cache"
 _STATUS_KEY = "ops/sync-status.json"
 _REQUEST_KEY = "ops/sync-request.json"
 _CATALOG_KEY = "ops/album-catalog.json"
+_TARGETS_KEY = "ops/sync-targets.json"
 _STATUS_CACHE = "private, no-cache"
 
 
@@ -108,6 +109,8 @@ def _validate_key(key: str) -> None:
         return
     if key == _CATALOG_KEY:
         return
+    if key == _TARGETS_KEY:
+        return
     if not _ALLOWED_KEY.match(key):
         raise ValueError(
             f"key does not match any allowed schema path "
@@ -118,7 +121,7 @@ def _validate_key(key: str) -> None:
 
 
 def _cache_control(key: str) -> str:
-    if key in (_STATUS_KEY, _CATALOG_KEY):
+    if key in (_STATUS_KEY, _CATALOG_KEY, _TARGETS_KEY):
         return _STATUS_CACHE
     if key.endswith("/manifest.json"):
         return _MANIFEST_CACHE

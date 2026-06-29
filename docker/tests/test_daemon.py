@@ -1106,3 +1106,432 @@ def test_daemon_scheduled_trigger_kind_in_status(tmp_path):
     assert last_body["schema"] == 2
     assert last_body["lastTriggerKind"] == "scheduled"
     assert last_body["lastHandledRequestId"] is None
+
+
+# ---------------------------------------------------------------------------
+# _read_sync_targets_from_store unit tests
+# ---------------------------------------------------------------------------
+
+from photo_gate.main import _read_sync_targets_from_store, _run_multi_target_attempt
+
+
+def _make_targets_bytes(targets: list | None = None) -> bytes:
+    obj = {
+        "schema": 1,
+        "publishedAt": "2026-06-29T12:00:00.000Z",
+        "targets": targets if targets is not None else [],
+    }
+    return _json.dumps(obj).encode("utf-8")
+
+
+_VALID_CATALOG_ID = "a" * 64
+_VALID_ALBUM_TARGET = {
+    "albumId": "album-one",
+    "catalogId": _VALID_CATALOG_ID,
+    "title": "Album One",
+    "expiresAt": None,
+    "downloadEnabled": 0,
+    "thumb": {"longEdge": 640, "format": "webp", "quality": 80},
+    "preview": {"longEdge": 3840, "format": "jpg", "quality": 88},
+    "stripExif": 1,
+}
+
+
+class _TargetsStore:
+    """Fake store that returns targets data for the targets key, None otherwise."""
+
+    def __init__(self, targets_bytes: bytes | None, throw_on_get: bool = False):
+        self._targets_bytes = targets_bytes
+        self._throw = throw_on_get
+        self.get_calls: list[str] = []
+
+    async def get(self, key: str) -> bytes | None:
+        self.get_calls.append(key)
+        if self._throw:
+            raise RuntimeError("store get exploded")
+        from photo_gate.sync_targets import SYNC_TARGETS_KEY
+        if key == SYNC_TARGETS_KEY:
+            return self._targets_bytes
+        return None
+
+    async def put(self, key: str, data: bytes, content_type: str) -> None:
+        pass
+
+    async def delete(self, key: str) -> None:
+        pass
+
+
+def _get_test_log() -> logging.Logger:
+    return logging.getLogger("photo_gate.test")
+
+
+def test_read_sync_targets_missing_returns_empty():
+    store = _TargetsStore(None)
+    result = asyncio.run(_read_sync_targets_from_store(store, _get_test_log()))
+    assert result == []
+
+
+def test_read_sync_targets_empty_array_returns_empty():
+    store = _TargetsStore(_make_targets_bytes([]))
+    result = asyncio.run(_read_sync_targets_from_store(store, _get_test_log()))
+    assert result == []
+
+
+def test_read_sync_targets_valid_returns_list():
+    store = _TargetsStore(_make_targets_bytes([_VALID_ALBUM_TARGET]))
+    result = asyncio.run(_read_sync_targets_from_store(store, _get_test_log()))
+    assert result is not None
+    assert len(result) == 1
+    assert result[0]["albumId"] == "album-one"
+
+
+def test_read_sync_targets_malformed_returns_none():
+    store = _TargetsStore(b"not valid json")
+    result = asyncio.run(_read_sync_targets_from_store(store, _get_test_log()))
+    assert result is None
+
+
+def test_read_sync_targets_invalid_schema_returns_none():
+    store = _TargetsStore(_json.dumps({"schema": 2, "publishedAt": "2026-06-29T12:00:00.000Z", "targets": []}).encode())
+    result = asyncio.run(_read_sync_targets_from_store(store, _get_test_log()))
+    assert result is None
+
+
+def test_read_sync_targets_store_throws_returns_none():
+    store = _TargetsStore(None, throw_on_get=True)
+    result = asyncio.run(_read_sync_targets_from_store(store, _get_test_log()))
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# _run_multi_target_attempt unit tests
+# ---------------------------------------------------------------------------
+
+import hashlib
+import argparse
+
+
+def _multi_args() -> argparse.Namespace:
+    return _build_parser().parse_args(_VALID_DAEMON_ARGS + ["--max-runs", "1"])
+
+
+class _FakeAlbum:
+    def __init__(self, raw_uid: str, title: str = "Album"):
+        self.raw_uid = raw_uid
+        self.title = title
+        self.photo_count = 1
+        self.updated_at = None
+
+
+_RAW_UID = "uid123abc"
+_CATALOG_ID_FOR_UID = hashlib.sha256(_RAW_UID.encode()).hexdigest()
+
+
+class _ListingClient:
+    """Fake PhotoPrism client that returns configured albums."""
+
+    def __init__(self, albums: list):
+        self._albums = albums
+        self.synced: list[str] = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        pass
+
+    async def list_albums(self):
+        return self._albums
+
+
+async def _capturing_sync(client, album, store, settings, generated_at, concurrency, **kwargs):
+    """Records which album was synced."""
+    pass
+
+
+def test_run_multi_target_all_resolved_returns_0(tmp_path):
+    args = _multi_args()
+    targets = [{
+        "albumId": "album-one",
+        "catalogId": _CATALOG_ID_FOR_UID,
+        "title": "Album One",
+        "expiresAt": None,
+        "downloadEnabled": 0,
+    }]
+    albums = [_FakeAlbum(_RAW_UID)]
+    client = _ListingClient(albums)
+
+    code = asyncio.run(_run_multi_target_attempt(
+        args,
+        targets,
+        config_loader=lambda: _FakeConfig(),
+        client_factory=lambda cfg: client,
+        store_factory=lambda cfg: object(),
+        sync_fn=_noop_sync,
+        clock=lambda: _FIXED_TS,
+        log=_get_test_log(),
+    ))
+    assert code == 0
+
+
+def test_run_multi_target_no_resolved_returns_minus1(tmp_path):
+    args = _multi_args()
+    targets = [{
+        "albumId": "album-one",
+        "catalogId": "c" * 64,
+        "title": "Album One",
+        "expiresAt": None,
+        "downloadEnabled": 0,
+    }]
+    albums = [_FakeAlbum(_RAW_UID)]
+    client = _ListingClient(albums)
+
+    code = asyncio.run(_run_multi_target_attempt(
+        args,
+        targets,
+        config_loader=lambda: _FakeConfig(),
+        client_factory=lambda cfg: client,
+        store_factory=lambda cfg: object(),
+        sync_fn=_noop_sync,
+        clock=lambda: _FIXED_TS,
+        log=_get_test_log(),
+    ))
+    assert code == -1
+
+
+def test_run_multi_target_partial_resolution_syncs_resolved(tmp_path):
+    args = _multi_args()
+    synced_ids: list[str] = []
+
+    async def _recording_sync(client, album, store, settings, generated_at, concurrency, **kwargs):
+        synced_ids.append(album.album_id)
+
+    uid_a = "uid-aaaa"
+    uid_b = "uid-bbbb"
+    catalog_a = hashlib.sha256(uid_a.encode()).hexdigest()
+    catalog_b = hashlib.sha256(uid_b.encode()).hexdigest()
+
+    targets = [
+        {"albumId": "album-a", "catalogId": catalog_a, "title": "A", "expiresAt": None, "downloadEnabled": 0},
+        {"albumId": "album-b", "catalogId": "d" * 64, "title": "B", "expiresAt": None, "downloadEnabled": 0},
+    ]
+    albums = [_FakeAlbum(uid_a), _FakeAlbum(uid_b)]
+    client = _ListingClient(albums)
+
+    code = asyncio.run(_run_multi_target_attempt(
+        args,
+        targets,
+        config_loader=lambda: _FakeConfig(),
+        client_factory=lambda cfg: client,
+        store_factory=lambda cfg: object(),
+        sync_fn=_recording_sync,
+        clock=lambda: _FIXED_TS,
+        log=_get_test_log(),
+    ))
+    assert code == 0
+    assert synced_ids == ["album-a"]
+
+
+def test_run_multi_target_one_fails_continues_rest(tmp_path):
+    args = _multi_args()
+
+    uid_a = "uid-aaaa2"
+    uid_b = "uid-bbbb2"
+    catalog_a = hashlib.sha256(uid_a.encode()).hexdigest()
+    catalog_b = hashlib.sha256(uid_b.encode()).hexdigest()
+
+    synced_ids: list[str] = []
+    errors: list[str] = []
+
+    async def _partially_failing_sync(client, album, store, settings, generated_at, concurrency, **kwargs):
+        if album.album_id == "album-a":
+            raise RuntimeError("simulated failure")
+        synced_ids.append(album.album_id)
+
+    targets = [
+        {"albumId": "album-a", "catalogId": catalog_a, "title": "A", "expiresAt": None, "downloadEnabled": 0},
+        {"albumId": "album-b", "catalogId": catalog_b, "title": "B", "expiresAt": None, "downloadEnabled": 0},
+    ]
+    albums = [_FakeAlbum(uid_a), _FakeAlbum(uid_b)]
+    client = _ListingClient(albums)
+
+    code = asyncio.run(_run_multi_target_attempt(
+        args,
+        targets,
+        config_loader=lambda: _FakeConfig(),
+        client_factory=lambda cfg: client,
+        store_factory=lambda cfg: object(),
+        sync_fn=_partially_failing_sync,
+        clock=lambda: _FIXED_TS,
+        error_sink=errors.append,
+        log=_get_test_log(),
+    ))
+    assert code == 1
+    assert synced_ids == ["album-b"]
+    assert errors == ["RuntimeError"]
+
+
+def test_run_multi_target_config_error_returns_2(tmp_path):
+    from photo_gate.config import ConfigError
+    args = _multi_args()
+
+    def _bad_config():
+        raise ConfigError("bad config")
+
+    code = asyncio.run(_run_multi_target_attempt(
+        args,
+        [{"albumId": "a", "catalogId": _CATALOG_ID_FOR_UID, "title": "T", "expiresAt": None, "downloadEnabled": 0}],
+        config_loader=_bad_config,
+        client_factory=lambda cfg: _ListingClient([]),
+        store_factory=lambda cfg: object(),
+        sync_fn=_noop_sync,
+        clock=lambda: _FIXED_TS,
+        log=_get_test_log(),
+    ))
+    assert code == 2
+
+
+# ---------------------------------------------------------------------------
+# Daemon integration: sync-targets fallback behavior
+# ---------------------------------------------------------------------------
+
+class _SmartStore(_FakeStore):
+    """Store that returns different bytes per key."""
+
+    def __init__(self, key_map: dict[str, bytes | None]):
+        super().__init__(request_bytes=None)
+        self._key_map = key_map
+
+    async def get(self, key: str) -> bytes | None:
+        self.get_calls.append(key)
+        return self._key_map.get(key, None)
+
+
+def test_daemon_no_targets_uses_fallback(tmp_path):
+    """Empty targets array → daemon uses configured single-album (run_sync_once)."""
+    args = _daemon_args_with(tmp_path, max_runs=1)
+    synced: list[str] = []
+
+    async def _recording_sync(client, album, store, settings, generated_at, concurrency, **kwargs):
+        synced.append(album.album_id)
+
+    from photo_gate.sync_targets import SYNC_TARGETS_KEY
+    store = _SmartStore({SYNC_TARGETS_KEY: _make_targets_bytes([])})
+
+    code = asyncio.run(run_sync_daemon(
+        args,
+        config_loader=lambda: _FakeConfig(),
+        client_factory=lambda cfg: _FakeClient(),
+        store_factory=lambda cfg: object(),
+        sync_fn=_recording_sync,
+        clock=lambda: _FIXED_TS,
+        sleep_fn=_instant_sleep,
+        status_store=store,
+    ))
+    assert code == 0
+    assert synced == ["my-album"]
+
+
+def test_daemon_missing_targets_uses_fallback(tmp_path):
+    """Missing targets object → daemon uses configured single-album."""
+    args = _daemon_args_with(tmp_path, max_runs=1)
+    synced: list[str] = []
+
+    async def _recording_sync(client, album, store, settings, generated_at, concurrency, **kwargs):
+        synced.append(album.album_id)
+
+    from photo_gate.sync_targets import SYNC_TARGETS_KEY
+    store = _SmartStore({SYNC_TARGETS_KEY: None})
+
+    code = asyncio.run(run_sync_daemon(
+        args,
+        config_loader=lambda: _FakeConfig(),
+        client_factory=lambda cfg: _FakeClient(),
+        store_factory=lambda cfg: object(),
+        sync_fn=_recording_sync,
+        clock=lambda: _FIXED_TS,
+        sleep_fn=_instant_sleep,
+        status_store=store,
+    ))
+    assert code == 0
+    assert synced == ["my-album"]
+
+
+def test_daemon_malformed_targets_uses_fallback(tmp_path):
+    """Malformed targets object → daemon falls back to configured single-album."""
+    args = _daemon_args_with(tmp_path, max_runs=1)
+    synced: list[str] = []
+
+    async def _recording_sync(client, album, store, settings, generated_at, concurrency, **kwargs):
+        synced.append(album.album_id)
+
+    from photo_gate.sync_targets import SYNC_TARGETS_KEY
+    store = _SmartStore({SYNC_TARGETS_KEY: b"not valid json"})
+
+    code = asyncio.run(run_sync_daemon(
+        args,
+        config_loader=lambda: _FakeConfig(),
+        client_factory=lambda cfg: _FakeClient(),
+        store_factory=lambda cfg: object(),
+        sync_fn=_recording_sync,
+        clock=lambda: _FIXED_TS,
+        sleep_fn=_instant_sleep,
+        status_store=store,
+    ))
+    assert code == 0
+    assert synced == ["my-album"]
+
+
+def test_daemon_unresolved_targets_uses_fallback(tmp_path):
+    """Valid targets but no catalogIds resolve → daemon falls back to configured album."""
+    args = _daemon_args_with(tmp_path, max_runs=1)
+    synced: list[str] = []
+
+    async def _recording_sync(client, album, store, settings, generated_at, concurrency, **kwargs):
+        synced.append(album.album_id)
+
+    target = dict(_VALID_ALBUM_TARGET)
+    target["catalogId"] = "e" * 64
+    from photo_gate.sync_targets import SYNC_TARGETS_KEY
+    store = _SmartStore({SYNC_TARGETS_KEY: _make_targets_bytes([target])})
+
+    code = asyncio.run(run_sync_daemon(
+        args,
+        config_loader=lambda: _FakeConfig(),
+        client_factory=lambda cfg: _ListingClient([_FakeAlbum(_RAW_UID)]),
+        store_factory=lambda cfg: object(),
+        sync_fn=_recording_sync,
+        clock=lambda: _FIXED_TS,
+        sleep_fn=_instant_sleep,
+        status_store=store,
+    ))
+    assert code == 0
+    assert synced == ["my-album"]
+
+
+def test_daemon_valid_targets_syncs_multi(tmp_path):
+    """Valid non-empty targets with resolved catalogIds → multi-target sync runs."""
+    args = _daemon_args_with(tmp_path, max_runs=1)
+    synced: list[str] = []
+
+    async def _recording_sync(client, album, store, settings, generated_at, concurrency, **kwargs):
+        synced.append(album.album_id)
+
+    catalog_id = hashlib.sha256(_RAW_UID.encode()).hexdigest()
+    target = dict(_VALID_ALBUM_TARGET)
+    target["catalogId"] = catalog_id
+    from photo_gate.sync_targets import SYNC_TARGETS_KEY
+    store = _SmartStore({SYNC_TARGETS_KEY: _make_targets_bytes([target])})
+
+    code = asyncio.run(run_sync_daemon(
+        args,
+        config_loader=lambda: _FakeConfig(),
+        client_factory=lambda cfg: _ListingClient([_FakeAlbum(_RAW_UID)]),
+        store_factory=lambda cfg: object(),
+        sync_fn=_recording_sync,
+        clock=lambda: _FIXED_TS,
+        sleep_fn=_instant_sleep,
+        status_store=store,
+    ))
+    assert code == 0
+    assert synced == ["album-one"]

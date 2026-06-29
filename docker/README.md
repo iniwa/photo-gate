@@ -194,6 +194,7 @@ Release images are published to GitHub Container Registry as
 - `photo_gate.album_catalog` — catalog builder: converts PhotoPrism album rows to sanitized JSON (`ops/album-catalog.json`)
 - `photo_gate.sync_status` — builds sanitized sync status payload for R2 (`ops/sync-status.json`)
 - `photo_gate.sync_request` — validates manual sync request objects read from R2 (`ops/sync-request.json`)
+- `photo_gate.sync_targets` — validates sync target list objects read from R2 (`ops/sync-targets.json`)
 
 Tests run entirely without network access, real PhotoPrism, R2, or credentials.
 
@@ -267,8 +268,48 @@ The object contains only safe display fields. The published JSON must never incl
 raw PhotoPrism UIDs, PhotoPrism URLs, API tokens, preview tokens, NAS paths, original filenames,
 location metadata, R2 endpoint/bucket/credentials, admin identity, or source photo rows.
 
-`catalogId` values are opaque SHA-256 hex digests of raw UIDs. Docker can recompute the mapping
-from catalog ID to real UID when it needs to resolve a sync target later (Track A2).
+`catalogId` values are opaque SHA-256 hex digests of raw UIDs. The Docker daemon uses this
+mapping to resolve sync targets from `ops/sync-targets.json` back to real PhotoPrism UIDs.
 
-This command does **not** change daemon sync targets. Portainer album variables remain the sole
-sync target until Track A2 is implemented. Reupload suppression is not part of this change.
+## Sync Targets (Track A2)
+
+The sync daemon reads a sync-target list from private R2 at the fixed key:
+
+```text
+ops/sync-targets.json
+```
+
+- Content-Type: `application/json`
+- Cache-Control: `private, no-cache`
+- Written by the Worker admin surface via `POST /admin/albums/sync-target-upsert` / `sync-target-remove`
+- Consumed by the daemon at the start of each sync attempt (scheduled or manual)
+
+### Target resolution
+
+For each target, Docker computes `sha256(raw_uid.encode()).hexdigest()` for every PhotoPrism album
+it lists, builds a catalogId→raw_uid map, and resolves each target's `catalogId`. The raw UID is
+used only in memory to construct `AlbumIdentity` and is never logged.
+
+### Fallback behavior
+
+| Condition | Behavior |
+|-----------|----------|
+| Object missing | Use Portainer-configured single album |
+| Object present but empty `targets` array | Use Portainer-configured single album |
+| Object malformed or invalid schema | Log fixed warning; use Portainer-configured single album |
+| Some `catalogId` values unresolvable | Skip those targets; sync the rest |
+| No `catalogId` values resolve | Log fixed warning; use Portainer-configured single album |
+
+### Daemon loop
+
+Each sync attempt proceeds as follows:
+
+1. Read `ops/sync-targets.json` from the store (best-effort; failure falls back).
+2. If the target list is non-empty, open ONE PhotoPrism client, list all albums, compute catalogId
+   for each, resolve targets, and sync resolved albums sequentially.
+3. If the target list is empty or no targets resolve, call the existing single-album sync path
+   (Portainer-configured `--album-id` / `--photoprism-album-uid`).
+4. A failure in one target is recorded but the daemon continues with remaining targets.
+
+The sync-target object must never include raw PhotoPrism UIDs, PhotoPrism URLs, API tokens,
+preview tokens, NAS paths, R2 credentials, admin identity, or source photo rows.

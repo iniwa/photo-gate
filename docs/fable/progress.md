@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-06-26.
+Last updated: 2026-06-29.
 
 ## Current Completion Level
 
@@ -21,6 +21,31 @@ The manual sync release is deployed and live-smoke verified in production:
 - DONE: the operator pressed the manual sync button from `/admin/sync`; the`r`n  daemon consumed the request, synced 234/234, uploaded cover and manifest, and`r`n  reported success in 136.5s.
 - DONE: `/admin/sync` reported no pending request, 0 failures, 1 completed`r`n  run, manual trigger kind, and a non-null handled request ID.
 
+The seventeenth Level 3 implementation handoff is reviewed and complete locally:
+
+- DONE: Worker admin routes `POST /admin/albums/sync-target-upsert` and
+  `POST /admin/albums/sync-target-remove` read/write the fixed private R2 key
+  `ops/sync-targets.json` using schema 1. Missing objects are treated as an
+  empty target list; malformed existing objects fail closed with sanitized 500s.
+- DONE: Docker daemon reads `ops/sync-targets.json`, resolves each safe
+  `catalogId` by listing PhotoPrism albums and hashing raw UIDs in memory, and
+  syncs resolved targets sequentially. Missing/empty/malformed target objects,
+  or a target list with no resolvable catalog IDs, fall back to the existing
+  Portainer-configured album for migration safety.
+- Codex review added Worker-side oversized-object rejection before JSON parse
+  and connected Docker multi-target failures to the existing sanitized
+  `last_error` health/status path.
+- Raw PhotoPrism UIDs are not selected by the new Worker query, not rendered,
+  not written to sync-target JSON, and not logged. Docker uses raw UIDs only
+  in memory after resolving catalog IDs.
+- This is Track A2 for browser-complete sync. It does not add the catalog picker
+  UI, does not extend the manual sync request schema, does not deploy or tag a
+  Docker release, and does not implement reupload suppression.
+- DONE: local verification on 2026-06-29 passed Workers lint, typecheck, build,
+  production dependency audit, and 2125 tests / 33 files; Docker pytest with
+  394 passed / 34 expected libvips/pyvips skips; `python -m compileall src`;
+  `git diff --check`; and confirmed no `workers/migrations` diff. Docker
+  build/smoke was skipped because Docker Desktop daemon was not running.
 The sixteenth Level 3 implementation handoff is reviewed and complete locally:
 
 - DONE: Docker `photo-gate-sync publish-catalog` builds a sanitized PhotoPrism
@@ -418,8 +443,9 @@ action list and full status snapshot.
 ## Next Priority
 
 Level 2 is complete. Manual sync deployment and smoke are complete. Track A1
-(album catalog publication by Docker to private R2) is implemented locally. The
-next Level 3 priority is Track A2: define and implement browser-owned safe sync
-targets so Docker can sync albums without Portainer album-ID variables. Worker
-must still not contact PhotoPrism, NAS, Docker, or Portainer directly. Reupload
-suppression remains a separate later track.
+(album catalog publication) and Track A2 (browser-owned sync-target object and
+Docker consumption) are implemented locally. The next Level 3 priority is Track
+A3: read `ops/album-catalog.json` in the Worker admin surface and replace the
+temporary `catalogId` text field with a safe catalog picker. Worker must still
+not contact PhotoPrism, NAS, Docker, or Portainer directly. Reupload suppression
+remains a separate later track.

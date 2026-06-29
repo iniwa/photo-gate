@@ -5,6 +5,13 @@ import {
 } from './repository-validation.js'
 import type { AdminAlbumPage, AdminAlbumSummary } from '../types/admin-album.js'
 
+export interface AlbumForSync {
+  id: string
+  title: string
+  expires_at: string | null
+  download_enabled: 0 | 1
+}
+
 export const ADMIN_ALBUMS_PAGE_SIZE = 50
 
 const TITLE_MAX_CODE_POINTS = 1024
@@ -88,6 +95,11 @@ function isValidTitle(value: unknown): value is string {
   if (Array.from(value).length > TITLE_MAX_CODE_POINTS) return false
   return true
 }
+
+const GET_ALBUM_FOR_SYNC_SQL = `
+  SELECT id, title, expires_at, download_enabled
+  FROM albums
+  WHERE id = ?`
 
 const UPDATE_PUBLIC_METADATA_SQL = `
   UPDATE albums
@@ -203,6 +215,46 @@ export class AdminAlbumRepository {
     }
     if (result === null || typeof result !== 'object' || result.success !== true) {
       throw databaseOperationError()
+    }
+  }
+
+  async getAlbumForSync(albumId: string): Promise<AlbumForSync | null> {
+    if (!isValidId(albumId)) throw databaseOperationError()
+
+    let row: unknown
+    try {
+      row = await this.db
+        .prepare(GET_ALBUM_FOR_SYNC_SQL)
+        .bind(albumId)
+        .first<unknown>()
+    } catch {
+      throw databaseOperationError()
+    }
+    if (row === null || row === undefined) return null
+
+    if (typeof row !== 'object' || row === null) throw databaseOperationError()
+    const r = row as Record<string, unknown>
+
+    if (!isValidId(r['id'])) throw databaseOperationError()
+
+    const title = r['title']
+    if (typeof title !== 'string' || title.length === 0) throw databaseOperationError()
+
+    const expiresAt = r['expires_at']
+    if (expiresAt !== null) {
+      if (typeof expiresAt !== 'string' || !isCanonicalUtcTimestamp(expiresAt)) {
+        throw databaseOperationError()
+      }
+    }
+
+    const downloadEnabled = r['download_enabled']
+    if (downloadEnabled !== 0 && downloadEnabled !== 1) throw databaseOperationError()
+
+    return {
+      id: r['id'] as string,
+      title: title,
+      expires_at: expiresAt as string | null,
+      download_enabled: downloadEnabled as 0 | 1,
     }
   }
 

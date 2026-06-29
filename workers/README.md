@@ -42,6 +42,8 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 | Admin ops summary | `GET /admin/ops` | D1 (read-only aggregate counts from `users`, `albums`, `album_permissions`, `sessions`; no row-level identity, title, hash, token, PhotoPrism UID, or R2 data) |
 | Admin sync status | `GET /admin/sync` | Private R2 (read-only; accepts schema 1 and schema 2 status from `ops/sync-status.json`; schema 1 normalizes trigger fields to null; schema 2 includes `lastTriggerKind` and `lastHandledRequestId`; also reads pending request state from `ops/sync-request.json`; renders Sync Now form and pending indicator) |
 | Admin sync request writer | `POST /admin/sync/request` | Private R2 (write-only; fixed key `ops/sync-request.json`; admin-only; validates exact `kind=sync-now` form input; Docker daemon consumes and handles; Sync Now form exposed on `GET /admin/sync`) |
+| Admin sync target upsert | `POST /admin/albums/sync-target-upsert` | D1 (read album by `albumId`) + Private R2 (read-modify-write `ops/sync-targets.json`; accepts `albumId`+`catalogId`; rejects duplicate `catalogId` across albums; fixed thumb/preview/stripExif schema) |
+| Admin sync target remove | `POST /admin/albums/sync-target-remove` | Private R2 (read-modify-write `ops/sync-targets.json`; accepts `albumId`; removes matching entry; no-op for unknown album ID) |
 | Everything else under `/api`, `/img` | always `401` | — |
 | `/admin/*` (non-GET or unknown path) | authenticated `404` (behind Access guard) | — |
 

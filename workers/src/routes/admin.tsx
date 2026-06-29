@@ -31,6 +31,11 @@ export interface AdminRouteDeps {
     setAlbumEnabled(albumId: string, enabled: number, updatedAt: string): Promise<void>
     updatePublicMetadata(albumId: string, title: string, expiresAt: string | null, downloadEnabled: number, updatedAt: string): Promise<void>
     createAlbum(albumId: string, title: string, photoprismAlbumUid: string, expiresAt: string | null, downloadEnabled: 0 | 1, createdAt: string, updatedAt: string): Promise<void>
+    getAlbumForSync(albumId: string): Promise<{ id: string; title: string; expires_at: string | null; download_enabled: 0 | 1 } | null>
+  }
+  syncTargetRepo: {
+    upsertTarget(albumId: string, catalogId: string, title: string, expiresAt: string | null, downloadEnabled: 0 | 1, publishedAt: string): Promise<void>
+    removeTarget(albumId: string, publishedAt: string): Promise<void>
   }
   permissionRepo: {
     listAssignmentOptions(after?: { albumId: string; userId: string }): Promise<AssignmentOptions>
@@ -312,6 +317,53 @@ async function parseUpdateDisplayNameFields(
   if (!isValidId(userId)) return null
   if (!isValidDisplayName(displayName)) return null
   return { userId, displayName }
+}
+
+const CATALOG_ID_RE = /^[0-9a-f]{64}$/
+
+function isValidCatalogId(value: unknown): value is string {
+  return typeof value === 'string' && CATALOG_ID_RE.test(value)
+}
+
+/**
+ * Parse sync-target-upsert body. Exactly two fields: `albumId` (valid ID) and
+ * `catalogId` (64 lowercase hex). Missing, repeated, extra, or invalid fields yield null.
+ */
+async function parseSyncTargetUpsertFields(
+  c: AdminContext,
+): Promise<{ albumId: string; catalogId: string } | null> {
+  let body: Record<string, string | File | (string | File)[]>
+  try {
+    body = await c.req.parseBody({ all: true })
+  } catch {
+    return null
+  }
+  if (Object.keys(body).length !== 2) return null
+  const albumId = body['albumId']
+  const catalogId = body['catalogId']
+  if (typeof albumId !== 'string' || typeof catalogId !== 'string') return null
+  if (!isValidId(albumId)) return null
+  if (!isValidCatalogId(catalogId)) return null
+  return { albumId, catalogId }
+}
+
+/**
+ * Parse sync-target-remove body. Exactly one field: `albumId` (valid ID).
+ */
+async function parseSyncTargetRemoveFields(
+  c: AdminContext,
+): Promise<{ albumId: string } | null> {
+  let body: Record<string, string | File | (string | File)[]>
+  try {
+    body = await c.req.parseBody({ all: true })
+  } catch {
+    return null
+  }
+  if (Object.keys(body).length !== 1) return null
+  const albumId = body['albumId']
+  if (typeof albumId !== 'string') return null
+  if (!isValidId(albumId)) return null
+  return { albumId }
 }
 
 /**
@@ -903,6 +955,98 @@ export function createAdminRoutes(
     return c.body(null, 303)
   })
 
+  // Sync target upsert. Security contract: guard (above) -> strict same-origin ->
+  // exact form Content-Type -> exactly two valid fields (albumId, catalogId) ->
+  // clock -> D1 read (album for sync) -> R2 read+write (target list). Never selects
+  // or renders photoprism_album_uid. Unknown album or malformed existing object → 500.
+  admin.post('/albums/sync-target-upsert', async (c) => {
+    if (!isSameOrigin(c)) return forbiddenResponse(c)
+    if (!isFormContentType(c.req.header('Content-Type'))) {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Bad Request', 400)
+    }
+    const fields = await parseSyncTargetUpsertFields(c)
+    if (fields === null) {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Bad Request', 400)
+    }
+
+    const deps = depsFromEnv(c.env)
+    let publishedAt: string
+    try {
+      publishedAt = deps.clock().toISOString()
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+
+    let album: { id: string; title: string; expires_at: string | null; download_enabled: 0 | 1 } | null
+    try {
+      album = await deps.albumRepo.getAlbumForSync(fields.albumId)
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+    if (album === null) {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+
+    try {
+      await deps.syncTargetRepo.upsertTarget(
+        fields.albumId,
+        fields.catalogId,
+        album.title,
+        album.expires_at,
+        album.download_enabled,
+        publishedAt,
+      )
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+
+    c.header('Cache-Control', 'no-store')
+    c.header('Location', '/admin/albums')
+    return c.body(null, 303)
+  })
+
+  // Sync target remove. Same security contract as upsert: guard (above) ->
+  // strict same-origin -> exact form Content-Type -> exactly one valid field (albumId) ->
+  // clock -> R2 read+write (target list). Removing a non-existent target is a no-op.
+  admin.post('/albums/sync-target-remove', async (c) => {
+    if (!isSameOrigin(c)) return forbiddenResponse(c)
+    if (!isFormContentType(c.req.header('Content-Type'))) {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Bad Request', 400)
+    }
+    const fields = await parseSyncTargetRemoveFields(c)
+    if (fields === null) {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Bad Request', 400)
+    }
+
+    const deps = depsFromEnv(c.env)
+    let publishedAt: string
+    try {
+      publishedAt = deps.clock().toISOString()
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+
+    try {
+      await deps.syncTargetRepo.removeTarget(fields.albumId, publishedAt)
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+
+    c.header('Cache-Control', 'no-store')
+    c.header('Location', '/admin/albums')
+    return c.body(null, 303)
+  })
+
   // Any other method/path under /admin stays behind the guard and returns a
   // generic authenticated 404 — never the viewer router, never any data.
   admin.all('*', (c) => {
@@ -1129,6 +1273,15 @@ function AdminAlbumsPage({ page }: { page: AdminAlbumPage }) {
                       <option value="1" selected={a.download_enabled === 1}>許可</option>
                     </select>
                     <button type="submit">メタデータ更新</button>
+                  </form>
+                  <form method="post" action="/admin/albums/sync-target-upsert">
+                    <input type="hidden" name="albumId" value={a.id} />
+                    <input type="text" name="catalogId" placeholder="catalogId (64 hex chars)" required pattern="[0-9a-f]{64}" />
+                    <button type="submit">同期ターゲット設定</button>
+                  </form>
+                  <form method="post" action="/admin/albums/sync-target-remove">
+                    <input type="hidden" name="albumId" value={a.id} />
+                    <button type="submit">同期ターゲット削除</button>
                   </form>
                 </td>
               </tr>

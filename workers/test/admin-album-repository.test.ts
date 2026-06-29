@@ -1199,3 +1199,112 @@ describe('AdminAlbumRepository.createAlbum error sanitization', () => {
     ).rejects.toThrow('database operation failed')
   })
 })
+
+// ---------------------------------------------------------------------------
+// getAlbumForSync
+// ---------------------------------------------------------------------------
+
+const SYNC_ALBUM_ID = 'album-sync-001'
+const SYNC_VALID_ROW = {
+  id: SYNC_ALBUM_ID,
+  title: 'Sync Album',
+  expires_at: null,
+  download_enabled: 0,
+}
+
+describe('AdminAlbumRepository.getAlbumForSync - SQL structure', () => {
+  it('queries only id, title, expires_at, download_enabled — no photoprism_album_uid', async () => {
+    const { db, queries } = makeMockDb([{ first: SYNC_VALID_ROW }])
+    await new AdminAlbumRepository(db).getAlbumForSync(SYNC_ALBUM_ID)
+    expect(queries[0]!.sql).not.toContain('photoprism_album_uid')
+    expect(queries[0]!.sql).toContain('id')
+    expect(queries[0]!.sql).toContain('title')
+    expect(queries[0]!.sql).toContain('expires_at')
+    expect(queries[0]!.sql).toContain('download_enabled')
+  })
+
+  it('binds albumId as parameter', async () => {
+    const { db, queries } = makeMockDb([{ first: SYNC_VALID_ROW }])
+    await new AdminAlbumRepository(db).getAlbumForSync(SYNC_ALBUM_ID)
+    expect(queries[0]!.params).toEqual([SYNC_ALBUM_ID])
+  })
+})
+
+describe('AdminAlbumRepository.getAlbumForSync - success', () => {
+  it('returns album with expected fields', async () => {
+    const { db } = makeMockDb([{ first: SYNC_VALID_ROW }])
+    const result = await new AdminAlbumRepository(db).getAlbumForSync(SYNC_ALBUM_ID)
+    expect(result).not.toBeNull()
+    expect(result!.id).toBe(SYNC_ALBUM_ID)
+    expect(result!.title).toBe('Sync Album')
+    expect(result!.expires_at).toBeNull()
+    expect(result!.download_enabled).toBe(0)
+  })
+
+  it('returns album with non-null expires_at', async () => {
+    const { db } = makeMockDb([{ first: { ...SYNC_VALID_ROW, expires_at: '2027-01-01T00:00:00.000Z' } }])
+    const result = await new AdminAlbumRepository(db).getAlbumForSync(SYNC_ALBUM_ID)
+    expect(result!.expires_at).toBe('2027-01-01T00:00:00.000Z')
+  })
+
+  it('returns album with download_enabled=1', async () => {
+    const { db } = makeMockDb([{ first: { ...SYNC_VALID_ROW, download_enabled: 1 } }])
+    const result = await new AdminAlbumRepository(db).getAlbumForSync(SYNC_ALBUM_ID)
+    expect(result!.download_enabled).toBe(1)
+  })
+
+  it('returns null when row not found', async () => {
+    const { db } = makeMockDb([{ first: null }])
+    const result = await new AdminAlbumRepository(db).getAlbumForSync(SYNC_ALBUM_ID)
+    expect(result).toBeNull()
+  })
+})
+
+describe('AdminAlbumRepository.getAlbumForSync - input validation', () => {
+  it('invalid albumId → throws database operation failed', async () => {
+    const { db } = makeMockDb([])
+    await expect(
+      new AdminAlbumRepository(db).getAlbumForSync('!bad!'),
+    ).rejects.toThrow('database operation failed')
+  })
+})
+
+describe('AdminAlbumRepository.getAlbumForSync - malformed rows', () => {
+  it('row with invalid id → throws database operation failed', async () => {
+    const { db } = makeMockDb([{ first: { ...SYNC_VALID_ROW, id: '!bad!' } }])
+    await expect(
+      new AdminAlbumRepository(db).getAlbumForSync(SYNC_ALBUM_ID),
+    ).rejects.toThrow('database operation failed')
+  })
+
+  it('row with empty title → throws database operation failed', async () => {
+    const { db } = makeMockDb([{ first: { ...SYNC_VALID_ROW, title: '' } }])
+    await expect(
+      new AdminAlbumRepository(db).getAlbumForSync(SYNC_ALBUM_ID),
+    ).rejects.toThrow('database operation failed')
+  })
+
+  it('row with invalid expires_at → throws database operation failed', async () => {
+    const { db } = makeMockDb([{ first: { ...SYNC_VALID_ROW, expires_at: 'not-a-date' } }])
+    await expect(
+      new AdminAlbumRepository(db).getAlbumForSync(SYNC_ALBUM_ID),
+    ).rejects.toThrow('database operation failed')
+  })
+
+  it('row with download_enabled=2 → throws database operation failed', async () => {
+    const { db } = makeMockDb([{ first: { ...SYNC_VALID_ROW, download_enabled: 2 } }])
+    await expect(
+      new AdminAlbumRepository(db).getAlbumForSync(SYNC_ALBUM_ID),
+    ).rejects.toThrow('database operation failed')
+  })
+})
+
+describe('AdminAlbumRepository.getAlbumForSync - DB error sanitization', () => {
+  it('first() throws → rejects with database operation failed (secret not exposed)', async () => {
+    const { db } = makeMockDb([{ throws: new Error('secret-db-token-sync') }])
+    const err = await new AdminAlbumRepository(db).getAlbumForSync(SYNC_ALBUM_ID).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(Error)
+    expect((err as Error).message).toBe('database operation failed')
+    expect((err as Error).message).not.toContain('secret-db-token-sync')
+  })
+})

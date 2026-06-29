@@ -622,3 +622,61 @@ def test_other_ops_keys_still_rejected_after_catalog():
         asyncio.run(store.put("ops/unknown.json", b"data", "application/json"))
     with pytest.raises(ValueError):
         asyncio.run(store.get("ops/something-else.json"))
+
+
+# ---------------------------------------------------------------------------
+# ops/sync-targets.json key tests
+# ---------------------------------------------------------------------------
+
+_TARGETS_KEY = "ops/sync-targets.json"
+_TARGETS_DATA = b'{"schema":1,"publishedAt":"2026-06-29T00:00:00.000Z","targets":[]}'
+_TARGETS_CONTENT_TYPE = "application/json"
+_TARGETS_CACHE = "private, no-cache"
+
+
+def test_targets_key_accepted_for_put():
+    store, stubber = _make_store()
+    stubber.add_response(
+        "put_object",
+        {},
+        expected_params={
+            "Bucket": _BUCKET,
+            "Key": _TARGETS_KEY,
+            "Body": _TARGETS_DATA,
+            "ContentType": _TARGETS_CONTENT_TYPE,
+            "CacheControl": _TARGETS_CACHE,
+        },
+    )
+    with stubber:
+        asyncio.run(store.put(_TARGETS_KEY, _TARGETS_DATA, _TARGETS_CONTENT_TYPE))
+    stubber.assert_no_pending_responses()
+
+
+def test_targets_key_cache_control_is_private_no_cache():
+    from photo_gate.r2_store import _cache_control
+    assert _cache_control(_TARGETS_KEY) == "private, no-cache"
+
+
+def test_targets_key_content_type_must_be_json():
+    store, _ = _make_store()
+    with pytest.raises(ValueError, match="content type"):
+        asyncio.run(store.put(_TARGETS_KEY, _TARGETS_DATA, "text/plain"))
+
+
+def test_targets_key_accepted_for_get():
+    import io
+    store, stubber = _make_store()
+    stubber.add_response(
+        "get_object",
+        {"Body": io.BytesIO(_TARGETS_DATA), "ContentLength": len(_TARGETS_DATA)},
+        expected_params={"Bucket": _BUCKET, "Key": _TARGETS_KEY},
+    )
+    with stubber:
+        result = asyncio.run(store.get(_TARGETS_KEY))
+    assert result == _TARGETS_DATA
+
+
+def test_other_ops_keys_still_rejected_after_targets():
+    store, _ = _make_store()
+    with pytest.raises(ValueError):
+        asyncio.run(store.get("ops/unknown-extra.json"))

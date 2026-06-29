@@ -1,6 +1,6 @@
 # Current State
 
-Last audited: 2026-06-26.
+Last audited: 2026-06-29.
 
 ## Level
 
@@ -100,9 +100,12 @@ documented for incident use.
   browser-complete sync is implemented and reviewed locally: Docker
   `photo-gate-sync publish-catalog` writes a sanitized album catalog to private
   R2 at `ops/album-catalog.json`, using hashed catalog IDs and excluding raw
-  PhotoPrism UIDs, URLs, tokens, credentials, and source photo data. Album
-  deletion, browser-owned sync targets, Worker catalog UI integration, reupload
-  suppression, dry-run cleanup, and final hardening remain unimplemented.
+  PhotoPrism UIDs, URLs, tokens, credentials, and source photo data. Track A2
+  is implemented and reviewed locally: Worker admin routes write safe
+  `ops/sync-targets.json` records and Docker consumes them to sync resolved
+  targets while falling back to the Portainer-configured album during migration.
+  Album deletion, Worker catalog picker UI integration, reupload suppression,
+  dry-run cleanup, and final hardening remain unimplemented.
 
 ## Verification Baseline
 
@@ -135,7 +138,10 @@ documented for incident use.
   manual trigger, and a non-null handled request ID. The local Docker
   album-catalog publisher passed 333 tests with 34 expected libvips/pyvips skips
   plus `python -m compileall src` on 2026-06-26; it is not yet released or
-  deployed.
+  deployed. The local sync-target consumer/publisher path passed Workers lint,
+  typecheck, build, audit, and 2125 tests / 33 files; Docker pytest with 394
+  passed / 34 expected skips plus `python -m compileall src` on 2026-06-29; it
+  is not yet released or deployed.
 - Live security posture verified 2026-06-11/12: unauthenticated pages
   303 to `/`; `/img` and reserved routes 401 `no-store`; cross-origin
   and `Origin: null` POSTs 403; direct R2 access refused; manifest and
