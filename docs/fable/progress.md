@@ -484,6 +484,7 @@ Level 2 is complete. Manual sync deployment and smoke are complete. Track A1
 (album catalog publication), Track A2 (browser-owned sync-target object and
 Docker consumption), and Track A3 (Worker catalog picker UI) are implemented
 locally; the Worker-side A2/A3 surface is deployed in production. The next
-priority is completing the remaining live browser smoke for the new album sync
-path if not already done, then starting Track B reupload suppression as a
-separate handoff.
+priority is implementing Track B reupload suppression from the accepted ADR
+`docs/decisions/2026-06-29-reupload-suppression.md`: manifest schema 2,
+manifest-proven skip decisions, stable R2 keys, no R2 deletion, and schema 1
+manifests treated as first-run cache misses.
