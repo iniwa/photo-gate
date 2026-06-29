@@ -21,6 +21,28 @@ The manual sync release is deployed and live-smoke verified in production:
 - DONE: the operator pressed the manual sync button from `/admin/sync`; the`r`n  daemon consumed the request, synced 234/234, uploaded cover and manifest, and`r`n  reported success in 136.5s.
 - DONE: `/admin/sync` reported no pending request, 0 failures, 1 completed`r`n  run, manual trigger kind, and a non-null handled request ID.
 
+The eighteenth Level 3 implementation handoff is reviewed and complete locally:
+
+- DONE: Worker `GET /admin/albums` reads the fixed private R2 key
+  `ops/album-catalog.json` and renders a no-JS `<select name="catalogId">`
+  picker for each album row when the safe catalog is available.
+- DONE: Missing or empty catalogs render a safe catalog-unavailable message and
+  no free-text catalog ID input. Malformed catalogs and R2 read errors fail
+  closed with sanitized 500 responses.
+- DONE: `POST /admin/albums/sync-target-upsert` now verifies the submitted
+  `catalogId` exists in the current validated catalog before calling the clock,
+  D1 `getAlbumForSync`, or sync-target writes. Syntactically valid but absent
+  IDs return 400 with no mutation.
+- The picker renders only catalog title, optional photo count, optional
+  timestamp, and the opaque 64-hex catalog ID. It does not render raw
+  PhotoPrism UIDs, URLs, tokens, raw JSON, R2 credentials, admin identity, or
+  Cloudflare Access claims.
+- This is Track A3 for browser-complete sync. It does not add catalog-based D1
+  album creation, change Docker, change sync request schema, deploy, release,
+  or implement reupload suppression.
+- DONE: local verification on 2026-06-29 passed Workers lint, typecheck, build,
+  production dependency audit, and 2186 tests / 34 files; `git diff --check`;
+  and confirmed no Docker or `workers/migrations` diff.
 The seventeenth Level 3 implementation handoff is reviewed and complete locally:
 
 - DONE: Worker admin routes `POST /admin/albums/sync-target-upsert` and
@@ -443,9 +465,8 @@ action list and full status snapshot.
 ## Next Priority
 
 Level 2 is complete. Manual sync deployment and smoke are complete. Track A1
-(album catalog publication) and Track A2 (browser-owned sync-target object and
-Docker consumption) are implemented locally. The next Level 3 priority is Track
-A3: read `ops/album-catalog.json` in the Worker admin surface and replace the
-temporary `catalogId` text field with a safe catalog picker. Worker must still
-not contact PhotoPrism, NAS, Docker, or Portainer directly. Reupload suppression
-remains a separate later track.
+(album catalog publication), Track A2 (browser-owned sync-target object and
+Docker consumption), and Track A3 (Worker catalog picker UI) are implemented
+locally. The next priority is deciding delivery for A1-A3 (Worker deploy plus
+Docker release/Portainer update) or, if delivery is intentionally deferred,
+starting Track B reupload suppression as a separate handoff.

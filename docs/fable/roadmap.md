@@ -147,8 +147,9 @@ This is a priority-ordered plan. Update status as implementation progresses.
       `enabled = 0` implemented and reviewed locally 2026-06-26. Docker
       Track A1 album catalog publication to private R2 implemented and reviewed
       locally 2026-06-26. Track A2 browser-owned sync targets and Docker
-      consumption implemented and reviewed locally 2026-06-29. Album deletion,
-      Worker catalog picker UI integration, and reupload suppression remain.)
+      consumption implemented and reviewed locally 2026-06-29. Track A3 Worker
+      catalog picker UI integration implemented and reviewed locally 2026-06-29.
+      Album deletion and reupload suppression remain.)
 - [x] Implement sync request/status administration.
       (Read-only `/admin/sync` status page, Docker best-effort R2 status
       publication, fixed private request object at `ops/sync-request.json`,

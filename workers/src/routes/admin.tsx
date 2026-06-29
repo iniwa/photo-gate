@@ -8,6 +8,7 @@ import type { AssignmentOptions } from '../types/admin-permission.js'
 import type { AdminOpsSummary } from '../types/admin-ops.js'
 import type { AdminSyncStatus } from '../types/admin-sync-status.js'
 import type { AdminSyncRequest } from '../types/admin-sync-request.js'
+import type { AdminAlbumCatalogEntry } from '../types/admin-album-catalog.js'
 import { Layout } from '../templates/layout.js'
 import { requireAdmin } from '../middleware/require-admin.js'
 import { forbiddenResponse } from '../middleware/auth-response.js'
@@ -54,6 +55,13 @@ export interface AdminRouteDeps {
       | { status: 'missing' }
       | { status: 'found'; value: AdminSyncRequest }
     >
+  }
+  catalogRepo: {
+    getCatalog(): Promise<
+      | { status: 'missing' }
+      | { status: 'available'; publishedAt: string; albums: AdminAlbumCatalogEntry[] }
+    >
+    hasCatalogId(catalogId: string): Promise<boolean>
   }
   clock: () => Date
 }
@@ -463,16 +471,26 @@ export function createAdminRoutes(
       return c.text('Bad Request', 400)
     }
 
+    const deps = depsFromEnv(c.env)
+
     let page: AdminAlbumPage
     try {
-      page = await depsFromEnv(c.env).albumRepo.listAlbums(after)
+      page = await deps.albumRepo.listAlbums(after)
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+
+    let catalog: { status: 'missing' } | { status: 'available'; publishedAt: string; albums: AdminAlbumCatalogEntry[] }
+    try {
+      catalog = await deps.catalogRepo.getCatalog()
     } catch {
       c.header('Cache-Control', 'no-store')
       return c.text('Internal Server Error', 500)
     }
 
     c.header('Cache-Control', 'no-store')
-    return c.html(<AdminAlbumsPage page={page} />)
+    return c.html(<AdminAlbumsPage page={page} catalog={catalog} />)
   })
 
   admin.get('/permissions', async (c) => {
@@ -972,6 +990,21 @@ export function createAdminRoutes(
     }
 
     const deps = depsFromEnv(c.env)
+
+    // Catalog check before clock/D1/sync-target write: missing or malformed → 500,
+    // absent catalogId in valid catalog → 400. No clock or repo is touched on failure.
+    let catalogHasId: boolean
+    try {
+      catalogHasId = await deps.catalogRepo.hasCatalogId(fields.catalogId)
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+    if (!catalogHasId) {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Bad Request', 400)
+    }
+
     let publishedAt: string
     try {
       publishedAt = deps.clock().toISOString()
@@ -1189,9 +1222,16 @@ function AdminUsersPage({ page }: { page: AdminUserPage }) {
  * photoprism_album_uid, transform settings, and strip_exif are never selected,
  * returned, rendered, or logged.
  */
-function AdminAlbumsPage({ page }: { page: AdminAlbumPage }) {
+function AdminAlbumsPage({
+  page,
+  catalog,
+}: {
+  page: AdminAlbumPage
+  catalog: { status: 'missing' } | { status: 'available'; publishedAt: string; albums: AdminAlbumCatalogEntry[] }
+}) {
   const { albums, hasMore } = page
   const lastId = albums.length > 0 ? albums[albums.length - 1]!.id : undefined
+  const catalogEntries = catalog.status === 'available' ? catalog.albums : []
 
   return (
     <Layout title="アルバム一覧">
@@ -1274,11 +1314,21 @@ function AdminAlbumsPage({ page }: { page: AdminAlbumPage }) {
                     </select>
                     <button type="submit">メタデータ更新</button>
                   </form>
-                  <form method="post" action="/admin/albums/sync-target-upsert">
-                    <input type="hidden" name="albumId" value={a.id} />
-                    <input type="text" name="catalogId" placeholder="catalogId (64 hex chars)" required pattern="[0-9a-f]{64}" />
-                    <button type="submit">同期ターゲット設定</button>
-                  </form>
+                  {catalogEntries.length > 0 ? (
+                    <form method="post" action="/admin/albums/sync-target-upsert">
+                      <input type="hidden" name="albumId" value={a.id} />
+                      <select name="catalogId" required>
+                        {catalogEntries.map(entry => (
+                          <option key={entry.catalogId} value={entry.catalogId}>
+                            {entry.title} ({entry.photoCount !== null ? `${entry.photoCount}枚` : '不明'}, {entry.updatedAt ?? '不明'})
+                          </option>
+                        ))}
+                      </select>
+                      <button type="submit">同期ターゲット設定</button>
+                    </form>
+                  ) : (
+                    <p>カタログ未取得</p>
+                  )}
                   <form method="post" action="/admin/albums/sync-target-remove">
                     <input type="hidden" name="albumId" value={a.id} />
                     <button type="submit">同期ターゲット削除</button>

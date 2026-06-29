@@ -104,8 +104,12 @@ documented for incident use.
   is implemented and reviewed locally: Worker admin routes write safe
   `ops/sync-targets.json` records and Docker consumes them to sync resolved
   targets while falling back to the Portainer-configured album during migration.
-  Album deletion, Worker catalog picker UI integration, reupload suppression,
-  dry-run cleanup, and final hardening remain unimplemented.
+  Track A3 is implemented and reviewed locally: `GET /admin/albums` reads the
+  safe private R2 catalog and renders a no-JS catalog picker for sync-target
+  selection, while `POST /admin/albums/sync-target-upsert` verifies the selected
+  catalog ID exists before D1 reads or sync-target writes. Album deletion,
+  reupload suppression, dry-run cleanup, and final hardening remain
+  unimplemented.
 
 ## Verification Baseline
 
@@ -140,8 +144,10 @@ documented for incident use.
   plus `python -m compileall src` on 2026-06-26; it is not yet released or
   deployed. The local sync-target consumer/publisher path passed Workers lint,
   typecheck, build, audit, and 2125 tests / 33 files; Docker pytest with 394
-  passed / 34 expected skips plus `python -m compileall src` on 2026-06-29; it
-  is not yet released or deployed.
+  passed / 34 expected skips plus `python -m compileall src` on 2026-06-29. The
+  local Worker catalog picker path passed Workers lint, typecheck, build,
+  production dependency audit, and 2186 tests / 34 files on 2026-06-29. The
+  A1-A3 browser-complete sync changes are not yet released or deployed.
 - Live security posture verified 2026-06-11/12: unauthenticated pages
   303 to `/`; `/img` and reserved routes 401 `no-store`; cross-origin
   and `Origin: null` POSTs 403; direct R2 access refused; manifest and

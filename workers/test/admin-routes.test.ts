@@ -501,6 +501,54 @@ function makeThrowingSyncTargetRepo(): SyncTargetRepo {
   }
 }
 
+type CatalogEntry = {
+  catalogId: string
+  title: string
+  photoCount: number | null
+  updatedAt: string | null
+}
+
+type CatalogRepo = {
+  getCatalog(): Promise<{ status: 'missing' } | { status: 'available'; publishedAt: string; albums: CatalogEntry[] }>
+  hasCatalogId(catalogId: string): Promise<boolean>
+}
+
+function makePassingCatalogRepo(): CatalogRepo {
+  return {
+    getCatalog: async () => ({
+      status: 'available',
+      publishedAt: '2026-06-29T12:00:00Z',
+      albums: [{ catalogId: 'a'.repeat(64), title: 'Test Album', photoCount: 10, updatedAt: '2026-06-29T12:00:00Z' }],
+    }),
+    hasCatalogId: async () => true,
+  }
+}
+
+function makeMissingCatalogRepo(): CatalogRepo {
+  return {
+    getCatalog: async () => ({ status: 'missing' }),
+    hasCatalogId: async () => { throw new Error('catalog missing') },
+  }
+}
+
+function makeThrowingCatalogRepo(): CatalogRepo {
+  return {
+    getCatalog: async () => { throw new Error('R2 exploded') },
+    hasCatalogId: async () => { throw new Error('R2 exploded') },
+  }
+}
+
+function makeAbsentCatalogRepo(): CatalogRepo {
+  return {
+    getCatalog: async () => ({
+      status: 'available',
+      publishedAt: '2026-06-29T12:00:00Z',
+      albums: [],
+    }),
+    hasCatalogId: async () => false,
+  }
+}
+
 function makeApp(
   resolveAuth: ResolveAuth,
   userRepo?: UserRepo,
@@ -511,6 +559,7 @@ function makeApp(
   syncStatusRepo?: SyncStatusRepo,
   syncRequestRepo?: SyncRequestRepo,
   syncTargetRepo?: SyncTargetRepo,
+  catalogRepo?: CatalogRepo,
 ): Hono {
   const app = new Hono()
   app.route(
@@ -524,6 +573,7 @@ function makeApp(
       syncStatusRepo: syncStatusRepo ?? makeSyncStatusRepo(),
       syncRequestRepo: syncRequestRepo ?? makeCapturingSyncRequestRepo(),
       syncTargetRepo: syncTargetRepo ?? makeCapturingSyncTargetRepo(),
+      catalogRepo: catalogRepo ?? makePassingCatalogRepo(),
     })),
   )
   return app
@@ -6101,5 +6151,194 @@ describe('admin-routes: GET /admin/albums sync-target form rendering', () => {
     // We check that the sync-target form section has no uid leak.
     const syncTargetSection = html.slice(html.indexOf('sync-target-upsert'))
     expect(syncTargetSection).not.toContain('photoprism_album_uid')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// GET /admin/albums — catalog picker rendering
+// ---------------------------------------------------------------------------
+
+const CATALOG_ENTRY: CatalogEntry = {
+  catalogId: VALID_CATALOG_ID,
+  title: 'Ise Ryokou',
+  photoCount: 42,
+  updatedAt: '2026-06-29T12:00:00Z',
+}
+
+function makeAvailableCatalogRepo(entries: CatalogEntry[]): CatalogRepo {
+  return {
+    getCatalog: async () => ({
+      status: 'available',
+      publishedAt: '2026-06-29T12:00:00Z',
+      albums: entries,
+    }),
+    hasCatalogId: async (id) => entries.some(e => e.catalogId === id),
+  }
+}
+
+describe('admin-routes: GET /admin/albums catalog picker', () => {
+  it('catalog available with entries → renders select name="catalogId"', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM]), undefined, undefined, undefined, undefined, undefined, undefined, makeAvailableCatalogRepo([CATALOG_ENTRY]))
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const html = await res.text()
+    expect(html).toContain('name="catalogId"')
+    expect(html).toContain('<select')
+  })
+
+  it('catalog available → renders catalog entry title in option', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM]), undefined, undefined, undefined, undefined, undefined, undefined, makeAvailableCatalogRepo([CATALOG_ENTRY]))
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const html = await res.text()
+    expect(html).toContain('Ise Ryokou')
+  })
+
+  it('catalog available → renders catalogId as option value', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM]), undefined, undefined, undefined, undefined, undefined, undefined, makeAvailableCatalogRepo([CATALOG_ENTRY]))
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const html = await res.text()
+    expect(html).toContain(VALID_CATALOG_ID)
+  })
+
+  it('catalog available → renders photoCount in option label', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM]), undefined, undefined, undefined, undefined, undefined, undefined, makeAvailableCatalogRepo([CATALOG_ENTRY]))
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const html = await res.text()
+    expect(html).toContain('42')
+  })
+
+  it('catalog available, photoCount null → renders 不明', async () => {
+    const entry: CatalogEntry = { ...CATALOG_ENTRY, photoCount: null }
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM]), undefined, undefined, undefined, undefined, undefined, undefined, makeAvailableCatalogRepo([entry]))
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const html = await res.text()
+    expect(html).toContain('不明')
+  })
+
+  it('catalog available → does not render photoprism or token strings', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM]), undefined, undefined, undefined, undefined, undefined, undefined, makeAvailableCatalogRepo([CATALOG_ENTRY]))
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const html = await res.text()
+    const syncSection = html.slice(html.indexOf('sync-target-upsert'))
+    expect(syncSection).not.toContain('photoprism_album_uid')
+    expect(syncSection).not.toContain('token')
+    expect(syncSection).not.toContain('secret')
+  })
+
+  it('catalog missing → 200 with カタログ未取得 message', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM]), undefined, undefined, undefined, undefined, undefined, undefined, makeMissingCatalogRepo())
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    expect(res.status).toBe(200)
+    const html = await res.text()
+    expect(html).toContain('カタログ未取得')
+  })
+
+  it('catalog missing → no select element in sync-target section', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM]), undefined, undefined, undefined, undefined, undefined, undefined, makeMissingCatalogRepo())
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const html = await res.text()
+    const syncSection = html.slice(html.indexOf('sync-target-upsert'))
+    expect(syncSection).not.toContain('<select')
+  })
+
+  it('catalog available but empty → renders カタログ未取得', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM]), undefined, undefined, undefined, undefined, undefined, undefined, makeAvailableCatalogRepo([]))
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const html = await res.text()
+    expect(html).toContain('カタログ未取得')
+  })
+
+  it('catalog getCatalog throws → 500 no-store', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM]), undefined, undefined, undefined, undefined, undefined, undefined, makeThrowingCatalogRepo())
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('catalog getCatalog throws → no error detail in body', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepo([SAMPLE_ALBUM]), undefined, undefined, undefined, undefined, undefined, undefined, makeThrowingCatalogRepo())
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    const body = await res.text()
+    expect(body).not.toContain('R2 exploded')
+    expect(body).toBe('Internal Server Error')
+  })
+
+  it('listAlbums throws → 500 before catalog is read', async () => {
+    const app = makeApp(goodAuth(), undefined, makeThrowingAlbumRepo(), undefined, undefined, undefined, undefined, undefined, undefined, makeThrowingCatalogRepo())
+    const res = await getAdmin(app, { path: '/admin/albums' })
+    expect(res.status).toBe(500)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /admin/albums/sync-target-upsert — catalog check
+// ---------------------------------------------------------------------------
+
+function makeAlbumRepoWithSyncSpy(album: AlbumForSync | null): { repo: AlbumRepo; callCount: () => number } {
+  let count = 0
+  const repo: AlbumRepo = {
+    listAlbums: async () => ({ albums: [], hasMore: false }),
+    setAlbumEnabled: async () => {},
+    updatePublicMetadata: async () => {},
+    createAlbum: async () => {},
+    getAlbumForSync: async () => { count++; return album },
+  }
+  return { repo, callCount: () => count }
+}
+
+describe('admin-routes: POST /admin/albums/sync-target-upsert catalog check', () => {
+  it('catalogId absent from catalog → 400 no-store', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepoWithSync(SAMPLE_ALBUM_FOR_SYNC), undefined, undefined, undefined, undefined, undefined, undefined, makeAbsentCatalogRepo())
+    const res = await postAdmin(app, '/admin/albums/sync-target-upsert', makeValidSyncTargetUpsertOptions())
+    expect(res.status).toBe(400)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('catalogId absent → clock not called', async () => {
+    const { clock, getCallCount } = makeClockSpy()
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepoWithSync(SAMPLE_ALBUM_FOR_SYNC), undefined, clock, undefined, undefined, undefined, undefined, makeAbsentCatalogRepo())
+    await postAdmin(app, '/admin/albums/sync-target-upsert', makeValidSyncTargetUpsertOptions())
+    expect(getCallCount()).toBe(0)
+  })
+
+  it('catalogId absent → getAlbumForSync not called', async () => {
+    const spy = makeAlbumRepoWithSyncSpy(SAMPLE_ALBUM_FOR_SYNC)
+    const app = makeApp(goodAuth(), undefined, spy.repo, undefined, undefined, undefined, undefined, undefined, undefined, makeAbsentCatalogRepo())
+    await postAdmin(app, '/admin/albums/sync-target-upsert', makeValidSyncTargetUpsertOptions())
+    expect(spy.callCount()).toBe(0)
+  })
+
+  it('catalogId absent → upsertTarget not called', async () => {
+    const targetRepo = makeCapturingSyncTargetRepo()
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepoWithSync(SAMPLE_ALBUM_FOR_SYNC), undefined, undefined, undefined, undefined, undefined, targetRepo, makeAbsentCatalogRepo())
+    await postAdmin(app, '/admin/albums/sync-target-upsert', makeValidSyncTargetUpsertOptions())
+    expect(targetRepo.upsertCalls).toHaveLength(0)
+  })
+
+  it('catalog missing (hasCatalogId throws) → 500 no-store', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepoWithSync(SAMPLE_ALBUM_FOR_SYNC), undefined, undefined, undefined, undefined, undefined, undefined, makeMissingCatalogRepo())
+    const res = await postAdmin(app, '/admin/albums/sync-target-upsert', makeValidSyncTargetUpsertOptions())
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('catalog missing → clock not called', async () => {
+    const { clock, getCallCount } = makeClockSpy()
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepoWithSync(SAMPLE_ALBUM_FOR_SYNC), undefined, clock, undefined, undefined, undefined, undefined, makeMissingCatalogRepo())
+    await postAdmin(app, '/admin/albums/sync-target-upsert', makeValidSyncTargetUpsertOptions())
+    expect(getCallCount()).toBe(0)
+  })
+
+  it('catalog missing → upsertTarget not called', async () => {
+    const targetRepo = makeCapturingSyncTargetRepo()
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepoWithSync(SAMPLE_ALBUM_FOR_SYNC), undefined, undefined, undefined, undefined, undefined, targetRepo, makeMissingCatalogRepo())
+    await postAdmin(app, '/admin/albums/sync-target-upsert', makeValidSyncTargetUpsertOptions())
+    expect(targetRepo.upsertCalls).toHaveLength(0)
+  })
+
+  it('catalog throws → 500 no-store, body sanitized', async () => {
+    const app = makeApp(goodAuth(), undefined, makeAlbumRepoWithSync(SAMPLE_ALBUM_FOR_SYNC), undefined, undefined, undefined, undefined, undefined, undefined, makeThrowingCatalogRepo())
+    const res = await postAdmin(app, '/admin/albums/sync-target-upsert', makeValidSyncTargetUpsertOptions())
+    expect(res.status).toBe(500)
+    expect(await res.text()).toBe('Internal Server Error')
   })
 })
