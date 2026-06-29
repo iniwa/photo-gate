@@ -16,9 +16,9 @@ documented for incident use.
 ## Production Topology
 
 - Workers viewer: https://share-photo.iniwach.com
-  (commit `cd990ae`; active version `3c4d4f8e-e13f-4ebd-8ab0-213639b7f90b`;
-  manually deployed 2026-06-26; cron 18:00 UTC session cleanup).
-  Includes manual sync request writer, admin sync UI, status schema 2, user display-name editing, permission assignment dropdowns, and D1-only album creation.
+  (commit `de74227`; active version `b1874993-7876-4120-a6cf-fe03c44ad4eb`;
+  manually deployed 2026-06-29; cron 18:00 UTC session cleanup).
+  Includes manual sync request writer, admin sync UI, status schema 2, user display-name editing, permission assignment dropdowns, D1-only album creation, browser-owned sync-target routes, and the `/admin/albums` catalog picker.
   The former `photo-gate.iniwaiwana.workers.dev` route is disabled and returns 404.
 - D1 `photo-gate` (APAC, id `de77cb73-497a-4a41-bd1c-151fd907be3f`),
   2 migrations applied. One user, one album, one permission row (real
@@ -86,7 +86,7 @@ documented for incident use.
   and the Worker-side manual sync administration surface is deployed to production:
   request writer (`POST /admin/sync/request`), status schema 2 rendering,
   pending indicator, and no-JS Sync Now form (`GET /admin/sync`). Production
-  Worker deploy completed 2026-06-26 (version `3c4d4f8e`, commit `cd990ae`);
+  Worker deploy completed 2026-06-29 (version `b1874993`, commit `de74227`);
   unauthenticated smoke checks pass. Docker sync `0.3.0` is released and running
   in Portainer, and live manual-sync smoke completed 2026-06-26: the admin
   request was consumed by the daemon, sync completed 234/234, cover and manifest
@@ -104,12 +104,12 @@ documented for incident use.
   is implemented and reviewed locally: Worker admin routes write safe
   `ops/sync-targets.json` records and Docker consumes them to sync resolved
   targets while falling back to the Portainer-configured album during migration.
-  Track A3 is implemented and reviewed locally: `GET /admin/albums` reads the
-  safe private R2 catalog and renders a no-JS catalog picker for sync-target
+  Track A3 is deployed in the Worker: `GET /admin/albums` reads the safe
+  private R2 catalog and renders a no-JS catalog picker for sync-target
   selection, while `POST /admin/albums/sync-target-upsert` verifies the selected
-  catalog ID exists before D1 reads or sync-target writes. Album deletion,
-  reupload suppression, dry-run cleanup, and final hardening remain
-  unimplemented.
+  catalog ID exists before D1 reads or sync-target writes. Docker `0.4.0` release,
+  Portainer update, catalog publication, album deletion, reupload suppression,
+  dry-run cleanup, and final hardening remain unimplemented.
 
 ## Verification Baseline
 
@@ -120,14 +120,14 @@ documented for incident use.
   album public metadata update controls, read-only admin ops summary, read-only
   admin sync status, the manual sync UI/status-schema additions, user display-name
   editing, browser-friendly permission assignment UI, and D1-only album creation
-  pass lint, typecheck, build, production dependency audit, and 2041 tests / 32
-  files locally (2026-06-26).
+  pass lint, typecheck, build, production dependency audit, and 2186 tests / 34
+  files locally (2026-06-29).
   Production audit is clean; full `npm audit` remains blocked by devDependency
   advisories in Wrangler/Miniflare. Workers manual deploy succeeded for commit
-  `cd990ae` (version `3c4d4f8e`, 2026-06-26); unauthenticated production smoke
+  `de74227` (version `b1874993`, 2026-06-29); unauthenticated production smoke
   confirms viewer login page, /albums redirect, /img 401 no-store, /api 401
-  no-store, /admin Cloudflare Access intercept, and authenticated /admin/sync
-  browser rendering all pass.
+  no-store, and /admin Cloudflare Access intercept. Authenticated `/admin/albums`
+  catalog picker confirmation remains operator-side after catalog publication.
 - Docker: sync `0.3.0` is published and running in production; sync`r`n  `0.2.1` reports 183 tests green in the previous published baseline;
   the admin sync-status handoff passed 190 tests with 34 expected libvips/pyvips
   skips plus `python -m compileall src` locally (2026-06-25). The Docker-side
@@ -146,8 +146,7 @@ documented for incident use.
   typecheck, build, audit, and 2125 tests / 33 files; Docker pytest with 394
   passed / 34 expected skips plus `python -m compileall src` on 2026-06-29. The
   local Worker catalog picker path passed Workers lint, typecheck, build,
-  production dependency audit, and 2186 tests / 34 files on 2026-06-29. The
-  A1-A3 browser-complete sync changes are not yet released or deployed.
+  production dependency audit, and 2186 tests / 34 files on 2026-06-29. Docker `0.4.0` release and Portainer deployment for the A1/A2 Docker side are still pending.
 - Live security posture verified 2026-06-11/12: unauthenticated pages
   303 to `/`; `/img` and reserved routes 401 `no-store`; cross-origin
   and `Origin: null` POSTs 403; direct R2 access refused; manifest and

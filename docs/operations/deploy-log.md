@@ -28,6 +28,7 @@
 | 2026-06-23 | `08e567cf-76a8-4151-8f76-d92783b73af0` | `42a7b56` 相当 | Dashboard / `wrangler secret put` | ロールバックで消失した Access シークレット 3 件を復旧。AUD をダッシュボード値で再登録し、管理コンソール復旧確認済み。本番はこの版で稼働中 |
 | 2026-06-26 | `b30250aa-0289-4758-b1fe-3376beba0afe` | `a1a5c2e` | 手動 `wrangler deploy` (OAuth) | Worker 側の手動同期機能(request writer, status schema 2 rendering, admin sync UI)を本番デプロイ。Docker daemon consumer は未リリース。未認証スモーク全 5 項目合格。/admin/sync 認証済みブラウザ確認済み(ステータスページ + manual sync ボタン表示) |
 | 2026-06-26 | `3c4d4f8e-e13f-4ebd-8ab0-213639b7f90b` | `cd990ae` | 手動 `wrangler deploy` (OAuth) | 管理ブラウザ機能追加を本番デプロイ。ユーザー表示名編集、権限割当ドロップダウン、D1-only アルバム作成 (`enabled=0`, `photoprism_album_uid` create-only) を含む。未認証スモーク 5 項目合格。 |
+| 2026-06-29 | `b1874993-7876-4120-a6cf-fe03c44ad4eb` | `de74227` | `wrangler deploy` (OAuth, verified from deployments list) | A1-A3 Worker side deployed: browser-owned sync-target routes and `/admin/albums` catalog picker. Unauthenticated smoke passed: `/` 200, `/albums` 303 to `/`, `/img/probe-nonexistent` 401 no-store, `/api/probe` 401 no-store, `/admin` Cloudflare Access 302. Authenticated `/admin/albums` picker check remains operator-side after catalog publication. Docker `0.4.0` release and Portainer update are still pending. |
 
 ## Docker sync (ghcr.io/iniwa/photo-gate-sync)
 
