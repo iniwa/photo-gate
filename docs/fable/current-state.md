@@ -31,9 +31,10 @@ documented for incident use.
   `PHOTOPRISM_PREVIEW_SIZE=fit_1920`, scheduled at the default 86400-second
   interval.
 - Sync `0.3.0` is published for `linux/amd64` and `linux/arm64` and the
-  operator confirmed it is deployed on the Pi on 2026-06-26. It includes the
-  manual sync request consumer and status schema 2 publication; the previous
-  `0.2.1` log leak fix remains in place.
+  operator confirmed it is deployed on the Pi on 2026-06-26. Sync `0.4.0` is
+  also published for `linux/amd64` and `linux/arm64` from tag `sync-v0.4.0`
+  (commit `2c17c83`), but Portainer still needs to be updated from `0.3.0`.
+  The previous `0.2.1` log leak fix remains in place.
 - PhotoPrism serves static thumbs up to 1920 px; dynamic previews stay
   disabled by operator choice (Pi load).
 
@@ -107,9 +108,10 @@ documented for incident use.
   Track A3 is deployed in the Worker: `GET /admin/albums` reads the safe
   private R2 catalog and renders a no-JS catalog picker for sync-target
   selection, while `POST /admin/albums/sync-target-upsert` verifies the selected
-  catalog ID exists before D1 reads or sync-target writes. Docker `0.4.0` release,
-  Portainer update, catalog publication, album deletion, reupload suppression,
-  dry-run cleanup, and final hardening remain unimplemented.
+  catalog ID exists before D1 reads or sync-target writes. Docker `0.4.0` is
+  released to GHCR; Portainer update, catalog publication, album deletion,
+  reupload suppression, dry-run cleanup, and final hardening remain
+  unimplemented.
 
 ## Verification Baseline
 
@@ -128,7 +130,8 @@ documented for incident use.
   confirms viewer login page, /albums redirect, /img 401 no-store, /api 401
   no-store, and /admin Cloudflare Access intercept. Authenticated `/admin/albums`
   catalog picker confirmation remains operator-side after catalog publication.
-- Docker: sync `0.3.0` is published and running in production; sync`r`n  `0.2.1` reports 183 tests green in the previous published baseline;
+- Docker: sync `0.3.0` is running in production; sync `0.4.0` is published
+  but not yet deployed to Portainer. sync`r`n  `0.2.1` reports 183 tests green in the previous published baseline;
   the admin sync-status handoff passed 190 tests with 34 expected libvips/pyvips
   skips plus `python -m compileall src` locally (2026-06-25). The Docker-side
   sync request consumer passed 253 tests with 34 expected libvips/pyvips skips
@@ -146,7 +149,7 @@ documented for incident use.
   typecheck, build, audit, and 2125 tests / 33 files; Docker pytest with 394
   passed / 34 expected skips plus `python -m compileall src` on 2026-06-29. The
   local Worker catalog picker path passed Workers lint, typecheck, build,
-  production dependency audit, and 2186 tests / 34 files on 2026-06-29. Docker `0.4.0` release and Portainer deployment for the A1/A2 Docker side are still pending.
+  production dependency audit, and 2186 tests / 34 files on 2026-06-29. Docker `0.4.0` was released by docker-ci run `28350063100` on 2026-06-29: host tests, container-test, and release succeeded, and GHCR published both `0.4.0` and `sha-2c17c83` multi-arch manifests. Portainer deployment for the A1/A2 Docker side is still pending.
 - Live security posture verified 2026-06-11/12: unauthenticated pages
   303 to `/`; `/img` and reserved routes 401 `no-store`; cross-origin
   and `Origin: null` POSTs 403; direct R2 access refused; manifest and

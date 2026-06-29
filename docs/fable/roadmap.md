@@ -150,7 +150,8 @@ This is a priority-ordered plan. Update status as implementation progresses.
       consumption implemented and reviewed locally 2026-06-29. Track A3 Worker
       catalog picker UI integration implemented, reviewed, and deployed to the
       Worker on 2026-06-29 (version `b1874993`, commit `de74227`). Docker
-      `0.4.0` release/Portainer update and live catalog publication remain.
+      `0.4.0` is released from tag `sync-v0.4.0`; Portainer update and live
+      catalog publication remain.
       Album deletion and reupload suppression remain.)
 - [x] Implement sync request/status administration.
       (Read-only `/admin/sync` status page, Docker best-effort R2 status

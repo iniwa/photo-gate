@@ -21,7 +21,7 @@ The manual sync release is deployed and live-smoke verified in production:
 - DONE: the operator pressed the manual sync button from `/admin/sync`; the`r`n  daemon consumed the request, synced 234/234, uploaded cover and manifest, and`r`n  reported success in 136.5s.
 - DONE: `/admin/sync` reported no pending request, 0 failures, 1 completed`r`n  run, manual trigger kind, and a non-null handled request ID.
 
-The eighteenth Level 3 implementation handoff is reviewed, deployed on the Worker side, and pending Docker release:
+The eighteenth Level 3 implementation handoff is reviewed, deployed on the Worker side, and Docker `0.4.0` is released:
 
 - DONE: Worker `GET /admin/albums` reads the fixed private R2 key
   `ops/album-catalog.json` and renders a no-JS `<select name="catalogId">`
@@ -40,13 +40,17 @@ The eighteenth Level 3 implementation handoff is reviewed, deployed on the Worke
 - This is Track A3 for browser-complete sync. The Worker-side picker is deployed
   in production version `b1874993` (commit `de74227`); it does not add
   catalog-based D1 album creation, change Docker, change sync request schema,
-  release Docker `0.4.0`, or implement reupload suppression.
+  deploy Docker `0.4.0` to Portainer, or implement reupload suppression.
 - DONE: local verification on 2026-06-29 passed Workers lint, typecheck, build,
   production dependency audit, and 2186 tests / 34 files; `git diff --check`;
   and confirmed no Docker or `workers/migrations` diff. DONE: production
   Worker deployment is active as version `b1874993-7876-4120-a6cf-fe03c44ad4eb`;
   unauthenticated smoke passed `/` 200, `/albums` 303 to `/`, `/img` 401
-  no-store, `/api` 401 no-store, and `/admin` Cloudflare Access 302.
+  no-store, `/api` 401 no-store, and `/admin` Cloudflare Access 302. DONE:
+  Docker `sync-v0.4.0` tag was pushed at commit `2c17c83`; docker-ci run
+  `28350063100` passed host tests, container-test, and release; GHCR published
+  `ghcr.io/iniwa/photo-gate-sync:0.4.0` and `sha-2c17c83` for linux/amd64 and
+  linux/arm64. Portainer update remains pending.
 The seventeenth Level 3 implementation handoff is reviewed and complete locally:
 
 - DONE: Worker admin routes `POST /admin/albums/sync-target-upsert` and
@@ -419,7 +423,8 @@ documented.
   includes manual sync controls, user display-name editing, permission assignment
   dropdowns, D1-only album creation, browser-owned sync-target routes, and the
   `/admin/albums` catalog picker.
-- Docker: sync `0.3.0` is published multi-arch and running in production. The`r`n  admin sync-status handoff
+- Docker: sync `0.3.0` is running in production. sync `0.4.0` is published
+  multi-arch but not yet deployed to Portainer. The`r`n  admin sync-status handoff
   passed 190 tests with 34 expected libvips/pyvips skips and
   `python -m compileall src` locally (2026-06-25). The Docker-side sync request
   consumer passed 253 tests with 34 expected libvips/pyvips skips and
@@ -473,6 +478,6 @@ Level 2 is complete. Manual sync deployment and smoke are complete. Track A1
 (album catalog publication), Track A2 (browser-owned sync-target object and
 Docker consumption), and Track A3 (Worker catalog picker UI) are implemented
 locally; the Worker-side A2/A3 surface is deployed in production. The next
-priority is Docker `0.4.0` release, Portainer update, catalog publication, and
+priority is Portainer update to Docker `0.4.0`, catalog publication, and
 browser smoke for the full browser-complete sync path. Track B reupload
 suppression remains a separate future handoff.
