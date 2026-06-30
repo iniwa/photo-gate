@@ -24,6 +24,7 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 |---|---|---|
 | Login UI | `GET /` | D1 (session probe; fail-safe to form) |
 | Album pages | `GET /albums`, `GET /albums/:albumId` | D1 (authorization) + R2 (manifest) |
+| Photo preview page | `GET /albums/:albumId/photos/:photoId` | D1 (session + album permission) + R2 (manifest membership check); HTML page embeds existing `/img` preview route via `<img>` — page route does not read the preview object directly; no originals, no PhotoPrism/NAS, no R2 mutation |
 | Auth API | `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me` | D1 |
 | Image delivery | `GET /img/:albumId/{cover,thumb/:photoId,preview/:photoId}` | D1 + R2 |
 | Preview download | `GET /download/:albumId/preview/:photoId` | D1 (session + album permission + `download_enabled` gate) + R2 (manifest membership check, then preview JPEG as attachment); serves only existing generated preview JPEG — no originals, no new R2 objects, no R2 mutation |

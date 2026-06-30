@@ -292,13 +292,13 @@ describe('GET /albums/:albumId', () => {
     // D1 title is the heading; manifest title is not shown.
     expect(text).toContain('D1 Album Title')
     expect(text).not.toContain('Manifest Title (should not be shown)')
-    // thumb + preview per photo, in manifest order.
+    // thumb img src + photo preview page link per photo, in manifest order.
     const firstThumb = text.indexOf('/img/album-1/thumb/photo-1')
     const secondThumb = text.indexOf('/img/album-1/thumb/photo-2')
     expect(firstThumb).toBeGreaterThan(-1)
     expect(secondThumb).toBeGreaterThan(firstThumb)
-    expect(text).toContain('href="/img/album-1/preview/photo-1"')
-    expect(text).toContain('href="/img/album-1/preview/photo-2"')
+    expect(text).toContain('href="/albums/album-1/photos/photo-1"')
+    expect(text).toContain('href="/albums/album-1/photos/photo-2"')
     // Photo title used as alt text, escaped.
     expect(text).toContain('First &lt;i&gt;photo&lt;/i&gt;')
     expect(text).not.toContain('First <i>photo</i>')
@@ -389,5 +389,215 @@ describe('GET /albums/:albumId', () => {
     const text = await res.text()
     expect(text).not.toContain('/download/')
     expect(text).not.toContain('ダウンロード')
+  })
+})
+
+describe('GET /albums/:albumId/photos/:photoId', () => {
+  const PHOTO_1 = 'photo-1'
+  const PHOTO_2 = 'photo-2'
+  const PHOTO_3 = 'photo-3'
+
+  function threePhotoManifest(): PrivateObjectReader {
+    const objects = new Map<string, PrivateObjectBody>()
+    objects.set(
+      albumManifestKey(ALBUM_ID),
+      manifestBody(
+        manifestJson([
+          { id: PHOTO_1, title: 'First Photo' },
+          { id: PHOTO_2, title: 'Second Photo' },
+          { id: PHOTO_3, title: 'Third Photo' },
+        ]),
+      ),
+    )
+    return mapReader(objects)
+  }
+
+  it('no session -> 303 to /', async () => {
+    const { deps } = makeDeps({ validSession: null })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_1}`, await validCookie())
+    expect(res.status).toBe(303)
+    expect(res.headers.get('location')).toBe('/')
+  })
+
+  it('no permission -> 403 generic', async () => {
+    const { deps } = makeDeps({ permission: false })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_1}`, await validCookie())
+    expect(res.status).toBe(403)
+  })
+
+  it('invalid photoId -> 404, no R2 read', async () => {
+    let readerCalled = false
+    const { deps } = makeDeps({
+      reader: { get: async () => { readerCalled = true; return null } },
+    })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}/photos/!bad!`, await validCookie())
+    expect(res.status).toBe(404)
+    expect(readerCalled).toBe(false)
+  })
+
+  it('getAuthorizedAlbum null -> 403 (raced away)', async () => {
+    const { deps } = makeDeps({ summary: null, reader: threePhotoManifest() })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_1}`, await validCookie())
+    expect(res.status).toBe(403)
+  })
+
+  it('getAuthorizedAlbum throws -> 500 generic, no sensitive data', async () => {
+    const { deps } = makeDeps({ getThrows: true })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_1}`, await validCookie())
+    expect(res.status).toBe(500)
+    const text = await res.text()
+    assertNoSensitive(text)
+    expect(text).not.toContain('D1 down')
+  })
+
+  it('manifest not_found -> 404, no sensitive data', async () => {
+    const { deps } = makeDeps({ reader: mapReader(new Map()) })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_1}`, await validCookie())
+    expect(res.status).toBe(404)
+    assertNoSensitive(await res.text())
+  })
+
+  it('manifest invalid -> 500 generic, no sensitive data', async () => {
+    const objects = new Map<string, PrivateObjectBody>()
+    objects.set(albumManifestKey(ALBUM_ID), manifestBody('{ not valid'))
+    const { deps } = makeDeps({ reader: mapReader(objects) })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_1}`, await validCookie())
+    expect(res.status).toBe(500)
+    assertNoSensitive(await res.text())
+  })
+
+  it('photo not in manifest -> 404', async () => {
+    const objects = new Map<string, PrivateObjectBody>()
+    objects.set(
+      albumManifestKey(ALBUM_ID),
+      manifestBody(manifestJson([{ id: 'photo-other', title: 'Other' }])),
+    )
+    const { deps } = makeDeps({ reader: mapReader(objects) })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_1}`, await validCookie())
+    expect(res.status).toBe(404)
+  })
+
+  it('success: 200, private no-cache, img src is /img route, back link, no EXIF', async () => {
+    const { deps } = makeDeps({ reader: threePhotoManifest() })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_1}`, await validCookie())
+    expect(res.status).toBe(200)
+    expect(res.headers.get('cache-control')).toBe('private, no-cache')
+    const text = await res.text()
+    expect(text).toContain(`src="/img/${ALBUM_ID}/preview/${PHOTO_1}"`)
+    expect(text).toContain(`href="/albums/${ALBUM_ID}"`)
+    expect(text).not.toContain('3000')
+    expect(text).not.toContain('2026-05-01')
+  })
+
+  it('photo title used as escaped alt text', async () => {
+    const objects = new Map<string, PrivateObjectBody>()
+    objects.set(
+      albumManifestKey(ALBUM_ID),
+      manifestBody(manifestJson([{ id: PHOTO_1, title: 'Beach <b>sunset</b>' }])),
+    )
+    const { deps } = makeDeps({ reader: mapReader(objects) })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_1}`, await validCookie())
+    const text = await res.text()
+    expect(text).toContain('alt="Beach &lt;b&gt;sunset&lt;/b&gt;"')
+    expect(text).not.toContain('<b>sunset</b>')
+  })
+
+  it('first photo: no prev link, next link present', async () => {
+    const { deps } = makeDeps({ reader: threePhotoManifest() })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_1}`, await validCookie())
+    const text = await res.text()
+    expect(text).not.toContain('前の写真')
+    expect(text).toContain(`href="/albums/${ALBUM_ID}/photos/${PHOTO_2}"`)
+    expect(text).toContain('次の写真')
+  })
+
+  it('last photo: prev link present, no next link', async () => {
+    const { deps } = makeDeps({ reader: threePhotoManifest() })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_3}`, await validCookie())
+    const text = await res.text()
+    expect(text).toContain(`href="/albums/${ALBUM_ID}/photos/${PHOTO_2}"`)
+    expect(text).toContain('前の写真')
+    expect(text).not.toContain('次の写真')
+  })
+
+  it('middle photo: both prev and next links present', async () => {
+    const { deps } = makeDeps({ reader: threePhotoManifest() })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_2}`, await validCookie())
+    const text = await res.text()
+    expect(text).toContain(`href="/albums/${ALBUM_ID}/photos/${PHOTO_1}"`)
+    expect(text).toContain('前の写真')
+    expect(text).toContain(`href="/albums/${ALBUM_ID}/photos/${PHOTO_3}"`)
+    expect(text).toContain('次の写真')
+  })
+
+  it('single photo: no prev or next link', async () => {
+    const objects = new Map<string, PrivateObjectBody>()
+    objects.set(
+      albumManifestKey(ALBUM_ID),
+      manifestBody(manifestJson([{ id: PHOTO_1, title: 'Only Photo' }])),
+    )
+    const { deps } = makeDeps({ reader: mapReader(objects) })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_1}`, await validCookie())
+    const text = await res.text()
+    expect(text).not.toContain('前の写真')
+    expect(text).not.toContain('次の写真')
+  })
+
+  it('download_enabled=1 renders download link', async () => {
+    const { deps } = makeDeps({
+      summary: { id: ALBUM_ID, title: 'D1 Album Title', download_enabled: 1 },
+      reader: threePhotoManifest(),
+    })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_1}`, await validCookie())
+    const text = await res.text()
+    expect(text).toContain(`href="/download/${ALBUM_ID}/preview/${PHOTO_1}"`)
+    expect(text).toContain('ダウンロード')
+  })
+
+  it('download_enabled=0 renders no download link', async () => {
+    const { deps } = makeDeps({
+      summary: { id: ALBUM_ID, title: 'D1 Album Title', download_enabled: 0 },
+      reader: threePhotoManifest(),
+    })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_1}`, await validCookie())
+    const text = await res.text()
+    expect(text).not.toContain('/download/')
+    expect(text).not.toContain('ダウンロード')
+  })
+
+  it('page does not read the preview object directly', async () => {
+    const previewKey = `albums/${ALBUM_ID}/previews/${PHOTO_1}.jpg`
+    let previewReads = 0
+    const objects = new Map<string, PrivateObjectBody>()
+    objects.set(
+      albumManifestKey(ALBUM_ID),
+      manifestBody(manifestJson([{ id: PHOTO_1, title: 'Photo' }])),
+    )
+    const reader: PrivateObjectReader = {
+      get: async (key) => {
+        if (key === previewKey) previewReads++
+        return objects.get(key) ?? null
+      },
+    }
+    const { deps } = makeDeps({ reader })
+    const app = makeApp(deps)
+    await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_1}`, await validCookie())
+    expect(previewReads).toBe(0)
   })
 })

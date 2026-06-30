@@ -104,6 +104,8 @@ export function createPages(depsFromEnv: (env: Env) => PageDeps): Hono<PageEnv> 
   pages.use('/albums', sessionPage)
   pages.use('/albums/:albumId', sessionPage)
   pages.use('/albums/:albumId', albumPermission)
+  pages.use('/albums/:albumId/photos/:photoId', sessionPage)
+  pages.use('/albums/:albumId/photos/:photoId', albumPermission)
 
   pages.get('/albums', async (c) => {
     const userId = c.get('userId')
@@ -172,6 +174,50 @@ export function createPages(depsFromEnv: (env: Env) => PageDeps): Hono<PageEnv> 
     )
   })
 
+  pages.get('/albums/:albumId/photos/:photoId', async (c) => {
+    const albumId = c.req.param('albumId')
+    const photoId = c.req.param('photoId')
+    const userId = c.get('userId')
+    const now = lazyClock(c.env)().toISOString()
+
+    if (!isValidId(photoId)) return genericNotFound(c)
+
+    let summary: AuthorizedAlbumSummary | null
+    try {
+      summary = await depsFromEnv(c.env).albumRepo.getAuthorizedAlbum(userId, albumId, now)
+    } catch {
+      return genericError(c)
+    }
+    if (summary === null) return genericForbidden(c)
+
+    let manifestResult
+    try {
+      manifestResult = await loadAlbumManifest(lazyReader(c.env), albumId)
+    } catch {
+      return genericError(c)
+    }
+    if (manifestResult.status === 'not_found') return genericNotFound(c)
+
+    const photos = manifestResult.value.photos
+    const photoIndex = photos.findIndex((p) => p.id === photoId)
+    if (photoIndex === -1) return genericNotFound(c)
+
+    const photo = photos[photoIndex]!
+    const prevPhoto = photoIndex > 0 ? photos[photoIndex - 1] : undefined
+    const nextPhoto = photoIndex < photos.length - 1 ? photos[photoIndex + 1] : undefined
+
+    c.header('Cache-Control', 'private, no-cache')
+    return c.html(
+      <PhotoPreviewPage
+        albumId={albumId}
+        photo={photo}
+        prevPhotoId={prevPhoto?.id}
+        nextPhotoId={nextPhoto?.id}
+        downloadEnabled={summary.download_enabled === 1}
+      />,
+    )
+  })
+
   return pages
 }
 
@@ -205,6 +251,11 @@ async function genericError(c: Parameters<MiddlewareHandler<PageEnv>>[0]): Promi
 async function genericForbidden(c: Parameters<MiddlewareHandler<PageEnv>>[0]): Promise<Response> {
   c.header('Cache-Control', 'no-store')
   return c.html(<ForbiddenPage />, 403)
+}
+
+async function genericNotFound(c: Parameters<MiddlewareHandler<PageEnv>>[0]): Promise<Response> {
+  c.header('Cache-Control', 'no-store')
+  return c.html(<NotFound />, 404)
 }
 
 function LoginPage({ showError }: { showError: boolean }) {
@@ -302,7 +353,7 @@ function AlbumDetailPage({
       <div class="photo-grid">
         {photos.map((photo) => (
           <div class="photo-item" key={photo.id}>
-            <a class="photo" href={`/img/${albumId}/preview/${photo.id}`}>
+            <a class="photo" href={`/albums/${albumId}/photos/${photo.id}`}>
               <img src={`/img/${albumId}/thumb/${photo.id}`} alt={photo.title} loading="lazy" />
             </a>
             {downloadEnabled ? (
@@ -313,6 +364,52 @@ function AlbumDetailPage({
           </div>
         ))}
       </div>
+    </Layout>
+  )
+}
+
+function PhotoPreviewPage({
+  albumId,
+  photo,
+  prevPhotoId,
+  nextPhotoId,
+  downloadEnabled,
+}: {
+  albumId: string
+  photo: { id: string; title: string }
+  prevPhotoId: string | undefined
+  nextPhotoId: string | undefined
+  downloadEnabled: boolean
+}) {
+  return (
+    <Layout title={photo.title} authenticated>
+      <a class="back-link" href={`/albums/${albumId}`}>
+        アルバムへ戻る
+      </a>
+      <div class="photo-preview">
+        <img
+          class="preview-image"
+          src={`/img/${albumId}/preview/${photo.id}`}
+          alt={photo.title}
+        />
+      </div>
+      <nav class="photo-nav">
+        {prevPhotoId !== undefined ? (
+          <a class="prev-link" href={`/albums/${albumId}/photos/${prevPhotoId}`}>
+            前の写真
+          </a>
+        ) : null}
+        {nextPhotoId !== undefined ? (
+          <a class="next-link" href={`/albums/${albumId}/photos/${nextPhotoId}`}>
+            次の写真
+          </a>
+        ) : null}
+      </nav>
+      {downloadEnabled ? (
+        <a class="download-link" href={`/download/${albumId}/preview/${photo.id}`} download>
+          ダウンロード
+        </a>
+      ) : null}
     </Layout>
   )
 }
