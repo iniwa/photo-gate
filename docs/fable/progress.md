@@ -14,6 +14,24 @@ immutable-tag Portainer procedure remains available for incident use.
 
 There is no active implementation handoff.
 
+Viewer photo download and preview-page work is deployed:
+
+- DONE: Commit `c9409c1` added safe preview JPEG downloads from existing private
+  R2 derivatives only, gated by session, album permission, manifest membership,
+  and `download_enabled`.
+- DONE: Commit `84bcbcf` fixed Worker manifest parsing for Docker `0.4.2`
+  schema 2 manifests with per-photo `sourceHash`; `sourceHash` remains
+  non-rendered and non-exposed.
+- DONE: Commit `8ef26a4` made preview download filenames unique by including
+  the manifest photo ID.
+- DONE: Commit `797682e` added the authenticated viewer photo preview page
+  (`GET /albums/:albumId/photos/:photoId`) with existing `/img` preview
+  embedding, previous/next navigation, back-to-album link, and conditional
+  download link. Workers CI run `28428506984` succeeded, and unauthenticated
+  production smoke passed.
+- DEFERRED: RAW/original download is not implemented. It requires a separate
+  ADR because it would change the current no-originals/no-NAS/no-PhotoPrism
+  viewer boundary.
 Admin hard delete controls are designed but not implemented:
 
 - DONE: ADR `docs/decisions/2026-06-30-admin-hard-delete-controls.md` decides

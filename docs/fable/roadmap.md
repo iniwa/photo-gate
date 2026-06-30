@@ -189,6 +189,7 @@ This is a priority-ordered plan. Update status as implementation progresses.
 ## Deferred Unless Explicitly Needed
 
 - Original/RAW fallback.
+- RAW/original download. This is deferred and requires a separate ADR before implementation because it would change the current no-originals/no-NAS/no-PhotoPrism viewer boundary.
 - Public R2 access.
 - Shared caching of authenticated images.
 - Destructive automatic cleanup.

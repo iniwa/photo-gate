@@ -16,15 +16,14 @@ documented for incident use.
 ## Production Topology
 
 - Workers viewer: https://share-photo.iniwach.com
-  (commit `d57ba95`; active version pending - Phase 2 cleanup deletion-preview pushed 2026-06-30; prior dry-run deploy was CI run `28415678789`;
+  (commit `797682e`; active version ID pending; latest observed Workers CI run `28428506984`;
   cron 18:00 UTC session cleanup).
-  Includes manual sync request writer, admin sync UI, status schema 2, user display-name editing, permission assignment dropdowns, D1-only album creation, browser-owned sync-target routes, the `/admin/albums` catalog picker, and the `/admin/r2-cleanup` read-only dry-run report plus Phase 2 HMAC confirmation-preview routes (actual deletion disabled; no R2 mutation; truncation-bounded).
+  Includes manual sync request writer, admin sync UI, status schema 2, user display-name editing, permission assignment dropdowns, D1-only album creation, browser-owned sync-target routes, the `/admin/albums` catalog picker, `/admin/r2-cleanup` dry-run plus deletion-preview routes (actual deletion disabled), preview JPEG download, manifest schema 2 viewing support, unique preview download filenames, and the authenticated viewer photo preview page.
   The former `photo-gate.iniwaiwana.workers.dev` route is disabled and returns 404.
 - D1 `photo-gate` (APAC, id `de77cb73-497a-4a41-bd1c-151fd907be3f`),
   2 migrations applied. One user, one album, one permission row (real
   identifiers live only in D1/Portainer, never in the repo).
-- R2 `photo-gate`, private. One album: 234 thumbs (640 WebP) + 234
-  previews (fit_1920 source, JPEG) + manifest.json, all metadata-free.
+- R2 `photo-gate`, private. Current live sync covers two browser-managed album targets with 256 total published photo entries (thumb WebP + preview JPEG pairs) plus covers and schema 2 manifests, all generated derivatives intended to be metadata-free. Real album identifiers live only in D1/Portainer/R2 and are not recorded here.
 - Sync: Portainer stack `iniwa-photo-gate` on a Raspberry Pi 4 running
   `ghcr.io/iniwa/photo-gate-sync:0.4.2` with the native sync daemon,
   healthcheck, and
@@ -114,7 +113,7 @@ documented for incident use.
   publication and picker smoke passed after the `0.4.1` type-filter hotfix.
   Album deletion and final hardening remain; dry-run R2 cleanup report is
   deployed (CI run `28415678789`, commit `b3c434c`, 2026-06-30); reupload
-  suppression is live-smoke verified.
+  suppression is live-smoke verified. Viewer preview download is deployed (`c9409c1`), schema 2 manifests are accepted by Workers (`84bcbcf`), preview download filenames include photo IDs (`8ef26a4`), and the viewer photo preview page with previous/next navigation is deployed (`797682e`, CI run `28428506984`). RAW/original download is explicitly deferred pending a separate ADR because it would change current privacy boundaries.
 
 ## Verification Baseline
 
@@ -125,13 +124,13 @@ documented for incident use.
   album public metadata update controls, read-only admin ops summary, read-only
   admin sync status, the manual sync UI/status-schema additions, user display-name
   editing, browser-friendly permission assignment UI, D1-only album creation, and
-  the `/admin/r2-cleanup` dry-run report plus deletion-preview Phase 2 pass lint, typecheck, build, production
-  dependency audit, and 2285 tests / 37 files locally (2026-06-30).
+  the `/admin/r2-cleanup` dry-run report plus deletion-preview Phase 2, preview JPEG download, manifest schema 2 viewing support, unique preview download filenames, and viewer photo preview page pass lint, typecheck, build, production
+  dependency audit, and 2370 tests / 38 files locally (2026-06-30).
   Production audit is clean; full `npm audit` remains blocked by devDependency
-  advisories in Wrangler/Miniflare. Workers CI deployed commit `b3c434c` as
-  CI run `28415678789` (2026-06-30); unauthenticated production smoke confirms
+  advisories in Wrangler/Miniflare. Workers CI deployed commit `797682e` as
+  CI run `28428506984` (2026-06-30); unauthenticated production smoke confirms
   viewer login page, /albums 303 redirect, /img 401 no-store, /api 401 no-store,
-  /admin Cloudflare Access 302 intercept, and /admin/r2-cleanup Cloudflare Access
+  `/download/probe-album/preview/probe-photo` 401 no-store, `/albums/probe-album/photos/probe-photo` 303 to `/`, /admin Cloudflare Access 302 intercept, and /admin/r2-cleanup Cloudflare Access
   302 intercept. Authenticated `/admin/r2-cleanup` browser check passed: the
   report link is visible, the dry-run page renders, no delete control is shown,
   and full R2 keys, photo IDs, bucket name, PhotoPrism UID/URL/token, and
