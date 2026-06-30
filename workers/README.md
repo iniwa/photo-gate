@@ -288,6 +288,17 @@ removed from the reserved-401 set; only `/api` and `/img` remain there.
 | `GET /admin/r2-cleanup` | Verified + allowlisted | `200` read-only HTML report: per-album-prefix category (owned-active, owned-disabled, orphan), object count, total bytes; malformed count; excluded ops count; truncation notice if limit reached; no full object keys, photo IDs, bucket name, PhotoPrism data, or mutation form |
 | `GET /admin/r2-cleanup` | Any auth failure | `403 Forbidden` (generic, no-store) |
 | `GET /admin/r2-cleanup` | D1 or R2 list failure | `500 Internal Server Error` (no-store; no SQL, R2 key, bucket name, or exception detail) |
+| `POST /admin/r2-cleanup/confirm` | Verified + allowlisted + same-origin + valid form body + HMAC key present + report not truncated + within limits | `200` HMAC-signed confirmation page: orphan counts, 15-min token embedded in hidden field, phrase input form submitting to `/delete`; no R2 keys, album IDs, or credentials exposed |
+| `POST /admin/r2-cleanup/confirm` | Any auth failure | `403 Forbidden` (generic, no-store) |
+| `POST /admin/r2-cleanup/confirm` | Missing/mismatched Origin | `403 Forbidden` (same-origin check) |
+| `POST /admin/r2-cleanup/confirm` | Wrong Content-Type or unexpected body fields | `400 Bad Request` (no-store) |
+| `POST /admin/r2-cleanup/confirm` | `R2_CLEANUP_HMAC_KEY` absent or shorter than 32 chars | `500 Internal Server Error` (no-store; fails closed) |
+| `POST /admin/r2-cleanup/confirm` | Report truncated or orphan/object count exceeds Phase 2 limits (50 prefixes / 500 objects) | `400 Bad Request` (no-store) |
+| `POST /admin/r2-cleanup/delete` | Verified + allowlisted + same-origin + valid form body + correct phrase + valid unexpired token + re-scan fingerprint match | `200` "not yet enabled" result page (Phase 2: no R2 deletion performed) |
+| `POST /admin/r2-cleanup/delete` | Any auth failure | `403 Forbidden` (generic, no-store) |
+| `POST /admin/r2-cleanup/delete` | Missing/mismatched Origin | `403 Forbidden` (same-origin check) |
+| `POST /admin/r2-cleanup/delete` | Wrong Content-Type, unexpected/missing fields, wrong phrase, invalid/expired/tampered token, or fingerprint mismatch | `400 Bad Request` (no-store) |
+| `POST /admin/r2-cleanup/delete` | `R2_CLEANUP_HMAC_KEY` absent or shorter than 32 chars | `500 Internal Server Error` (no-store; fails closed) |
 | Any other method or `/admin/*` path | Verified + allowlisted | `404 Not Found` (generic, no-store) |
 | Any other method or `/admin/*` path | Any failure | `403 Forbidden` (generic, no-store) |
 

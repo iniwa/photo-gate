@@ -16,6 +16,10 @@ import { isValidId } from '../services/repository-validation.js'
 import { hashPassword } from '../services/auth-crypto.js'
 import { PBKDF2_PRODUCTION_ITERATIONS } from '../services/login-policy.js'
 import type { AdminR2CleanupReport } from '../types/admin-r2-cleanup.js'
+import {
+  handleR2CleanupConfirm,
+  handleR2CleanupDelete,
+} from './admin-r2-cleanup-delete.js'
 
 type AdminEnv = { Bindings: Env }
 type AdminContext = Context<AdminEnv>
@@ -586,6 +590,28 @@ export function createAdminRoutes(
     }
     c.header('Cache-Control', 'no-store')
     return c.html(<AdminR2CleanupPage report={report} />)
+  })
+
+  // R2 cleanup Phase 2: confirmation and deletion-preview routes. Both run AFTER
+  // the admin guard, then enforce: strict same-origin -> exact form Content-Type ->
+  // body validation -> HMAC key check -> fresh re-scan. Actual R2 deletion is
+  // disabled in Phase 2; the delete route renders a fixed "not yet enabled" page.
+  admin.post('/r2-cleanup/confirm', async (c) => {
+    const deps = depsFromEnv(c.env)
+    return handleR2CleanupConfirm(c, {
+      hmacKey: c.env.R2_CLEANUP_HMAC_KEY,
+      r2CleanupRepo: deps.r2CleanupRepo,
+      clock: deps.clock,
+    })
+  })
+
+  admin.post('/r2-cleanup/delete', async (c) => {
+    const deps = depsFromEnv(c.env)
+    return handleR2CleanupDelete(c, {
+      hmacKey: c.env.R2_CLEANUP_HMAC_KEY,
+      r2CleanupRepo: deps.r2CleanupRepo,
+      clock: deps.clock,
+    })
   })
 
   // Sync request writer. Runs AFTER the admin guard, then enforces: strict
@@ -1565,6 +1591,7 @@ function categoryLabel(category: 'owned-active' | 'owned-disabled' | 'orphan'): 
 }
 
 function AdminR2CleanupPage({ report }: { report: AdminR2CleanupReport }) {
+  const orphanCount = report.albums.filter((e) => e.category === 'orphan').length
   return (
     <Layout title="R2 クリーンアップレポート">
       <a class="back-link" href="/admin">
@@ -1619,6 +1646,18 @@ function AdminR2CleanupPage({ report }: { report: AdminR2CleanupReport }) {
           </tr>
         </tbody>
       </table>
+      {!report.truncated && orphanCount > 0 ? (
+        <div>
+          <h2>孤立プレフィックス確認プレビュー（Phase 2）</h2>
+          <p>
+            孤立プレフィックスの確認プレビューを開始できます。実際の R2
+            オブジェクト削除は行われません。サーバー側で再スキャンと候補セット検証のみ行います。
+          </p>
+          <form method="post" action="/admin/r2-cleanup/confirm">
+            <button type="submit">孤立プレフィックス確認プレビューを開始</button>
+          </form>
+        </div>
+      ) : null}
     </Layout>
   )
 }

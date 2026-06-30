@@ -15,4 +15,12 @@ export interface Env {
   CF_ACCESS_TEAM_DOMAIN?: string
   CF_ACCESS_AUD?: string
   ADMIN_EMAILS?: string
+  /**
+   * HMAC-SHA-256 key for signing R2 cleanup confirmation tokens. Registered at
+   * deploy time as a Worker secret, NOT in wrangler.toml or source. Optional here
+   * so a missing value fails closed to 500 in the confirmation routes rather than
+   * a type error. Must be at least 32 characters; shorter values are rejected at
+   * request time.
+   */
+  R2_CLEANUP_HMAC_KEY?: string
 }

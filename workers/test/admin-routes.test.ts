@@ -6457,4 +6457,35 @@ describe('admin-routes: GET /admin/r2-cleanup', () => {
     const body = await res.text()
     expect(body).toContain('/admin/r2-cleanup')
   })
+
+  // Phase 2: confirm form conditional display
+  it('shows confirm form when orphans present and not truncated', async () => {
+    const orphanReport: AdminR2CleanupReport = {
+      albums: [{ albumId: 'album-orphan-001', category: 'orphan', objectCount: 3, totalBytes: 1024 }],
+      malformedCount: 0, malformedBytes: 0, excludedOpsCount: 0, truncated: false,
+    }
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, makeR2CleanupRepo(orphanReport))
+    const res = await getAdmin(app, { path: '/admin/r2-cleanup' })
+    const body = await res.text()
+    expect(body).toContain('action="/admin/r2-cleanup/confirm"')
+    expect(body.toLowerCase()).toContain('method="post"')
+  })
+
+  it('does not show confirm form when orphans present but report is truncated', async () => {
+    const truncatedOrphanReport: AdminR2CleanupReport = {
+      albums: [{ albumId: 'album-orphan-001', category: 'orphan', objectCount: 3, totalBytes: 1024 }],
+      malformedCount: 0, malformedBytes: 0, excludedOpsCount: 0, truncated: true,
+    }
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, makeR2CleanupRepo(truncatedOrphanReport))
+    const res = await getAdmin(app, { path: '/admin/r2-cleanup' })
+    const body = await res.text()
+    expect(body).not.toContain('action="/admin/r2-cleanup/confirm"')
+  })
+
+  it('does not show confirm form when no orphans and not truncated', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, makeR2CleanupRepo())
+    const res = await getAdmin(app, { path: '/admin/r2-cleanup' })
+    const body = await res.text()
+    expect(body).not.toContain('action="/admin/r2-cleanup/confirm"')
+  })
 })
