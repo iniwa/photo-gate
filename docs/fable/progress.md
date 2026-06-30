@@ -14,6 +14,11 @@ immutable-tag Portainer procedure remains available for incident use.
 
 There is no active implementation handoff.
 
+The nineteenth Level 3 delivery handoff (`2026-06-30-r2-cleanup-dry-run-delivery`)
+is complete except for Worker version ID backfill. CI deployed commit `b3c434c`
+(workers-ci run `28415678789`, success). Unauthenticated smoke passed.
+Authenticated `/admin/r2-cleanup` browser check passed.
+
 Docker `0.4.2` reupload suppression is pushed, released, operator-applied in
 Portainer, and live-smoke verified. The unchanged follow-up sync skipped 256/256
 photo thumb/preview pairs across two targets while still uploading covers and
@@ -25,6 +30,25 @@ The manual sync release is deployed and live-smoke verified in production:
 - DONE: Docker sync `0.3.0` is published and running in the Portainer stack`r`n  (2026-06-26).
 - DONE: the operator pressed the manual sync button from `/admin/sync`; the`r`n  daemon consumed the request, synced 234/234, uploaded cover and manifest, and`r`n  reported success in 136.5s.
 - DONE: `/admin/sync` reported no pending request, 0 failures, 1 completed`r`n  run, manual trigger kind, and a non-null handled request ID.
+
+The nineteenth Level 3 delivery handoff (`2026-06-30-r2-cleanup-dry-run-delivery`) is complete through CI:
+
+- DONE: Implementation commit `b3c434c` (R2 cleanup dry-run report, reviewed and
+  ops/-truncation regression fixed) is pushed to Gitea main and mirrored to GitHub.
+- DONE: CI workers-ci run `28415678789` completed with `success`; both `checks` and
+  `deploy` jobs concluded `success`. Worker version ID pending (log access requires
+  admin rights; Wrangler auth scope insufficient - operator can retrieve from
+  Cloudflare dashboard or `wrangler deployments list` with a full-scoped token).
+- DONE: Unauthenticated production smoke passed: `/` 200, `/albums` 303 to `/`,
+  `/img/probe-nonexistent` 401 no-store, `/api/probe` 401 no-store, `/admin`
+  Cloudflare Access 302, `/admin/r2-cleanup` Cloudflare Access 302.
+- DONE: Authenticated browser check passed. `/admin` contains the R2 cleanup
+  report link, `/admin/r2-cleanup` renders the dry-run report, no delete
+  button/form is present, and no R2 keys, photo IDs, bucket name, PhotoPrism
+  UID/URL/token, or credentials are visible.
+- PENDING: Worker version ID - to be recorded in `deploy-log.md` once retrieved.
+- No code, migrations, Docker files, R2/D1 data, Portainer stack, secrets, or
+  public access settings were changed by this delivery handoff.
 
 The eighteenth Level 3 implementation handoff is reviewed, deployed, released, and live-smoke corrected with Docker `0.4.1`:
 

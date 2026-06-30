@@ -16,9 +16,9 @@ documented for incident use.
 ## Production Topology
 
 - Workers viewer: https://share-photo.iniwach.com
-  (commit `de74227`; active version `b1874993-7876-4120-a6cf-fe03c44ad4eb`;
-  manually deployed 2026-06-29; cron 18:00 UTC session cleanup).
-  Includes manual sync request writer, admin sync UI, status schema 2, user display-name editing, permission assignment dropdowns, D1-only album creation, browser-owned sync-target routes, and the `/admin/albums` catalog picker.
+  (commit `b3c434c`; active version pending — CI run `28415678789` concluded success 2026-06-30;
+  cron 18:00 UTC session cleanup).
+  Includes manual sync request writer, admin sync UI, status schema 2, user display-name editing, permission assignment dropdowns, D1-only album creation, browser-owned sync-target routes, the `/admin/albums` catalog picker, and the `/admin/r2-cleanup` read-only dry-run report (read-only; no R2 mutation; truncation-bounded).
   The former `photo-gate.iniwaiwana.workers.dev` route is disabled and returns 404.
 - D1 `photo-gate` (APAC, id `de77cb73-497a-4a41-bd1c-151fd907be3f`),
   2 migrations applied. One user, one album, one permission row (real
@@ -112,7 +112,8 @@ documented for incident use.
   catalog ID exists before D1 reads or sync-target writes. Docker `0.4.2` is released and deployed in Portainer; it includes reupload
   suppression based on schema 2 manifests and per-photo `sourceHash`. Catalog
   publication and picker smoke passed after the `0.4.1` type-filter hotfix.
-  Album deletion, dry-run cleanup, and final hardening remain; reupload
+  Album deletion and final hardening remain; dry-run R2 cleanup report is
+  deployed (CI run `28415678789`, commit `b3c434c`, 2026-06-30); reupload
   suppression is live-smoke verified.
 
 ## Verification Baseline
@@ -123,15 +124,18 @@ documented for incident use.
   album and user enable/disable controls, user create/password-reset controls,
   album public metadata update controls, read-only admin ops summary, read-only
   admin sync status, the manual sync UI/status-schema additions, user display-name
-  editing, browser-friendly permission assignment UI, and D1-only album creation
-  pass lint, typecheck, build, production dependency audit, and 2186 tests / 34
-  files locally (2026-06-29).
+  editing, browser-friendly permission assignment UI, D1-only album creation, and
+  the `/admin/r2-cleanup` dry-run report pass lint, typecheck, build, production
+  dependency audit, and 2217 tests / 35 files locally (2026-06-30).
   Production audit is clean; full `npm audit` remains blocked by devDependency
-  advisories in Wrangler/Miniflare. Workers manual deploy succeeded for commit
-  `de74227` (version `b1874993`, 2026-06-29); unauthenticated production smoke
-  confirms viewer login page, /albums redirect, /img 401 no-store, /api 401
-  no-store, and /admin Cloudflare Access intercept. Authenticated `/admin/albums`
-  catalog picker confirmation remains operator-side after catalog publication.
+  advisories in Wrangler/Miniflare. Workers CI deployed commit `b3c434c` as
+  CI run `28415678789` (2026-06-30); unauthenticated production smoke confirms
+  viewer login page, /albums 303 redirect, /img 401 no-store, /api 401 no-store,
+  /admin Cloudflare Access 302 intercept, and /admin/r2-cleanup Cloudflare Access
+  302 intercept. Authenticated `/admin/r2-cleanup` browser check passed: the
+  report link is visible, the dry-run page renders, no delete control is shown,
+  and full R2 keys, photo IDs, bucket name, PhotoPrism UID/URL/token, and
+  credentials are not visible.
 - Docker: sync `0.4.2` is running in production; sync `0.4.0` was superseded
   by the catalog type-filter hotfix before completing live use. sync`r`n  `0.2.1` reports 183 tests green in the previous published baseline;
   the admin sync-status handoff passed 190 tests with 34 expected libvips/pyvips

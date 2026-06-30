@@ -168,8 +168,11 @@ This is a priority-ordered plan. Update status as implementation progresses.
 
 ### 7. Safe Cleanup
 
-- [ ] Design and record a separately reviewed R2 cleanup ADR.
-- [ ] Implement dry-run reporting first.
+- [x] Design and record a separately reviewed R2 cleanup ADR.
+      (`docs/decisions/2026-06-30-r2-cleanup-dry-run.md` accepted and committed.)
+- [x] Implement dry-run reporting first.
+      (`GET /admin/r2-cleanup` deployed via CI run `28415678789`, commit `b3c434c`,
+      2026-06-30. Read-only; albums/ and ops/ listing only; no R2 mutation.)
 - [ ] Keep actual R2 deletion disabled until explicit human approval.
 
 ### 8. Final Hardening
