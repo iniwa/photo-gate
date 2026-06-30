@@ -14,6 +14,17 @@ immutable-tag Portainer procedure remains available for incident use.
 
 There is no active implementation handoff.
 
+Admin hard delete controls are designed but not implemented:
+
+- DONE: ADR `docs/decisions/2026-06-30-admin-hard-delete-controls.md` decides
+  user and album hard-delete safety boundaries.
+- NOT IMPLEMENTED: no hard-delete routes, D1 DELETE handlers, HMAC secret,
+  deployment, or production action exists yet.
+- The normal operational path remains disable/depublish. Album hard delete, if
+  later approved, must remove the matching browser-owned sync-target entry from
+  `ops/sync-targets.json` before deleting the D1 album row, and must not delete
+  R2 album assets.
+
 The R2 cleanup deletion-preview Phase 2 handoff is reviewed, committed, pushed by
 the operator, and partially runtime-checked:
 
