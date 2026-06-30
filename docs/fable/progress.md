@@ -14,11 +14,10 @@ immutable-tag Portainer procedure remains available for incident use.
 
 There is no active implementation handoff.
 
-Docker `0.4.2` reupload suppression is pushed, released, and operator-applied
-in Portainer. The next confirmation item is a live two-run smoke: the first
-successful sync publishes schema 2 manifests, and the second unchanged sync
-should report skipped thumb/preview pairs while still uploading cover and
-manifest.
+Docker `0.4.2` reupload suppression is pushed, released, operator-applied in
+Portainer, and live-smoke verified. The unchanged follow-up sync skipped 256/256
+photo thumb/preview pairs across two targets while still uploading covers and
+manifests, and the sync attempt succeeded.
 
 The manual sync release is deployed and live-smoke verified in production:
 
@@ -488,8 +487,6 @@ action list and full status snapshot.
 
 Level 2 is complete. Manual sync deployment and smoke are complete. Track A1/A2/A3
 browser-complete sync is deployed. Track B reupload suppression is implemented,
-released as Docker `0.4.2`, and applied in Portainer. The next priority is
-live-smoke confirmation of reupload suppression: run one sync to ensure schema 2
-manifest publication if needed, then run a second unchanged sync and confirm
-skipped thumb/preview pairs, cover upload, manifest upload, failures 0, and no
-sensitive log output.
+released as Docker `0.4.2`, applied in Portainer, and live-smoke verified. The
+next priority is the remaining Level 3 administration/cleanup work: album
+deletion design, R2 dry-run cleanup reporting, and final hardening.

@@ -112,8 +112,8 @@ documented for incident use.
   catalog ID exists before D1 reads or sync-target writes. Docker `0.4.2` is released and deployed in Portainer; it includes reupload
   suppression based on schema 2 manifests and per-photo `sourceHash`. Catalog
   publication and picker smoke passed after the `0.4.1` type-filter hotfix.
-  Album deletion, dry-run cleanup, final hardening, and a live two-run skip
-  smoke for reupload suppression remain.
+  Album deletion, dry-run cleanup, and final hardening remain; reupload
+  suppression is live-smoke verified.
 
 ## Verification Baseline
 
@@ -151,7 +151,7 @@ documented for incident use.
   typecheck, build, audit, and 2125 tests / 33 files; Docker pytest with 394
   passed / 34 expected skips plus `python -m compileall src` on 2026-06-29. The
   local Worker catalog picker path passed Workers lint, typecheck, build,
-  production dependency audit, and 2186 tests / 34 files on 2026-06-29. Docker `0.4.0` was released by docker-ci run `28350063100`, then superseded by `0.4.1` after live catalog smoke showed PhotoPrism non-album groupings in the picker. Docker `0.4.1` was released by docker-ci run `28353237481`: host tests, container-test, and release succeeded, and GHCR published both `0.4.1` and `sha-61d0278` multi-arch manifests. Portainer was updated to `0.4.1`; the operator reran `photo-gate-sync publish-catalog`, and `/admin/albums` picker output looked correct. Docker `0.4.2` was later pushed, deployed, and applied in Portainer on 2026-06-30 at commit `fb57196`; it adds manifest schema 2 reupload suppression. Local verification for the feature passed 441 tests with 46 expected skips plus `python -m compileall src`; Docker Desktop image smoke was skipped locally because the daemon was unavailable. Live confirmation of the second-run skip behavior remains pending.
+  production dependency audit, and 2186 tests / 34 files on 2026-06-29. Docker `0.4.0` was released by docker-ci run `28350063100`, then superseded by `0.4.1` after live catalog smoke showed PhotoPrism non-album groupings in the picker. Docker `0.4.1` was released by docker-ci run `28353237481`: host tests, container-test, and release succeeded, and GHCR published both `0.4.1` and `sha-61d0278` multi-arch manifests. Portainer was updated to `0.4.1`; the operator reran `photo-gate-sync publish-catalog`, and `/admin/albums` picker output looked correct. Docker `0.4.2` was later pushed, deployed, and applied in Portainer on 2026-06-30 at commit `fb57196`; it adds manifest schema 2 reupload suppression. Local verification for the feature passed 441 tests with 46 expected skips plus `python -m compileall src`; Docker Desktop image smoke was skipped locally because the daemon was unavailable. Live second-run skip behavior is confirmed: an unchanged follow-up sync skipped 256/256 photo thumb/preview pairs across two targets while still uploading covers and manifests, and the sync attempt succeeded.
 - Live security posture verified 2026-06-11/12: unauthenticated pages
   303 to `/`; `/img` and reserved routes 401 `no-store`; cross-origin
   and `Origin: null` POSTs 403; direct R2 access refused; manifest and
