@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-06-29.
+Last updated: 2026-06-30.
 
 ## Current Completion Level
 
@@ -13,6 +13,12 @@ immutable-tag Portainer procedure remains available for incident use.
 ## Current Task
 
 There is no active implementation handoff.
+
+Docker `0.4.2` reupload suppression is pushed, released, and operator-applied
+in Portainer. The next confirmation item is a live two-run smoke: the first
+successful sync publishes schema 2 manifests, and the second unchanged sync
+should report skipped thumb/preview pairs while still uploading cover and
+manifest.
 
 The manual sync release is deployed and live-smoke verified in production:
 
@@ -428,7 +434,7 @@ documented.
   includes manual sync controls, user display-name editing, permission assignment
   dropdowns, D1-only album creation, browser-owned sync-target routes, and the
   `/admin/albums` catalog picker.
-- Docker: sync `0.4.1` is running in production. sync `0.4.0` was published
+- Docker: sync `0.4.2` is running in production. sync `0.4.0` was published
   but superseded by the catalog type-filter hotfix before final browser-complete
   smoke closure. The`r`n  admin sync-status handoff
   passed 190 tests with 34 expected libvips/pyvips skips and
@@ -480,11 +486,10 @@ action list and full status snapshot.
 
 ## Next Priority
 
-Level 2 is complete. Manual sync deployment and smoke are complete. Track A1
-(album catalog publication), Track A2 (browser-owned sync-target object and
-Docker consumption), and Track A3 (Worker catalog picker UI) are implemented
-locally; the Worker-side A2/A3 surface is deployed in production. The next
-priority is implementing Track B reupload suppression from the accepted ADR
-`docs/decisions/2026-06-29-reupload-suppression.md`: manifest schema 2,
-manifest-proven skip decisions, stable R2 keys, no R2 deletion, and schema 1
-manifests treated as first-run cache misses.
+Level 2 is complete. Manual sync deployment and smoke are complete. Track A1/A2/A3
+browser-complete sync is deployed. Track B reupload suppression is implemented,
+released as Docker `0.4.2`, and applied in Portainer. The next priority is
+live-smoke confirmation of reupload suppression: run one sync to ensure schema 2
+manifest publication if needed, then run a second unchanged sync and confirm
+skipped thumb/preview pairs, cover upload, manifest upload, failures 0, and no
+sensitive log output.
