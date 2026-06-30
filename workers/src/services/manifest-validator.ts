@@ -58,7 +58,7 @@ function isTimezoneAwareIso8601(value: string): boolean {
 }
 
 /**
- * Parses a raw JSON string from R2 and validates it against the schemaVersion 1
+ * Parses a raw JSON string from R2 and validates it against the schemaVersion 1/2
  * manifest contract produced by the Docker sync service.
  *
  * The `expectedAlbumId` must match `manifest.albumId` exactly; this prevents
@@ -86,7 +86,7 @@ export function parseManifest(json: string, expectedAlbumId: string): Manifest {
   exactKeys(raw, ['schemaVersion', 'albumId', 'title', 'source', 'generatedAt', 'images', 'photos'])
 
   const schemaVersion = raw['schemaVersion']
-  if (schemaVersion !== 1) fail()
+  if (schemaVersion !== 1 && schemaVersion !== 2) fail()
 
   const albumId = raw['albumId']
   if (typeof albumId !== 'string' || !isValidId(albumId)) fail()
@@ -164,7 +164,10 @@ export function parseManifest(json: string, expectedAlbumId: string): Manifest {
 
   for (const rawPhoto of rawPhotos) {
     if (!isRecord(rawPhoto)) fail()
-    exactKeys(rawPhoto, ['id', 'title', 'thumb', 'preview', 'takenAt', 'width', 'height'])
+    const expectedPhotoKeys = schemaVersion === 2
+      ? ['id', 'title', 'thumb', 'preview', 'takenAt', 'width', 'height', 'sourceHash']
+      : ['id', 'title', 'thumb', 'preview', 'takenAt', 'width', 'height']
+    exactKeys(rawPhoto, expectedPhotoKeys)
 
     const photoId = rawPhoto['id']
     if (typeof photoId !== 'string' || !isValidId(photoId)) fail()
@@ -203,11 +206,16 @@ export function parseManifest(json: string, expectedAlbumId: string): Manifest {
       height > MANIFEST_LIMITS.MAX_DIMENSION
     ) fail()
 
+    if (schemaVersion === 2) {
+      const sourceHash = rawPhoto['sourceHash']
+      if (typeof sourceHash !== 'string' || !/^[0-9a-f]{40}$/.test(sourceHash)) fail()
+    }
+
     validatedPhotos.push({ id: photoId, title: photoTitle, thumb: thumbPath, preview: previewPath, takenAt, width, height })
   }
 
   return {
-    schemaVersion: 1,
+    schemaVersion,
     albumId,
     title,
     source: { type: 'photoprism', albumUid: sourceAlbumUid },

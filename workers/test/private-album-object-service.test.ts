@@ -239,9 +239,9 @@ describe('loadAlbumManifest', () => {
       )
     })
 
-    it('throws ObjectServiceError(manifest_invalid) for unsupported schemaVersion', async () => {
+    it('throws ObjectServiceError(manifest_invalid) for unsupported schemaVersion 3', async () => {
       const badVersionJson = JSON.stringify({
-        schemaVersion: 2,
+        schemaVersion: 3,
         albumId: ALBUM_ID,
         title: 'Test',
         source: { type: 'photoprism', albumUid: 'uid001' },

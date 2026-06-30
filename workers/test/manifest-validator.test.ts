@@ -222,8 +222,40 @@ describe('parseManifest schemaVersion validation', () => {
     expect(() => parseMinimal({ schemaVersion: 0 })).toThrowError('invalid manifest')
   })
 
-  it('rejects schemaVersion 2', () => {
-    expect(() => parseMinimal({ schemaVersion: 2 })).toThrowError('invalid manifest')
+  it('accepts schemaVersion 2 with per-photo sourceHash and does not expose sourceHash', () => {
+    const result = parseManifest(
+      JSON.stringify({
+        ...JSON.parse(MINIMAL_MANIFEST) as object,
+        schemaVersion: 2,
+        photos: [{ ...PHOTO_ENTRY, sourceHash: 'a'.repeat(40) }],
+      }),
+      ALBUM_ID,
+    )
+    expect(result.schemaVersion).toBe(2)
+    expect(result.photos).toHaveLength(1)
+    expect('sourceHash' in (result.photos[0] ?? {})).toBe(false)
+  })
+
+  it('rejects schemaVersion 2 photo missing sourceHash', () => {
+    expect(() => parseManifest(
+      JSON.stringify({
+        ...JSON.parse(MINIMAL_MANIFEST) as object,
+        schemaVersion: 2,
+        photos: [PHOTO_ENTRY],
+      }),
+      ALBUM_ID,
+    )).toThrowError('invalid manifest')
+  })
+
+  it('rejects schemaVersion 2 photo with malformed sourceHash', () => {
+    expect(() => parseManifest(
+      JSON.stringify({
+        ...JSON.parse(MINIMAL_MANIFEST) as object,
+        schemaVersion: 2,
+        photos: [{ ...PHOTO_ENTRY, sourceHash: 'A'.repeat(40) }],
+      }),
+      ALBUM_ID,
+    )).toThrowError('invalid manifest')
   })
 
   it('rejects schemaVersion as string "1"', () => {

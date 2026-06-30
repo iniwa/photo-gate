@@ -1,4 +1,4 @@
-/** Compile-time contract matching docker/src/photo_gate/manifest.py schemaVersion 1. */
+/** Compile-time contract matching docker/src/photo_gate/manifest.py schemaVersion 1/2. */
 
 export interface ManifestThumbSpec {
   longEdge: number
@@ -38,7 +38,7 @@ export interface ManifestPhoto {
 }
 
 export interface Manifest {
-  schemaVersion: 1
+  schemaVersion: 1 | 2
   albumId: string
   title: string
   source: ManifestSource
