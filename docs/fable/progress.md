@@ -14,6 +14,26 @@ immutable-tag Portainer procedure remains available for incident use.
 
 There is no active implementation handoff.
 
+The R2 cleanup deletion-preview Phase 2 handoff is reviewed, committed, pushed by
+the operator, and partially runtime-checked:
+
+- DONE: Commit `d57ba95` adds `POST /admin/r2-cleanup/confirm` and
+  `POST /admin/r2-cleanup/delete` as HMAC-signed confirmation-preview routes.
+  Actual R2 deletion remains disabled; the delete route only renders a "not yet
+  enabled" result after validation.
+- DONE: Local verification passed Workers lint, typecheck, build, production
+  dependency audit, and 2285 tests / 37 files; `git diff --check` was clean;
+  Docker, migrations, Fable, and operations files were not changed by the
+  implementation commit.
+- DONE: Operator pushed `d57ba95` and registered the Worker secret
+  `R2_CLEANUP_HMAC_KEY`.
+- DONE: Authenticated `/admin/r2-cleanup` browser check found no orphan
+  prefixes, so the Phase 2 preview form is hidden as expected.
+- PENDING: Worker version ID / CI run ID for `d57ba95` can be backfilled if the
+  operator retrieves it from Cloudflare or GitHub Actions.
+- NOTE: The positive confirm/delete-preview path was not exercised in production
+  because there are currently no orphan candidates. No R2/D1 mutation occurred.
+
 The nineteenth Level 3 delivery handoff (`2026-06-30-r2-cleanup-dry-run-delivery`)
 is complete except for Worker version ID backfill. CI deployed commit `b3c434c`
 (workers-ci run `28415678789`, success). Unauthenticated smoke passed.

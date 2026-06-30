@@ -16,9 +16,9 @@ documented for incident use.
 ## Production Topology
 
 - Workers viewer: https://share-photo.iniwach.com
-  (commit `b3c434c`; active version pending — CI run `28415678789` concluded success 2026-06-30;
+  (commit `d57ba95`; active version pending - Phase 2 cleanup deletion-preview pushed 2026-06-30; prior dry-run deploy was CI run `28415678789`;
   cron 18:00 UTC session cleanup).
-  Includes manual sync request writer, admin sync UI, status schema 2, user display-name editing, permission assignment dropdowns, D1-only album creation, browser-owned sync-target routes, the `/admin/albums` catalog picker, and the `/admin/r2-cleanup` read-only dry-run report (read-only; no R2 mutation; truncation-bounded).
+  Includes manual sync request writer, admin sync UI, status schema 2, user display-name editing, permission assignment dropdowns, D1-only album creation, browser-owned sync-target routes, the `/admin/albums` catalog picker, and the `/admin/r2-cleanup` read-only dry-run report plus Phase 2 HMAC confirmation-preview routes (actual deletion disabled; no R2 mutation; truncation-bounded).
   The former `photo-gate.iniwaiwana.workers.dev` route is disabled and returns 404.
 - D1 `photo-gate` (APAC, id `de77cb73-497a-4a41-bd1c-151fd907be3f`),
   2 migrations applied. One user, one album, one permission row (real
@@ -125,8 +125,8 @@ documented for incident use.
   album public metadata update controls, read-only admin ops summary, read-only
   admin sync status, the manual sync UI/status-schema additions, user display-name
   editing, browser-friendly permission assignment UI, D1-only album creation, and
-  the `/admin/r2-cleanup` dry-run report pass lint, typecheck, build, production
-  dependency audit, and 2217 tests / 35 files locally (2026-06-30).
+  the `/admin/r2-cleanup` dry-run report plus deletion-preview Phase 2 pass lint, typecheck, build, production
+  dependency audit, and 2285 tests / 37 files locally (2026-06-30).
   Production audit is clean; full `npm audit` remains blocked by devDependency
   advisories in Wrangler/Miniflare. Workers CI deployed commit `b3c434c` as
   CI run `28415678789` (2026-06-30); unauthenticated production smoke confirms

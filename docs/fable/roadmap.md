@@ -173,6 +173,10 @@ This is a priority-ordered plan. Update status as implementation progresses.
 - [x] Implement dry-run reporting first.
       (`GET /admin/r2-cleanup` deployed via CI run `28415678789`, commit `b3c434c`,
       2026-06-30. Read-only; albums/ and ops/ listing only; no R2 mutation.)
+- [x] Add deletion confirmation preview while keeping actual R2 deletion disabled.
+      (Phase 2 commit `d57ba95`: HMAC token, typed phrase, re-scan/fingerprint
+      validation, and "not yet enabled" result page. Operator registered
+      `R2_CLEANUP_HMAC_KEY`; no orphan prefixes are currently present.)
 - [ ] Keep actual R2 deletion disabled until explicit human approval.
 
 ### 8. Final Hardening
