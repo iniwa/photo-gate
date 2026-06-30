@@ -8,8 +8,8 @@ const VALID_CURSOR = 'album-cursor-789'
 const NOW = '2026-06-09T00:00:00.000Z'
 const LIMIT = 20
 
-const VALID_ROW = { id: VALID_ALBUM_ID, title: 'My Album' }
-const VALID_ROW_2 = { id: 'album-second-001', title: 'Second Album' }
+const VALID_ROW = { id: VALID_ALBUM_ID, title: 'My Album', download_enabled: 1 }
+const VALID_ROW_2 = { id: 'album-second-001', title: 'Second Album', download_enabled: 0 }
 
 // ---------------------------------------------------------------------------
 // listAuthorizedAlbums — SQL structure
@@ -86,9 +86,9 @@ describe('AuthorizedAlbumRepository.listAuthorizedAlbums SQL structure', () => {
     expect(queries[0]?.sql).not.toContain('strip_exif')
   })
 
-  it('does not include download_enabled in query', async () => {
+  it('selects a.download_enabled', async () => {
     const queries = await issueList()
-    expect(queries[0]?.sql).not.toContain('download_enabled')
+    expect(queries[0]?.sql).toContain('a.download_enabled')
   })
 })
 
@@ -305,18 +305,18 @@ describe('AuthorizedAlbumRepository.listAuthorizedAlbums row validation', () => 
       LIMIT,
     )
     expect(result).toEqual([
-      { id: VALID_ALBUM_ID, title: 'My Album' },
-      { id: 'album-second-001', title: 'Second Album' },
+      { id: VALID_ALBUM_ID, title: 'My Album', download_enabled: 1 },
+      { id: 'album-second-001', title: 'Second Album', download_enabled: 0 },
     ])
   })
 
-  it('does not propagate extra fields from D1 rows', async () => {
+  it('does not propagate extra fields from D1 rows (only id, title, download_enabled)', async () => {
     const rowWithExtras = {
       id: VALID_ALBUM_ID,
       title: 'My Album',
+      download_enabled: 0,
       photoprism_album_uid: 'uid001',
       strip_exif: 1,
-      download_enabled: 0,
       enabled: 1,
       thumb_long_edge: 640,
     }
@@ -327,11 +327,10 @@ describe('AuthorizedAlbumRepository.listAuthorizedAlbums row validation', () => 
       LIMIT,
     )
     expect(result).toHaveLength(1)
-    expect(result[0]).toEqual({ id: VALID_ALBUM_ID, title: 'My Album' })
+    expect(result[0]).toEqual({ id: VALID_ALBUM_ID, title: 'My Album', download_enabled: 0 })
     const first = result[0] ?? {}
     expect('photoprism_album_uid' in first).toBe(false)
     expect('strip_exif' in first).toBe(false)
-    expect('download_enabled' in first).toBe(false)
     expect('enabled' in first).toBe(false)
     expect('thumb_long_edge' in first).toBe(false)
   })
@@ -381,7 +380,7 @@ describe('AuthorizedAlbumRepository.listAuthorizedAlbums row validation', () => 
 
   it('accepts title of exactly 1024 code points', async () => {
     const title = 'a'.repeat(1024)
-    const { db } = makeMockDb([{ allRows: [{ id: VALID_ALBUM_ID, title }] }])
+    const { db } = makeMockDb([{ allRows: [{ id: VALID_ALBUM_ID, title, download_enabled: 1 }] }])
     const result = await new AuthorizedAlbumRepository(db).listAuthorizedAlbums(
       VALID_USER_ID,
       NOW,
@@ -393,7 +392,7 @@ describe('AuthorizedAlbumRepository.listAuthorizedAlbums row validation', () => 
   it('counts emoji by code points not UTF-16 length (1024 emoji accepted)', async () => {
     const title = '🎵'.repeat(1024)
     expect(title.length).toBe(2048)
-    const { db } = makeMockDb([{ allRows: [{ id: VALID_ALBUM_ID, title }] }])
+    const { db } = makeMockDb([{ allRows: [{ id: VALID_ALBUM_ID, title, download_enabled: 1 }] }])
     const result = await new AuthorizedAlbumRepository(db).listAuthorizedAlbums(
       VALID_USER_ID,
       NOW,
@@ -411,7 +410,7 @@ describe('AuthorizedAlbumRepository.listAuthorizedAlbums row validation', () => 
   })
 
   it('accepts empty title', async () => {
-    const { db } = makeMockDb([{ allRows: [{ id: VALID_ALBUM_ID, title: '' }] }])
+    const { db } = makeMockDb([{ allRows: [{ id: VALID_ALBUM_ID, title: '', download_enabled: 0 }] }])
     const result = await new AuthorizedAlbumRepository(db).listAuthorizedAlbums(
       VALID_USER_ID,
       NOW,
@@ -423,8 +422,8 @@ describe('AuthorizedAlbumRepository.listAuthorizedAlbums row validation', () => 
   it('rejects duplicate album IDs from D1', async () => {
     const { db } = makeMockDb([{
       allRows: [
-        { id: VALID_ALBUM_ID, title: 'Album A' },
-        { id: VALID_ALBUM_ID, title: 'Album B' },
+        { id: VALID_ALBUM_ID, title: 'Album A', download_enabled: 1 },
+        { id: VALID_ALBUM_ID, title: 'Album B', download_enabled: 1 },
       ],
     }])
     await expect(
@@ -437,6 +436,32 @@ describe('AuthorizedAlbumRepository.listAuthorizedAlbums row validation', () => 
     await expect(
       new AuthorizedAlbumRepository(db).listAuthorizedAlbums(VALID_USER_ID, NOW, LIMIT),
     ).rejects.toThrow('database operation failed')
+  })
+
+  it('rejects row with missing download_enabled', async () => {
+    const { db } = makeMockDb([{ allRows: [{ id: VALID_ALBUM_ID, title: 'My Album' }] }])
+    await expect(
+      new AuthorizedAlbumRepository(db).listAuthorizedAlbums(VALID_USER_ID, NOW, LIMIT),
+    ).rejects.toThrow('database operation failed')
+  })
+
+  it('rejects row with download_enabled = 2', async () => {
+    const { db } = makeMockDb([{ allRows: [{ id: VALID_ALBUM_ID, title: 'My Album', download_enabled: 2 }] }])
+    await expect(
+      new AuthorizedAlbumRepository(db).listAuthorizedAlbums(VALID_USER_ID, NOW, LIMIT),
+    ).rejects.toThrow('database operation failed')
+  })
+
+  it('accepts download_enabled = 0', async () => {
+    const { db } = makeMockDb([{ allRows: [{ id: VALID_ALBUM_ID, title: 'My Album', download_enabled: 0 }] }])
+    const result = await new AuthorizedAlbumRepository(db).listAuthorizedAlbums(VALID_USER_ID, NOW, LIMIT)
+    expect(result[0]?.download_enabled).toBe(0)
+  })
+
+  it('accepts download_enabled = 1', async () => {
+    const { db } = makeMockDb([{ allRows: [{ id: VALID_ALBUM_ID, title: 'My Album', download_enabled: 1 }] }])
+    const result = await new AuthorizedAlbumRepository(db).listAuthorizedAlbums(VALID_USER_ID, NOW, LIMIT)
+    expect(result[0]?.download_enabled).toBe(1)
   })
 
   it('rejects malformed D1 results with a sanitized error', async () => {
@@ -559,6 +584,11 @@ describe('AuthorizedAlbumRepository.getAuthorizedAlbum SQL structure', () => {
     const queries = await issueGet()
     expect(queries[0]?.sql).not.toContain('strip_exif')
   })
+
+  it('selects a.download_enabled', async () => {
+    const queries = await issueGet()
+    expect(queries[0]?.sql).toContain('a.download_enabled')
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -645,16 +675,16 @@ describe('AuthorizedAlbumRepository.getAuthorizedAlbum row handling', () => {
       VALID_ALBUM_ID,
       NOW,
     )
-    expect(result).toEqual({ id: VALID_ALBUM_ID, title: 'My Album' })
+    expect(result).toEqual({ id: VALID_ALBUM_ID, title: 'My Album', download_enabled: 1 })
   })
 
-  it('does not propagate extra fields from D1 row', async () => {
+  it('does not propagate extra fields from D1 row (only id, title, download_enabled)', async () => {
     const rowWithExtras = {
       id: VALID_ALBUM_ID,
       title: 'My Album',
+      download_enabled: 0,
       photoprism_album_uid: 'uid001',
       strip_exif: 1,
-      download_enabled: 0,
     }
     const { db } = makeMockDb([{ first: rowWithExtras }])
     const result = await new AuthorizedAlbumRepository(db).getAuthorizedAlbum(
@@ -662,11 +692,24 @@ describe('AuthorizedAlbumRepository.getAuthorizedAlbum row handling', () => {
       VALID_ALBUM_ID,
       NOW,
     )
-    expect(result).toEqual({ id: VALID_ALBUM_ID, title: 'My Album' })
+    expect(result).toEqual({ id: VALID_ALBUM_ID, title: 'My Album', download_enabled: 0 })
     const r = result ?? {}
     expect('photoprism_album_uid' in r).toBe(false)
     expect('strip_exif' in r).toBe(false)
-    expect('download_enabled' in r).toBe(false)
+  })
+
+  it('rejects row with missing download_enabled', async () => {
+    const { db } = makeMockDb([{ first: { id: VALID_ALBUM_ID, title: 'My Album' } }])
+    await expect(
+      new AuthorizedAlbumRepository(db).getAuthorizedAlbum(VALID_USER_ID, VALID_ALBUM_ID, NOW),
+    ).rejects.toThrow('database operation failed')
+  })
+
+  it('rejects row with download_enabled = 2', async () => {
+    const { db } = makeMockDb([{ first: { id: VALID_ALBUM_ID, title: 'My Album', download_enabled: 2 } }])
+    await expect(
+      new AuthorizedAlbumRepository(db).getAuthorizedAlbum(VALID_USER_ID, VALID_ALBUM_ID, NOW),
+    ).rejects.toThrow('database operation failed')
   })
 
   it('rejects row with invalid album ID', async () => {
@@ -691,7 +734,7 @@ describe('AuthorizedAlbumRepository.getAuthorizedAlbum row handling', () => {
   })
 
   it('accepts empty title', async () => {
-    const { db } = makeMockDb([{ first: { id: VALID_ALBUM_ID, title: '' } }])
+    const { db } = makeMockDb([{ first: { id: VALID_ALBUM_ID, title: '', download_enabled: 0 } }])
     const result = await new AuthorizedAlbumRepository(db).getAuthorizedAlbum(
       VALID_USER_ID,
       VALID_ALBUM_ID,

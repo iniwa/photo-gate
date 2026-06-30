@@ -103,7 +103,7 @@ function makeDeps(opts: FakeOptions = {}): { deps: PageDeps; state: FakeState } 
         state.getCalls.push({ userId, albumId, now })
         if (opts.getThrows) throw new Error('D1 down')
         return opts.summary === undefined
-          ? { id: albumId, title: 'D1 Album Title' }
+          ? { id: albumId, title: 'D1 Album Title', download_enabled: 0 }
           : opts.summary
       },
     },
@@ -178,8 +178,8 @@ describe('GET /albums', () => {
 
   it('valid session -> 200 with the user albums, escaped titles, cover URLs, links', async () => {
     const albums: AuthorizedAlbumSummary[] = [
-      { id: 'album-a', title: '<b>x</b>' },
-      { id: 'album-b', title: 'Second' },
+      { id: 'album-a', title: '<b>x</b>', download_enabled: 0 },
+      { id: 'album-b', title: 'Second', download_enabled: 0 },
     ]
     const { deps } = makeDeps({ albums })
     const app = makeApp(deps)
@@ -210,6 +210,7 @@ describe('GET /albums', () => {
     const albums: AuthorizedAlbumSummary[] = Array.from({ length: 50 }, (_, i) => ({
       id: `album-${String(i).padStart(3, '0')}`,
       title: `Album ${i}`,
+      download_enabled: 0 as const,
     }))
     const { deps } = makeDeps({ albums })
     const app = makeApp(deps)
@@ -247,7 +248,7 @@ describe('GET /albums', () => {
   })
 
   it('logout button present on the authenticated albums page', async () => {
-    const { deps } = makeDeps({ albums: [{ id: 'a', title: 'A' }] })
+    const { deps } = makeDeps({ albums: [{ id: 'a', title: 'A', download_enabled: 0 }] })
     const app = makeApp(deps)
     const res = await get(app, '/albums', await validCookie())
     const text = await res.text()
@@ -344,5 +345,49 @@ describe('GET /albums/:albumId', () => {
     const text = await res.text()
     assertNoSensitive(text)
     expect(text).not.toContain('D1 down')
+  })
+
+  it('download_enabled=1 renders /download/ links per photo', async () => {
+    const objects = new Map<string, PrivateObjectBody>()
+    objects.set(
+      albumManifestKey(ALBUM_ID),
+      manifestBody(
+        manifestJson([
+          { id: 'photo-1', title: 'First' },
+          { id: 'photo-2', title: 'Second' },
+        ]),
+      ),
+    )
+    const { deps } = makeDeps({
+      summary: { id: ALBUM_ID, title: 'D1 Album Title', download_enabled: 1 },
+      reader: mapReader(objects),
+    })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}`, await validCookie())
+    expect(res.status).toBe(200)
+    const text = await res.text()
+    expect(text).toContain(`href="/download/${ALBUM_ID}/preview/photo-1"`)
+    expect(text).toContain(`href="/download/${ALBUM_ID}/preview/photo-2"`)
+    expect(text).toContain('ダウンロード')
+  })
+
+  it('download_enabled=0 renders no /download/ links', async () => {
+    const objects = new Map<string, PrivateObjectBody>()
+    objects.set(
+      albumManifestKey(ALBUM_ID),
+      manifestBody(
+        manifestJson([{ id: 'photo-1', title: 'First' }]),
+      ),
+    )
+    const { deps } = makeDeps({
+      summary: { id: ALBUM_ID, title: 'D1 Album Title', download_enabled: 0 },
+      reader: mapReader(objects),
+    })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}`, await validCookie())
+    expect(res.status).toBe(200)
+    const text = await res.text()
+    expect(text).not.toContain('/download/')
+    expect(text).not.toContain('ダウンロード')
   })
 })

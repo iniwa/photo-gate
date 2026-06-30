@@ -5,6 +5,7 @@ import { securityHeaders } from './middleware/security-headers.js'
 import { createPages, NotFound } from './routes/pages.js'
 import { createAuthApi } from './routes/auth-api.js'
 import { createImgRoutes } from './routes/img-routes.js'
+import { createDownloadRoutes } from './routes/download-routes.js'
 import { createAdminRoutes } from './routes/admin.js'
 import { AdminUserRepository } from './services/admin-user-repository.js'
 import { AdminAlbumRepository } from './services/admin-album-repository.js'
@@ -82,6 +83,18 @@ app.route('/admin', createAdminRoutes(resolveAdminAuth, (env) => ({
   syncTargetRepo: new AdminSyncTargetRepository(env.PHOTO_BUCKET),
   catalogRepo: new AdminAlbumCatalogRepository(env.PHOTO_BUCKET),
   r2CleanupRepo: new AdminR2CleanupRepository(env.DB, env.PHOTO_BUCKET),
+  clock: () => new Date(),
+})))
+
+// Viewer download route. Mounted before the reserved-401 loop so GET shapes
+// (/download/:albumId/preview/:photoId) reach this router. Auth chain is identical
+// to /img: requireSession + requireAlbumPermission + download_enabled gate before
+// any R2 or manifest read.
+app.route('/download', createDownloadRoutes((env) => ({
+  sessionRepo: new SessionRepository(env.DB),
+  permChecker: new PermissionRepository(env.DB),
+  albumRepo: new AuthorizedAlbumRepository(env.DB),
+  reader: new PrivateR2Reader(env.PHOTO_BUCKET),
   clock: () => new Date(),
 })))
 

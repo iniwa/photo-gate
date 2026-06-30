@@ -167,6 +167,7 @@ export function createPages(depsFromEnv: (env: Env) => PageDeps): Hono<PageEnv> 
         albumId={albumId}
         title={summary.title}
         photos={manifestResult.value.photos}
+        downloadEnabled={summary.download_enabled === 1}
       />,
     )
   })
@@ -285,10 +286,12 @@ function AlbumDetailPage({
   albumId,
   title,
   photos,
+  downloadEnabled,
 }: {
   albumId: string
   title: string
   photos: { id: string; title: string }[]
+  downloadEnabled: boolean
 }) {
   return (
     <Layout title={title} authenticated>
@@ -298,9 +301,16 @@ function AlbumDetailPage({
       <h1>{title}</h1>
       <div class="photo-grid">
         {photos.map((photo) => (
-          <a class="photo" key={photo.id} href={`/img/${albumId}/preview/${photo.id}`}>
-            <img src={`/img/${albumId}/thumb/${photo.id}`} alt={photo.title} loading="lazy" />
-          </a>
+          <div class="photo-item" key={photo.id}>
+            <a class="photo" href={`/img/${albumId}/preview/${photo.id}`}>
+              <img src={`/img/${albumId}/thumb/${photo.id}`} alt={photo.title} loading="lazy" />
+            </a>
+            {downloadEnabled ? (
+              <a class="download-link" href={`/download/${albumId}/preview/${photo.id}`} download>
+                ダウンロード
+              </a>
+            ) : null}
+          </div>
         ))}
       </div>
     </Layout>

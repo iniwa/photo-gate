@@ -16,11 +16,17 @@ function parseAlbumRow(row: unknown): AuthorizedAlbumSummary {
   const r = row as Record<string, unknown>
   if (!isValidId(r['id'])) throw databaseOperationError()
   if (!isSafeTitle(r['title'])) throw databaseOperationError()
-  return { id: r['id'] as string, title: r['title'] as string }
+  const downloadEnabled = r['download_enabled']
+  if (downloadEnabled !== 0 && downloadEnabled !== 1) throw databaseOperationError()
+  return {
+    id: r['id'] as string,
+    title: r['title'] as string,
+    download_enabled: downloadEnabled,
+  }
 }
 
 const LIST_SQL_NO_CURSOR = `
-  SELECT a.id, a.title
+  SELECT a.id, a.title, a.download_enabled
   FROM album_permissions ap
   JOIN albums a ON a.id = ap.album_id
   JOIN users u ON u.id = ap.user_id
@@ -32,7 +38,7 @@ const LIST_SQL_NO_CURSOR = `
   LIMIT ?`
 
 const LIST_SQL_WITH_CURSOR = `
-  SELECT a.id, a.title
+  SELECT a.id, a.title, a.download_enabled
   FROM album_permissions ap
   JOIN albums a ON a.id = ap.album_id
   JOIN users u ON u.id = ap.user_id
@@ -45,7 +51,7 @@ const LIST_SQL_WITH_CURSOR = `
   LIMIT ?`
 
 const GET_SQL = `
-  SELECT a.id, a.title
+  SELECT a.id, a.title, a.download_enabled
   FROM album_permissions ap
   JOIN albums a ON a.id = ap.album_id
   JOIN users u ON u.id = ap.user_id

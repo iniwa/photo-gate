@@ -68,3 +68,63 @@ export function objectInternalErrorResponse(): Response {
     },
   })
 }
+
+/** Maximum character length of the base filename (before `.jpg` extension). */
+const FILENAME_MAX_LEN = 100
+
+/**
+ * Derives a safe ASCII filename from a manifest photo title, falling back to
+ * photoId. Strips control chars, path separators, non-ASCII, collapses
+ * whitespace to underscores, caps length, and always appends `.jpg`.
+ * Never includes album IDs, R2 keys, bucket names, PhotoPrism UIDs, or source hashes.
+ */
+export function buildDownloadFilename(rawTitle: string, photoId: string): string {
+  const stripped = rawTitle
+    .replace(/[\x00-\x1f\x7f]/g, '')
+    .replace(/[/\\:"*?<>|]/g, '')
+    .replace(/[^\x20-\x7e]/g, '')
+    .replace(/\s+/g, '_')
+    .trim()
+    .slice(0, FILENAME_MAX_LEN)
+  const base = stripped.length > 0 ? stripped : photoId
+  return `${base}.jpg`
+}
+
+/**
+ * Constructs a 200 attachment response for an authenticated private preview download.
+ * Content-Type is fixed to image/jpeg; Content-Disposition is attachment with the
+ * caller-supplied safe filename. No R2 object metadata, ETag, Last-Modified,
+ * Content-Length, Content-Range, or stored Cache-Control is forwarded.
+ */
+export function privateDownloadResponse(
+  body: ReadableStream,
+  filename: string,
+): Response {
+  if (!(body instanceof ReadableStream)) {
+    throw new Error('invalid private download response')
+  }
+  try {
+    return new Response(body, {
+      status: 200,
+      headers: {
+        'Content-Type': 'image/jpeg',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    })
+  } catch {
+    throw new Error('invalid private download response')
+  }
+}
+
+/** 403 response when downloads are disabled or a race removes the album. Generic body. */
+export function objectForbiddenResponse(): Response {
+  return new Response('Forbidden', {
+    status: 403,
+    headers: {
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+    },
+  })
+}

@@ -26,6 +26,7 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 | Album pages | `GET /albums`, `GET /albums/:albumId` | D1 (authorization) + R2 (manifest) |
 | Auth API | `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me` | D1 |
 | Image delivery | `GET /img/:albumId/{cover,thumb/:photoId,preview/:photoId}` | D1 + R2 |
+| Preview download | `GET /download/:albumId/preview/:photoId` | D1 (session + album permission + `download_enabled` gate) + R2 (manifest membership check, then preview JPEG as attachment); serves only existing generated preview JPEG — no originals, no new R2 objects, no R2 mutation |
 | Admin surface | `GET /admin` | Cloudflare Access JWT + email allowlist |
 | Admin user inventory | `GET /admin/users` | D1 (read-only; no `password_hash`) |
 | Admin album inventory | `GET /admin/albums` | D1 (read-only; no `photoprism_album_uid`, transform settings, or `strip_exif`) |
@@ -706,10 +707,11 @@ Authentication and album authorization remain required before an explicit object
 interface AuthorizedAlbumSummary {
   id: string
   title: string
+  download_enabled: number  // 1 = downloads permitted; 0 = downloads disabled
 }
 ```
 
-Fields intentionally **not returned**: `photoprism_album_uid`, image-generation settings (`thumb_long_edge`, `thumb_format`, `thumb_quality`, `preview_*`), `strip_exif`, `download_enabled`, permission rows, user IDs, session data, R2 keys, and timestamps. R2 manifests remain the source for photo lists and generated image details.
+Fields intentionally **not returned**: `photoprism_album_uid`, image-generation settings (`thumb_long_edge`, `thumb_format`, `thumb_quality`, `preview_*`), `strip_exif`, permission rows, user IDs, session data, R2 keys, and timestamps. R2 manifests remain the source for photo lists and generated image details.
 
 ### Repository methods
 
