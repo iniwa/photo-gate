@@ -10,6 +10,7 @@ import type { AdminPermissionSummary, AssignmentOptions } from '../src/types/adm
 import type { Env } from '../src/types/env.js'
 import type { AdminOpsSummary } from '../src/types/admin-ops.js'
 import type { AdminSyncStatus } from '../src/types/admin-sync-status.js'
+import type { AdminR2CleanupReport } from '../src/types/admin-r2-cleanup.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -549,6 +550,29 @@ function makeAbsentCatalogRepo(): CatalogRepo {
   }
 }
 
+type R2CleanupRepo = {
+  getReport(): Promise<AdminR2CleanupReport>
+}
+
+const SAMPLE_R2_CLEANUP_REPORT: AdminR2CleanupReport = {
+  albums: [
+    { albumId: 'album-sample-001', category: 'owned-active', objectCount: 3, totalBytes: 1024 },
+    { albumId: 'album-sample-002', category: 'owned-disabled', objectCount: 1, totalBytes: 256 },
+  ],
+  malformedCount: 0,
+  malformedBytes: 0,
+  excludedOpsCount: 2,
+  truncated: false,
+}
+
+function makeR2CleanupRepo(report: AdminR2CleanupReport = SAMPLE_R2_CLEANUP_REPORT): R2CleanupRepo {
+  return { getReport: async () => report }
+}
+
+function makeThrowingR2CleanupRepo(): R2CleanupRepo {
+  return { getReport: async () => { throw new Error('R2 exploded') } }
+}
+
 function makeApp(
   resolveAuth: ResolveAuth,
   userRepo?: UserRepo,
@@ -560,6 +584,7 @@ function makeApp(
   syncRequestRepo?: SyncRequestRepo,
   syncTargetRepo?: SyncTargetRepo,
   catalogRepo?: CatalogRepo,
+  r2CleanupRepo?: R2CleanupRepo,
 ): Hono {
   const app = new Hono()
   app.route(
@@ -574,6 +599,7 @@ function makeApp(
       syncRequestRepo: syncRequestRepo ?? makeCapturingSyncRequestRepo(),
       syncTargetRepo: syncTargetRepo ?? makeCapturingSyncTargetRepo(),
       catalogRepo: catalogRepo ?? makePassingCatalogRepo(),
+      r2CleanupRepo: r2CleanupRepo ?? makeR2CleanupRepo(),
     })),
   )
   return app
@@ -6340,5 +6366,95 @@ describe('admin-routes: POST /admin/albums/sync-target-upsert catalog check', ()
     const res = await postAdmin(app, '/admin/albums/sync-target-upsert', makeValidSyncTargetUpsertOptions())
     expect(res.status).toBe(500)
     expect(await res.text()).toBe('Internal Server Error')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// GET /admin/r2-cleanup
+// ---------------------------------------------------------------------------
+
+describe('admin-routes: GET /admin/r2-cleanup', () => {
+  it('returns 200 with Cache-Control: no-store', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, makeR2CleanupRepo())
+    const res = await getAdmin(app, { path: '/admin/r2-cleanup' })
+    expect(res.status).toBe(200)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('returns 403 when unauthenticated', async () => {
+    const app = makeApp(() => null, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, makeR2CleanupRepo())
+    const res = await getAdmin(app, { path: '/admin/r2-cleanup', token: null })
+    await assertForbidden(res)
+  })
+
+  it('returns 500 with no-store when repo throws', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, makeThrowingR2CleanupRepo())
+    const res = await getAdmin(app, { path: '/admin/r2-cleanup' })
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('500 body is generic and contains no internal details', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, makeThrowingR2CleanupRepo())
+    const res = await getAdmin(app, { path: '/admin/r2-cleanup' })
+    const body = await res.text()
+    expect(body).toBe('Internal Server Error')
+  })
+
+  it('success body contains no mutation form (method=post)', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, makeR2CleanupRepo())
+    const res = await getAdmin(app, { path: '/admin/r2-cleanup' })
+    const body = await res.text()
+    expect(body.toLowerCase()).not.toContain('method="post"')
+  })
+
+  it('success body contains no delete form or control', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, makeR2CleanupRepo())
+    const res = await getAdmin(app, { path: '/admin/r2-cleanup' })
+    const body = await res.text()
+    expect(body.toLowerCase()).not.toContain('delete')
+  })
+
+  it('success body renders album IDs', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, makeR2CleanupRepo())
+    const res = await getAdmin(app, { path: '/admin/r2-cleanup' })
+    const body = await res.text()
+    expect(body).toContain('album-sample-001')
+    expect(body).toContain('album-sample-002')
+  })
+
+  it('success body does not contain bucket name, PhotoPrism, or R2 credentials', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, makeR2CleanupRepo())
+    const res = await getAdmin(app, { path: '/admin/r2-cleanup' })
+    const body = await res.text()
+    expect(body).not.toContain('PHOTO_BUCKET')
+    expect(body).not.toContain('photoprism')
+    expect(body).not.toContain('r2.cloudflarestorage')
+  })
+
+  it('shows truncation notice when report is truncated', async () => {
+    const truncatedReport: AdminR2CleanupReport = { ...SAMPLE_R2_CLEANUP_REPORT, truncated: true }
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, makeR2CleanupRepo(truncatedReport))
+    const res = await getAdmin(app, { path: '/admin/r2-cleanup' })
+    const body = await res.text()
+    expect(body).toContain('切り詰め')
+  })
+
+  it('POST /admin/r2-cleanup returns 404 (no mutation route)', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, makeR2CleanupRepo())
+    const res = await app.request(
+      '/admin/r2-cleanup',
+      { method: 'POST', headers: { 'Cf-Access-Jwt-Assertion': VALID_TOKEN } },
+      {} as unknown as Parameters<typeof app.request>[2],
+    )
+    expect(res.status).toBe(404)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('GET /admin home page now contains link to /admin/r2-cleanup', async () => {
+    const app = makeApp(goodAuth(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, makeR2CleanupRepo())
+    const res = await getAdmin(app)
+    const body = await res.text()
+    expect(body).toContain('/admin/r2-cleanup')
   })
 })

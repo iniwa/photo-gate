@@ -15,6 +15,7 @@ import { forbiddenResponse } from '../middleware/auth-response.js'
 import { isValidId } from '../services/repository-validation.js'
 import { hashPassword } from '../services/auth-crypto.js'
 import { PBKDF2_PRODUCTION_ITERATIONS } from '../services/login-policy.js'
+import type { AdminR2CleanupReport } from '../types/admin-r2-cleanup.js'
 
 type AdminEnv = { Bindings: Env }
 type AdminContext = Context<AdminEnv>
@@ -64,6 +65,9 @@ export interface AdminRouteDeps {
     hasCatalogId(catalogId: string): Promise<boolean>
   }
   clock: () => Date
+  r2CleanupRepo: {
+    getReport(): Promise<AdminR2CleanupReport>
+  }
 }
 
 /**
@@ -570,6 +574,18 @@ export function createAdminRoutes(
       return c.html(<AdminSyncPage syncStatus={null} isPending={isPending} />)
     }
     return c.html(<AdminSyncPage syncStatus={result.value} isPending={isPending} />)
+  })
+
+  admin.get('/r2-cleanup', async (c) => {
+    let report: AdminR2CleanupReport
+    try {
+      report = await depsFromEnv(c.env).r2CleanupRepo.getReport()
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+    c.header('Cache-Control', 'no-store')
+    return c.html(<AdminR2CleanupPage report={report} />)
   })
 
   // Sync request writer. Runs AFTER the admin guard, then enforces: strict
@@ -1113,6 +1129,9 @@ function AdminHome() {
         <p>
           <a href="/admin/sync">同期状態</a>
         </p>
+        <p>
+          <a href="/admin/r2-cleanup">R2 クリーンアップレポート（ドライラン）</a>
+        </p>
       </div>
     </Layout>
   )
@@ -1535,6 +1554,71 @@ function AdminSyncPage({ syncStatus, isPending }: { syncStatus: AdminSyncStatus 
           </table>
         </>
       )}
+    </Layout>
+  )
+}
+
+function categoryLabel(category: 'owned-active' | 'owned-disabled' | 'orphan'): string {
+  if (category === 'owned-active') return '所有（有効）'
+  if (category === 'owned-disabled') return '所有（無効）'
+  return '孤立'
+}
+
+function AdminR2CleanupPage({ report }: { report: AdminR2CleanupReport }) {
+  return (
+    <Layout title="R2 クリーンアップレポート">
+      <a class="back-link" href="/admin">
+        ← 管理コンソールへ
+      </a>
+      <h1>R2 クリーンアップレポート（ドライラン）</h1>
+      <p>このレポートは読み取り専用です。R2 オブジェクトの削除は行いません。</p>
+      {report.truncated ? (
+        <p class="empty-note">
+          警告: オブジェクト数または取得ページ数が上限に達しました。結果が切り詰められています。
+        </p>
+      ) : null}
+      <h2>アルバムプレフィックス</h2>
+      {report.albums.length === 0 ? (
+        <p class="empty-note">アルバムプレフィックスがありません</p>
+      ) : (
+        <table class="user-table">
+          <thead>
+            <tr>
+              <th>カテゴリ</th>
+              <th>アルバムID</th>
+              <th>オブジェクト数</th>
+              <th>合計バイト数（概算）</th>
+            </tr>
+          </thead>
+          <tbody>
+            {report.albums.map((entry) => (
+              <tr key={entry.albumId}>
+                <td>{categoryLabel(entry.category)}</td>
+                <td>{entry.albumId}</td>
+                <td>{entry.objectCount}</td>
+                <td>{entry.totalBytes}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <h2>集計</h2>
+      <table class="user-table">
+        <tbody>
+          <tr>
+            <th>不正形式オブジェクト数</th>
+            <td>{report.malformedCount}</td>
+          </tr>
+          <tr>
+            <th>不正形式合計バイト数</th>
+            <td>{report.malformedBytes}</td>
+          </tr>
+          <tr>
+            <th>除外 ops/ オブジェクト数</th>
+            <td>{report.excludedOpsCount}</td>
+          </tr>
+        </tbody>
+      </table>
     </Layout>
   )
 }

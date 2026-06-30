@@ -44,6 +44,7 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 | Admin sync request writer | `POST /admin/sync/request` | Private R2 (write-only; fixed key `ops/sync-request.json`; admin-only; validates exact `kind=sync-now` form input; Docker daemon consumes and handles; Sync Now form exposed on `GET /admin/sync`) |
 | Admin sync target upsert | `POST /admin/albums/sync-target-upsert` | Private R2 `ops/album-catalog.json` (catalog check: verifies submitted `catalogId` exists; missing/malformed → 500, absent → 400) + D1 (read album by `albumId`) + Private R2 (read-modify-write `ops/sync-targets.json`; accepts `albumId`+`catalogId`; rejects duplicate `catalogId` across albums; fixed thumb/preview/stripExif schema) |
 | Admin sync target remove | `POST /admin/albums/sync-target-remove` | Private R2 (read-modify-write `ops/sync-targets.json`; accepts `albumId`; removes matching entry; no-op for unknown album ID) |
+| Admin R2 cleanup report | `GET /admin/r2-cleanup` | Private R2 (`list()` only under `albums/` and `ops/`; no object body reads) + D1 (read-only: `SELECT id, enabled FROM albums`; no title, photoprism_album_uid, or transform settings); read-only dry-run reporting only — does not delete, mutate, or move any R2 object |
 | Admin album catalog (GET /admin/albums picker) | `GET /admin/albums` (catalog read) | Private R2 `ops/album-catalog.json` (read-only; missing → renders "カタログ未取得" message; malformed/R2 error → 500 no-store; available → renders `<select name="catalogId">` picker per album row; no raw UID, URL, token, or R2 credential rendered) |
 | Everything else under `/api`, `/img` | always `401` | — |
 | `/admin/*` (non-GET or unknown path) | authenticated `404` (behind Access guard) | — |
@@ -284,6 +285,9 @@ removed from the reserved-401 set; only `/api` and `/img` remain there.
 | `POST /admin/users/update-display-name` | Missing/mismatched Origin | `403 Forbidden` (same-origin check) |
 | `POST /admin/users/update-display-name` | Wrong Content-Type | `400 Bad Request` (no-store) |
 | `POST /admin/users/update-display-name` | Invalid/missing/extra/repeated fields | `400 Bad Request` (no-store) |
+| `GET /admin/r2-cleanup` | Verified + allowlisted | `200` read-only HTML report: per-album-prefix category (owned-active, owned-disabled, orphan), object count, total bytes; malformed count; excluded ops count; truncation notice if limit reached; no full object keys, photo IDs, bucket name, PhotoPrism data, or mutation form |
+| `GET /admin/r2-cleanup` | Any auth failure | `403 Forbidden` (generic, no-store) |
+| `GET /admin/r2-cleanup` | D1 or R2 list failure | `500 Internal Server Error` (no-store; no SQL, R2 key, bucket name, or exception detail) |
 | Any other method or `/admin/*` path | Verified + allowlisted | `404 Not Found` (generic, no-store) |
 | Any other method or `/admin/*` path | Any failure | `403 Forbidden` (generic, no-store) |
 
