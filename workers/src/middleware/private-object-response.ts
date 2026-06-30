@@ -73,9 +73,9 @@ export function objectInternalErrorResponse(): Response {
 const FILENAME_MAX_LEN = 100
 
 /**
- * Derives a safe ASCII filename from a manifest photo title, falling back to
- * photoId. Strips control chars, path separators, non-ASCII, collapses
- * whitespace to underscores, caps length, and always appends `.jpg`.
+ * Derives a safe ASCII filename from a manifest photo title and always includes
+ * photoId for per-photo uniqueness. Strips control chars, path separators,
+ * non-ASCII, collapses whitespace to underscores, caps length, and always appends `.jpg`.
  * Never includes album IDs, R2 keys, bucket names, PhotoPrism UIDs, or source hashes.
  */
 export function buildDownloadFilename(rawTitle: string, photoId: string): string {
@@ -86,8 +86,10 @@ export function buildDownloadFilename(rawTitle: string, photoId: string): string
     .replace(/\s+/g, '_')
     .trim()
     .slice(0, FILENAME_MAX_LEN)
-  const base = stripped.length > 0 ? stripped : photoId
-  return `${base}.jpg`
+  if (stripped.length === 0) return `${photoId.slice(0, FILENAME_MAX_LEN)}.jpg`
+  const suffix = `_${photoId}`
+  const titleMaxLen = Math.max(0, FILENAME_MAX_LEN - suffix.length)
+  return `${stripped.slice(0, titleMaxLen)}${suffix}`.slice(0, FILENAME_MAX_LEN) + '.jpg'
 }
 
 /**

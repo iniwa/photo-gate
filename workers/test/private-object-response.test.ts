@@ -371,37 +371,49 @@ describe('successful image response cache policy is private, no-store', () => {
 
 describe('buildDownloadFilename — ASCII title', () => {
   it('appends .jpg to an ASCII title', () => {
-    expect(buildDownloadFilename('Sunset_Beach', 'photo-1')).toBe('Sunset_Beach.jpg')
+    expect(buildDownloadFilename('Sunset_Beach', 'photo-1')).toBe('Sunset_Beach_photo-1.jpg')
   })
 
   it('replaces spaces with underscores', () => {
-    expect(buildDownloadFilename('My Photo', 'photo-1')).toBe('My_Photo.jpg')
+    expect(buildDownloadFilename('My Photo', 'photo-1')).toBe('My_Photo_photo-1.jpg')
   })
 
   it('strips double quotes', () => {
-    expect(buildDownloadFilename('A "test"', 'photo-1')).toBe('A_test.jpg')
+    expect(buildDownloadFilename('A "test"', 'photo-1')).toBe('A_test_photo-1.jpg')
   })
 
   it('strips forward slashes', () => {
-    expect(buildDownloadFilename('path/to/photo', 'photo-1')).toBe('pathtophoto.jpg')
+    expect(buildDownloadFilename('path/to/photo', 'photo-1')).toBe('pathtophoto_photo-1.jpg')
   })
 
   it('strips backslashes', () => {
-    expect(buildDownloadFilename('win\\path', 'photo-1')).toBe('winpath.jpg')
+    expect(buildDownloadFilename('win\\path', 'photo-1')).toBe('winpath_photo-1.jpg')
   })
 
   it('strips control characters (CR, LF)', () => {
-    expect(buildDownloadFilename('line\r\nbreak', 'photo-1')).toBe('linebreak.jpg')
+    expect(buildDownloadFilename('line\r\nbreak', 'photo-1')).toBe('linebreak_photo-1.jpg')
   })
 
   it('strips non-printable characters below 0x20', () => {
-    expect(buildDownloadFilename('tab\there', 'photo-1')).toBe('tabhere.jpg')
+    expect(buildDownloadFilename('tab\there', 'photo-1')).toBe('tabhere_photo-1.jpg')
+  })
+
+  it('uses photoId to make identical titles unique', () => {
+    expect(buildDownloadFilename('Photo', 'photo-a')).toBe('Photo_photo-a.jpg')
+    expect(buildDownloadFilename('Photo', 'photo-b')).toBe('Photo_photo-b.jpg')
+  })
+
+  it('preserves photoId when title is truncated', () => {
+    const result = buildDownloadFilename('Title'.repeat(50), 'photo-unique')
+    expect(result).toMatch(/_photo-unique\.jpg$/)
+    expect(result).toHaveLength(104)
   })
 
   it('caps at 100 characters (base before extension)', () => {
     const long = 'a'.repeat(200)
     const result = buildDownloadFilename(long, 'photo-1')
-    expect(result).toBe('a'.repeat(100) + '.jpg')
+    expect(result).toBe('a'.repeat(92) + '_photo-1.jpg')
+    expect(result).toHaveLength(104)
   })
 })
 
@@ -427,7 +439,7 @@ describe('buildDownloadFilename — non-ASCII fallback', () => {
   })
 
   it('uses ASCII part of mixed title', () => {
-    expect(buildDownloadFilename('Ocean海_photo', 'photo-1')).toBe('Ocean_photo.jpg')
+    expect(buildDownloadFilename('Ocean海_photo', 'photo-1')).toBe('Ocean_photo_photo-1.jpg')
   })
 })
 
