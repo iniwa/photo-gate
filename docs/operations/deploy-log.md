@@ -36,6 +36,8 @@
 | 2026-06-30 | (pending - CI run `28427318471`) | `8ef26a4` | CI (workers-ci) | Preview download filename hotfix. Attachment filenames now include the manifest photo ID (`<safe-title>_<photoId>.jpg` or `<photoId>.jpg`) to avoid browser `(1)` duplicate suffixes for common/empty titles. Unauthenticated production smoke passed. |
 | 2026-06-30 | (pending - CI run `28428506984`) | `797682e` | CI (workers-ci) | Viewer photo preview page (`GET /albums/:albumId/photos/:photoId`). Album grid thumbnails now open an authenticated HTML preview page with existing `/img` preview embedding, previous/next navigation, back-to-album link, and conditional download link. CI run `28428506984` succeeded. Unauthenticated smoke passed: `/`, `/albums`, `/img`, `/download`, and the new preview page redirect-to-login behavior. |
 
+| 2026-07-02 | (pending - CI run `28558926039`) | `2b0941f` | CI (workers-ci) | Viewer UI cleanup Phase 1. Improves server-rendered viewer presentation for login, album list, album detail grid, photo preview page, and shared viewer controls without changing routes, auth, D1, R2, manifest parsing, image responses, or download responses. CI run `28558926039` succeeded. Unauthenticated smoke passed: `/` 200, `/albums` 303 to `/`, `/img/probe-nonexistent` 401 no-store, `/download/probe-album/preview/probe-photo` 401 no-store, `/albums/probe-album/photos/probe-photo` 303 to `/`, and `/admin` Cloudflare Access 302. |
+
 ## Docker sync (ghcr.io/iniwa/photo-gate-sync)
 
 | 日付 (JST) | GHCR タグ | コミット | Pi 稼働開始 | 備考 |

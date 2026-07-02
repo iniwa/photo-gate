@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-06-30.
+Last updated: 2026-07-02.
 
 ## Current Completion Level
 
@@ -14,7 +14,7 @@ immutable-tag Portainer procedure remains available for incident use.
 
 There is no active implementation handoff.
 
-Viewer photo download and preview-page work is deployed:
+Viewer photo download, preview-page, and first UI cleanup work is deployed:
 
 - DONE: Commit `c9409c1` added safe preview JPEG downloads from existing private
   R2 derivatives only, gated by session, album permission, manifest membership,
@@ -29,6 +29,11 @@ Viewer photo download and preview-page work is deployed:
   embedding, previous/next navigation, back-to-album link, and conditional
   download link. Workers CI run `28428506984` succeeded, and unauthenticated
   production smoke passed.
+- DONE: Commit `2b0941f` completed viewer UI cleanup Phase 1 for the login page,
+  album list, album detail grid, photo preview page, and shared viewer controls.
+  It is presentation-only: no route, auth, D1, R2, manifest, image response, or
+  download response behavior changed. Workers CI run `28558926039` succeeded, and
+  unauthenticated production smoke passed.
 - DEFERRED: RAW/original download is not implemented. It requires a separate
   ADR because it would change the current no-originals/no-NAS/no-PhotoPrism
   viewer boundary.
