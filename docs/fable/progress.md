@@ -37,22 +37,20 @@ Viewer photo download, preview-page, and first UI cleanup work is deployed:
 - DEFERRED: RAW/original download is not implemented. It requires a separate
   ADR because it would change the current no-originals/no-NAS/no-PhotoPrism
   viewer boundary.
-Admin hard delete controls are partially implemented as preview-only:
+Admin hard delete controls are partially implemented:
 
 - DONE: ADR `docs/decisions/2026-06-30-admin-hard-delete-controls.md` decides
   user and album hard-delete safety boundaries.
 - DONE: Phase 2 confirmation-preview routes are deployed at commit `ea39fc4`
-  with 15-minute HMAC tokens and exact typed phrases. Actual hard delete is not
-  enabled.
-- PENDING OPERATOR ACTION: register `HARD_DELETE_HMAC_KEY` before using the
-  authenticated preview forms in production. Missing/short secret fails closed
-  with 500.
-- NOT IMPLEMENTED: D1 DELETE handlers, session/permission cascade execution,
-  sync-target removal, and R2 deletion remain absent.
-- The normal operational path remains disable/depublish. Album hard delete, if
-  later approved, must remove the matching browser-owned sync-target entry from
-  `ops/sync-targets.json` before deleting the D1 album row, and must not delete
-  R2 album assets.
+  with 15-minute HMAC tokens and exact typed phrases.
+- DONE: `HARD_DELETE_HMAC_KEY` is registered in production.
+- DONE: Phase 3 user hard delete is deployed at commit `2260c2e`, Worker version
+  `6c017227-9d7d-47f8-b40b-e6392684269a`, workers-ci run `28570581091`. It
+  deletes only `users` after the existing two-step guard and relies on D1
+  cascade for sessions and album permissions.
+- PENDING: Album hard delete remains separate and, if later approved, must
+  remove the matching browser-owned sync-target entry from `ops/sync-targets.json`
+  before deleting the D1 album row, and must not delete R2 album assets.
 
 The R2 cleanup deletion-preview Phase 2 handoff is reviewed, committed, pushed by
 the operator, and partially runtime-checked:
@@ -583,3 +581,12 @@ Commit `ea39fc4` added HMAC-signed 15-minute confirmation tokens, four admin POS
 Verification: Workers lint/typecheck/test/build/audit passed locally; test count is 2403 tests across 40 files. GitHub workers-ci run `28560281394` completed success. Production unauthenticated smoke passed for `/`, `/albums`, `/img/probe-nonexistent`, `/download/probe-album/preview/probe-photo`, `/albums/probe-album/photos/probe-photo`, `/admin`, and `/admin/users`.
 
 Important: actual hard delete remains disabled. No D1 DELETE, R2 delete, session/permission cascade, or sync-target mutation is implemented. Production use of the confirmation-preview forms requires registering `HARD_DELETE_HMAC_KEY`; without it, preview POST routes fail closed with 500.
+
+## 2026-07-02 — Admin user hard delete Phase 3 deployed
+
+Implemented, verified, committed, pushed, and deployed Admin Hard Delete Controls Phase 3 for users only.
+Commit `2260c2e` adds `AdminUserRepository.deleteUser`, wires `POST /admin/users/delete` to execute `DELETE FROM users WHERE id = ?` after admin Access, same-origin, strict form parsing, valid HMAC token, exact `DELETE USER` phrase, and D1 target re-read. Album hard delete remains preview-only.
+
+Verification: Workers lint/typecheck/test/build/audit passed locally; test count is 2416 tests across 40 files. GitHub workers-ci run `28570581091` completed success and deployed Worker version `6c017227-9d7d-47f8-b40b-e6392684269a`. Production unauthenticated smoke passed for `/`, `/admin`, `/admin/users`, and `/api/probe`.
+
+Important: This enables real D1 user-row deletion in production. Sessions and album permissions are removed by existing D1 cascade. No R2 deletion, album deletion, sync-target mutation, Docker/PhotoPrism/NAS/Portainer path, or migration was added.
