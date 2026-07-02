@@ -18,6 +18,7 @@ const ALBUM = { id: 'album-sample-001', title: 'Summer Trip', enabled: 0 as cons
 type ResolveAuth = (env: Env) => AdminAuthConfig | null
 type UserRepo = {
   getUserForHardDelete(userId: string): Promise<typeof USER | null>
+  deleteUser(userId: string): Promise<void>
   deleteCalls: string[]
 }
 type AlbumRepo = {
@@ -33,7 +34,12 @@ function goodAuth(): ResolveAuth {
 }
 
 function makeUserRepo(user: typeof USER | null = USER): UserRepo {
-  return { getUserForHardDelete: async () => user, deleteCalls: [] }
+  const deleteCalls: string[] = []
+  return {
+    getUserForHardDelete: async () => user,
+    deleteUser: async (userId) => { deleteCalls.push(userId) },
+    deleteCalls,
+  }
 }
 
 function makeAlbumRepo(album: typeof ALBUM | null = ALBUM): AlbumRepo {
@@ -43,6 +49,7 @@ function makeAlbumRepo(album: typeof ALBUM | null = ALBUM): AlbumRepo {
 function makeThrowingUserRepo(): UserRepo {
   return {
     getUserForHardDelete: async () => { throw new Error('password_hash must not escape') },
+    deleteUser: async () => { throw new Error('delete must not run') },
     deleteCalls: [],
   }
 }
@@ -51,6 +58,18 @@ function makeThrowingAlbumRepo(): AlbumRepo {
   return {
     getAlbumForHardDelete: async () => { throw new Error('photoprism_album_uid must not escape') },
     deleteCalls: [],
+  }
+}
+
+function makeThrowingDeleteUserRepo(): UserRepo {
+  const deleteCalls: string[] = []
+  return {
+    getUserForHardDelete: async () => USER,
+    deleteUser: async (userId) => {
+      deleteCalls.push(userId)
+      throw new Error('D1 delete failed with password_hash detail')
+    },
+    deleteCalls,
   }
 }
 
@@ -70,6 +89,7 @@ function makeApp(
         resetPassword: async () => {},
         updateDisplayName: async () => {},
         getUserForHardDelete: userRepo.getUserForHardDelete,
+        deleteUser: userRepo.deleteUser,
       },
       albumRepo: {
         listAlbums: async () => ({ albums: [], hasMore: false }),
@@ -168,7 +188,8 @@ describe('admin hard delete confirm routes', () => {
   })
 
   it('rejects wrong content-type and invalid fields', async () => {
-    const app = makeApp(goodAuth())
+    const userRepo = makeUserRepo()
+    const app = makeApp(goodAuth(), userRepo)
     const wrongType = await postAdmin(app, '/admin/users/confirm-delete', {
       ...validPostOptions('user'),
       contentType: 'application/json',
@@ -185,7 +206,8 @@ describe('admin hard delete confirm routes', () => {
   })
 
   it('fails closed when HARD_DELETE_HMAC_KEY is missing or short', async () => {
-    const app = makeApp(goodAuth())
+    const userRepo = makeUserRepo()
+    const app = makeApp(goodAuth(), userRepo)
     const missing = await postAdmin(app, '/admin/users/confirm-delete', validPostOptions('user'), {})
     expect(missing.status).toBe(500)
     expect(await missing.text()).toBe('Internal Server Error')
@@ -246,19 +268,22 @@ describe('admin hard delete confirm routes', () => {
 })
 
 describe('admin hard delete preview routes', () => {
-  it('requires the exact phrase', async () => {
+  it('requires the exact phrase and does not delete', async () => {
+    const userRepo = makeUserRepo()
     const token = await buildToken('user')
-    const res = await postAdmin(makeApp(goodAuth()), '/admin/users/delete', {
+    const res = await postAdmin(makeApp(goodAuth(), userRepo), '/admin/users/delete', {
       origin: 'http://localhost',
       contentType: 'application/x-www-form-urlencoded',
       body: new URLSearchParams({ token, phrase: 'delete user' }).toString(),
     })
     expect(res.status).toBe(400)
     expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(userRepo.deleteCalls).toHaveLength(0)
   })
 
   it('rejects malformed, expired, and wrong-category tokens', async () => {
-    const app = makeApp(goodAuth())
+    const userRepo = makeUserRepo()
+    const app = makeApp(goodAuth(), userRepo)
     for (const token of ['bad-token', await buildToken('user', { expired: true }), await buildToken('user', { wrongCategory: true })]) {
       const res = await postAdmin(app, '/admin/users/delete', {
         origin: 'http://localhost',
@@ -268,9 +293,10 @@ describe('admin hard delete preview routes', () => {
       expect(res.status).toBe(400)
       expect(res.headers.get('cache-control')).toBe('no-store')
     }
+    expect(userRepo.deleteCalls).toHaveLength(0)
   })
 
-  it('re-reads target and returns not-yet-enabled page without mutation', async () => {
+  it('re-reads target, deletes the user once, and returns the completed page', async () => {
     const userRepo = makeUserRepo()
     const albumRepo = makeAlbumRepo()
     const token = await buildToken('user')
@@ -282,11 +308,85 @@ describe('admin hard delete preview routes', () => {
     expect(res.status).toBe(200)
     expect(res.headers.get('cache-control')).toBe('no-store')
     const body = await res.text()
-    expect(body).toContain('実際の hard delete はこの Phase 2 では有効化されていません')
+    expect(body).toContain('User hard delete completed')
     expect(body).toContain(USER.id)
-    expect(userRepo.deleteCalls).toHaveLength(0)
+    expect(body).toContain(USER.display_name)
+    expect(body).toContain('enabled')
+    expect(body).toContain('Sessions and album permissions are removed by the existing D1 foreign-key cascade')
+    expect(userRepo.deleteCalls).toEqual([USER.id])
     expect(albumRepo.deleteCalls).toHaveLength(0)
     expect(body).not.toContain('password_hash')
+    expect(body).not.toContain('token_hash')
+    expect(body).not.toContain('photoprism_album_uid')
+    expect(body).not.toContain('albums/')
+    expect(body).not.toContain('DELETE FROM')
+  })
+
+  it('does not delete when the user target is missing at delete time', async () => {
+    const userRepo = makeUserRepo(null)
+    const token = await buildToken('user')
+    const res = await postAdmin(makeApp(goodAuth(), userRepo), '/admin/users/delete', {
+      origin: 'http://localhost',
+      contentType: 'application/x-www-form-urlencoded',
+      body: new URLSearchParams({ token, phrase: 'DELETE USER' }).toString(),
+    })
+    expect(res.status).toBe(200)
+    expect(userRepo.deleteCalls).toHaveLength(0)
+    const body = await res.text()
+    expect(body).toContain('対象は見つかりませんでした')
+    expect(body).not.toContain('DELETE FROM')
+  })
+
+  it('returns sanitized 500 when user delete fails', async () => {
+    const userRepo = makeThrowingDeleteUserRepo()
+    const token = await buildToken('user')
+    const res = await postAdmin(makeApp(goodAuth(), userRepo), '/admin/users/delete', {
+      origin: 'http://localhost',
+      contentType: 'application/x-www-form-urlencoded',
+      body: new URLSearchParams({ token, phrase: 'DELETE USER' }).toString(),
+    })
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await res.text()).toBe('Internal Server Error')
+    expect(userRepo.deleteCalls).toEqual([USER.id])
+  })
+
+  it('missing or short HMAC key does not delete', async () => {
+    const userRepo = makeUserRepo()
+    const token = await buildToken('user')
+    const body = new URLSearchParams({ token, phrase: 'DELETE USER' }).toString()
+
+    const missing = await postAdmin(makeApp(goodAuth(), userRepo), '/admin/users/delete', {
+      origin: 'http://localhost',
+      contentType: 'application/x-www-form-urlencoded',
+      body,
+    }, {})
+    expect(missing.status).toBe(500)
+
+    const short = await postAdmin(makeApp(goodAuth(), userRepo), '/admin/users/delete', {
+      origin: 'http://localhost',
+      contentType: 'application/x-www-form-urlencoded',
+      body,
+    }, { HARD_DELETE_HMAC_KEY: SHORT_HMAC_KEY })
+    expect(short.status).toBe(500)
+    expect(userRepo.deleteCalls).toHaveLength(0)
+  })
+
+  it('album delete remains preview-only and does not call user delete', async () => {
+    const userRepo = makeUserRepo()
+    const albumRepo = makeAlbumRepo()
+    const token = await buildToken('album')
+    const res = await postAdmin(makeApp(goodAuth(), userRepo, albumRepo), '/admin/albums/delete', {
+      origin: 'http://localhost',
+      contentType: 'application/x-www-form-urlencoded',
+      body: new URLSearchParams({ token, phrase: 'DELETE ALBUM' }).toString(),
+    })
+    expect(res.status).toBe(200)
+    const body = await res.text()
+    expect(body).toContain('実際の hard delete はこの Phase 2 では有効化されていません')
+    expect(body).toContain(ALBUM.id)
+    expect(userRepo.deleteCalls).toHaveLength(0)
+    expect(albumRepo.deleteCalls).toHaveLength(0)
     expect(body).not.toContain('photoprism_album_uid')
   })
 

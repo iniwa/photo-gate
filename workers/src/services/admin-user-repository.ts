@@ -113,6 +113,10 @@ const GET_USER_FOR_HARD_DELETE_SQL = `
   FROM users
   WHERE id = ?`
 
+const DELETE_USER_SQL = `
+  DELETE FROM users
+  WHERE id = ?`
+
 export class AdminUserRepository {
   constructor(private readonly db: D1Database) {}
 
@@ -264,6 +268,25 @@ export class AdminUserRepository {
       id: r['id'] as string,
       display_name: r['display_name'] as string,
       enabled: enabled as 0 | 1,
+    }
+  }
+  async deleteUser(userId: string): Promise<void> {
+    if (!isValidId(userId)) throw databaseOperationError()
+
+    let result: D1Result
+    try {
+      result = await this.db
+        .prepare(DELETE_USER_SQL)
+        .bind(userId)
+        .run()
+    } catch {
+      throw databaseOperationError()
+    }
+    if (result === null || typeof result !== 'object' || result.success !== true) {
+      throw databaseOperationError()
+    }
+    if ((result as unknown as { meta?: { changes?: number } }).meta?.changes === 0) {
+      throw databaseOperationError()
     }
   }
 }

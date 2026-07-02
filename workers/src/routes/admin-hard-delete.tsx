@@ -18,7 +18,10 @@ type AdminContext = Context<{ Bindings: Env }>
 
 type HardDeleteDeps = {
   hmacKey: string | undefined
-  userRepo: { getUserForHardDelete(userId: string): Promise<UserForHardDelete | null> }
+  userRepo: {
+    getUserForHardDelete(userId: string): Promise<UserForHardDelete | null>
+    deleteUser(userId: string): Promise<void>
+  }
   albumRepo: { getAlbumForHardDelete(albumId: string): Promise<AlbumForHardDelete | null> }
   clock: () => Date
 }
@@ -226,6 +229,18 @@ async function handleHardDeletePreview(
     return c.html(<HardDeleteTargetMissingPage kind={kind} />)
   }
 
+  if (kind === 'user') {
+    const userTarget = target as UserForHardDelete
+    try {
+      await deps.userRepo.deleteUser(tokenPayload.targetId)
+    } catch {
+      return internalError(c)
+    }
+
+    c.header('Cache-Control', 'no-store')
+    return c.html(<UserHardDeleteCompletedPage target={userTarget} />)
+  }
+
   c.header('Cache-Control', 'no-store')
   return c.html(<HardDeleteNotEnabledPage kind={kind} targetId={tokenPayload.targetId} />)
 }
@@ -258,9 +273,15 @@ function HardDeleteConfirmPage({
         ← {targetLabel(kind)}一覧へ
       </a>
       <h1>{targetLabel(kind)}削除確認プレビュー</h1>
-      <p>
-        <strong>注意:</strong> これは Phase 2 の確認プレビューです。このフォームを送信しても実際の削除は行われません。
-      </p>
+      {isUser ? (
+        <p>
+          <strong>注意:</strong> このフォームを送信すると、ユーザー行を D1 から削除します。
+        </p>
+      ) : (
+        <p>
+          <strong>注意:</strong> これはアルバム削除の確認プレビューです。このフォームを送信しても実際の削除は行われません。
+        </p>
+      )}
       <table class="user-table">
         <tbody>
           <tr>
@@ -279,7 +300,7 @@ function HardDeleteConfirmPage({
       </table>
       {isUser ? (
         <p class="empty-note">
-          将来の実削除フェーズでは、このユーザー行の削除によりセッションとアルバム権限が cascade 削除されます。
+          このユーザー行の削除により、セッションとアルバム権限は D1 の cascade で削除されます。
         </p>
       ) : (
         <div>
@@ -300,7 +321,7 @@ function HardDeleteConfirmPage({
           確認フレーズ
           <input type="text" name="phrase" required autocomplete="off" />
         </label>
-        <button type="submit">確認送信（Phase 2: 削除なし）</button>
+        <button type="submit">{isUser ? 'ユーザーを完全削除' : '確認送信（Phase 2: 削除なし）'}</button>
       </form>
     </Layout>
   )
@@ -316,6 +337,37 @@ function HardDeleteNotEnabledPage({ kind, targetId }: { kind: TargetKind; target
       <p>確認フレーズ、署名トークン、対象の再読み取りに成功しました。</p>
       <p class="empty-note">
         対象 ID: {targetId}。実際の hard delete はこの Phase 2 では有効化されていません。D1 行、セッション、権限、R2 オブジェクト、sync-target は変更していません。
+      </p>
+    </Layout>
+  )
+}
+
+function UserHardDeleteCompletedPage({ target }: { target: UserForHardDelete }) {
+  return (
+    <Layout title="User hard delete completed">
+      <a class="back-link" href="/admin/users">
+        Back to users
+      </a>
+      <h1>User hard delete completed</h1>
+      <p>The user row was deleted from D1.</p>
+      <table class="user-table">
+        <tbody>
+          <tr>
+            <th>User ID</th>
+            <td>{target.id}</td>
+          </tr>
+          <tr>
+            <th>Display name</th>
+            <td>{target.display_name}</td>
+          </tr>
+          <tr>
+            <th>Previous status</th>
+            <td>{target.enabled === 1 ? 'enabled' : 'disabled'}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="empty-note">
+        Sessions and album permissions are removed by the existing D1 foreign-key cascade.
       </p>
     </Layout>
   )

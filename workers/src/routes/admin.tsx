@@ -38,6 +38,7 @@ export interface AdminRouteDeps {
     resetPassword(userId: string, passwordHash: string, updatedAt: string): Promise<void>
     updateDisplayName(userId: string, displayName: string, updatedAt: string): Promise<void>
     getUserForHardDelete?(userId: string): Promise<{ id: string; display_name: string; enabled: 0 | 1 } | null>
+    deleteUser?(userId: string): Promise<void>
   }
   albumRepo: {
     listAlbums(afterAlbumId?: string): Promise<AdminAlbumPage>
@@ -1131,8 +1132,8 @@ export function createAdminRoutes(
   })
 
 
-  // Admin hard-delete Phase 2 preview routes. They validate the two-step guard
-  // pattern only; no D1 DELETE, R2 delete, sync-target mutation, or cascade runs.
+  // Admin hard-delete routes. User delete performs the approved Phase 3 D1
+  // DELETE after the two-step guard; album delete remains preview-only.
   admin.post('/users/confirm-delete', async (c) => {
     const deps = depsFromEnv(c.env)
     return handleUserHardDeleteConfirm(c, {
@@ -1141,6 +1142,10 @@ export function createAdminRoutes(
         getUserForHardDelete: (userId) => {
           if (deps.userRepo.getUserForHardDelete === undefined) throw new Error('hard delete user repo unavailable')
           return deps.userRepo.getUserForHardDelete(userId)
+        },
+        deleteUser: (userId) => {
+          if (deps.userRepo.deleteUser === undefined) throw new Error('hard delete user repo unavailable')
+          return deps.userRepo.deleteUser(userId)
         },
       },
       albumRepo: {
@@ -1162,6 +1167,10 @@ export function createAdminRoutes(
           if (deps.userRepo.getUserForHardDelete === undefined) throw new Error('hard delete user repo unavailable')
           return deps.userRepo.getUserForHardDelete(userId)
         },
+        deleteUser: (userId) => {
+          if (deps.userRepo.deleteUser === undefined) throw new Error('hard delete user repo unavailable')
+          return deps.userRepo.deleteUser(userId)
+        },
       },
       albumRepo: {
         getAlbumForHardDelete: (albumId) => {
@@ -1182,6 +1191,10 @@ export function createAdminRoutes(
           if (deps.userRepo.getUserForHardDelete === undefined) throw new Error('hard delete user repo unavailable')
           return deps.userRepo.getUserForHardDelete(userId)
         },
+        deleteUser: (userId) => {
+          if (deps.userRepo.deleteUser === undefined) throw new Error('hard delete user repo unavailable')
+          return deps.userRepo.deleteUser(userId)
+        },
       },
       albumRepo: {
         getAlbumForHardDelete: (albumId) => {
@@ -1201,6 +1214,10 @@ export function createAdminRoutes(
         getUserForHardDelete: (userId) => {
           if (deps.userRepo.getUserForHardDelete === undefined) throw new Error('hard delete user repo unavailable')
           return deps.userRepo.getUserForHardDelete(userId)
+        },
+        deleteUser: (userId) => {
+          if (deps.userRepo.deleteUser === undefined) throw new Error('hard delete user repo unavailable')
+          return deps.userRepo.deleteUser(userId)
         },
       },
       albumRepo: {

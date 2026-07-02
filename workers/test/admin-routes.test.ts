@@ -79,6 +79,7 @@ type UserRepo = {
   resetPassword(userId: string, passwordHash: string, updatedAt: string): Promise<void>
   updateDisplayName(userId: string, displayName: string, updatedAt: string): Promise<void>
   getUserForHardDelete(userId: string): Promise<{ id: string; display_name: string; enabled: 0 | 1 } | null>
+  deleteUser(userId: string): Promise<void>
 }
 
 type MutationUserRepo = UserRepo & {
@@ -86,6 +87,7 @@ type MutationUserRepo = UserRepo & {
   createCalls: { userId: string; displayName: string; passwordHash: string; createdAt: string; updatedAt: string }[]
   resetCalls: { userId: string; passwordHash: string; updatedAt: string }[]
   updateDisplayNameCalls: { userId: string; displayName: string; updatedAt: string }[]
+  deleteCalls: string[]
 }
 
 function makeEmptyUserRepo(): UserRepo {
@@ -96,6 +98,7 @@ function makeEmptyUserRepo(): UserRepo {
     resetPassword: async () => {},
     updateDisplayName: async () => {},
     getUserForHardDelete: async () => null,
+    deleteUser: async () => {},
   }
 }
 
@@ -110,6 +113,7 @@ function makeUserRepo(
     resetPassword: async () => {},
     updateDisplayName: async () => {},
     getUserForHardDelete: async () => null,
+    deleteUser: async () => {},
   }
 }
 
@@ -123,6 +127,7 @@ function makeThrowingUserRepo(): UserRepo {
     resetPassword: async () => {},
     updateDisplayName: async () => {},
     getUserForHardDelete: async () => null,
+    deleteUser: async () => {},
   }
 }
 
@@ -131,11 +136,13 @@ function makeMutationUserRepo(): MutationUserRepo {
   const createCalls: { userId: string; displayName: string; passwordHash: string; createdAt: string; updatedAt: string }[] = []
   const resetCalls: { userId: string; passwordHash: string; updatedAt: string }[] = []
   const updateDisplayNameCalls: { userId: string; displayName: string; updatedAt: string }[] = []
+  const deleteCalls: string[] = []
   return {
     calls,
     createCalls,
     resetCalls,
     updateDisplayNameCalls,
+    deleteCalls,
     listUsers: async () => ({ users: [], hasMore: false }),
     setUserEnabled: async (userId, enabled, updatedAt) => { calls.push({ userId, enabled, updatedAt }) },
     createUser: async (userId, displayName, passwordHash, createdAt, updatedAt) => {
@@ -148,6 +155,7 @@ function makeMutationUserRepo(): MutationUserRepo {
       updateDisplayNameCalls.push({ userId, displayName, updatedAt })
     },
     getUserForHardDelete: async () => null,
+    deleteUser: async () => {},
   }
 }
 
@@ -159,6 +167,7 @@ function makeThrowingSetEnabledUserRepo(): UserRepo {
     resetPassword: async () => {},
     updateDisplayName: async () => {},
     getUserForHardDelete: async () => null,
+    deleteUser: async () => {},
   }
 }
 
@@ -170,6 +179,7 @@ function makeThrowingCreateUserRepo(): UserRepo {
     resetPassword: async () => {},
     updateDisplayName: async () => {},
     getUserForHardDelete: async () => null,
+    deleteUser: async () => {},
   }
 }
 
@@ -181,6 +191,7 @@ function makeThrowingResetPasswordRepo(): UserRepo {
     resetPassword: async () => { throw new Error('D1 exploded') },
     updateDisplayName: async () => {},
     getUserForHardDelete: async () => null,
+    deleteUser: async () => {},
   }
 }
 
@@ -192,6 +203,7 @@ function makeThrowingUpdateDisplayNameRepo(): UserRepo {
     resetPassword: async () => {},
     updateDisplayName: async () => { throw new Error('D1 exploded') },
     getUserForHardDelete: async () => null,
+    deleteUser: async () => {},
   }
 }
 

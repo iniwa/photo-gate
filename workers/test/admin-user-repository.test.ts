@@ -1297,3 +1297,76 @@ describe('AdminUserRepository.getUserForHardDelete', () => {
     await expect(new AdminUserRepository(throwing.db).getUserForHardDelete(VALID_ROW.id)).rejects.toThrow('database operation failed')
   })
 })
+
+// ---------------------------------------------------------------------------
+// deleteUser
+// ---------------------------------------------------------------------------
+
+describe('AdminUserRepository.deleteUser', () => {
+  it('uses the exact single-table DELETE statement', async () => {
+    const { db, queries } = makeMockDb([{ runResult: { success: true, meta: { changes: 1 } } }])
+    await new AdminUserRepository(db).deleteUser(VALID_USER_ID)
+    const sql = queries[0]?.sql ?? ''
+    expect(sql.trim()).toBe('DELETE FROM users\n  WHERE id = ?')
+    expect(sql).not.toMatch(/\bSELECT\b/i)
+    expect(sql).not.toMatch(/\bUPDATE\b/i)
+    expect(sql).not.toMatch(/\bINSERT\b/i)
+    expect(sql).not.toMatch(/\bJOIN\b/i)
+  })
+
+  it('binds userId as the only parameter', async () => {
+    const { db, queries } = makeMockDb([{ runResult: { success: true, meta: { changes: 1 } } }])
+    await new AdminUserRepository(db).deleteUser(VALID_USER_ID)
+    expect(queries[0]?.params).toEqual([VALID_USER_ID])
+    expect(queries[0]?.sql).not.toContain(VALID_USER_ID)
+  })
+
+  it('rejects invalid IDs before D1 is called', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(new AdminUserRepository(db).deleteUser('!bad!')).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+
+  it('resolves when D1 reports one changed row', async () => {
+    const { db } = makeMockDb([{ runResult: { success: true, meta: { changes: 1 } } }])
+    await expect(new AdminUserRepository(db).deleteUser(VALID_USER_ID)).resolves.toBeUndefined()
+  })
+
+  it('resolves when success=true and legacy D1 omits meta', async () => {
+    const { db } = makeMockDb([{ runResult: { success: true } }])
+    await expect(new AdminUserRepository(db).deleteUser(VALID_USER_ID)).resolves.toBeUndefined()
+  })
+
+  it('treats meta.changes=0 as a database operation failure', async () => {
+    const { db } = makeMockDb([{ runResult: { success: true, meta: { changes: 0 } } }])
+    await expect(new AdminUserRepository(db).deleteUser(VALID_USER_ID)).rejects.toThrow('database operation failed')
+  })
+
+  it('rejects failed or null D1 results', async () => {
+    const failed = makeMockDb([{ runResult: { success: false } }])
+    await expect(new AdminUserRepository(failed.db).deleteUser(VALID_USER_ID)).rejects.toThrow('database operation failed')
+
+    const nullResult = makeMockDb([{ runResult: null }])
+    await expect(new AdminUserRepository(nullResult.db).deleteUser(VALID_USER_ID)).rejects.toThrow('database operation failed')
+  })
+
+  it('sanitizes D1 exceptions', async () => {
+    const secret = 'password_hash secret session token'
+    const { db } = makeMockDb([{ throws: new Error(secret) }])
+    const err = await new AdminUserRepository(db).deleteUser(VALID_USER_ID).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(Error)
+    expect((err as Error).message).toBe('database operation failed')
+    expect((err as Error).message).not.toContain(secret)
+  })
+
+  it('does not reference sensitive or unrelated tables and columns', async () => {
+    const { db, queries } = makeMockDb([{ runResult: { success: true, meta: { changes: 1 } } }])
+    await new AdminUserRepository(db).deleteUser(VALID_USER_ID)
+    const sql = queries[0]?.sql ?? ''
+    expect(sql).not.toContain('password_hash')
+    expect(sql).not.toContain('sessions')
+    expect(sql).not.toContain('album_permissions')
+    expect(sql).not.toContain('albums')
+    expect(sql).not.toContain('photoprism_album_uid')
+  })
+})
