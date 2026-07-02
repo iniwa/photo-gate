@@ -261,7 +261,7 @@ async function genericNotFound(c: Parameters<MiddlewareHandler<PageEnv>>[0]): Pr
 function LoginPage({ showError }: { showError: boolean }) {
   return (
     <Layout title="ログイン">
-      <div class="login-box">
+      <div class="login-box viewer-login-box">
         <h1>photo-gate</h1>
         {showError ? (
           <p class="form-error" role="alert">
@@ -312,7 +312,7 @@ function AlbumsPage({
       )}
       {nextCursor !== undefined ? (
         <nav class="pagination">
-          <a class="next-link" href={`/albums?after=${nextCursor}`}>
+          <a class="next-link viewer-action" href={`/albums?after=${nextCursor}`}>
             次へ
           </a>
         </nav>
@@ -357,7 +357,7 @@ function AlbumDetailPage({
               <img src={`/img/${albumId}/thumb/${photo.id}`} alt={photo.title} loading="lazy" />
             </a>
             {downloadEnabled ? (
-              <a class="download-link" href={`/download/${albumId}/preview/${photo.id}`} download>
+              <a class="download-link viewer-action" href={`/download/${albumId}/preview/${photo.id}`} download>
                 ダウンロード
               </a>
             ) : null}
@@ -395,18 +395,18 @@ function PhotoPreviewPage({
       </div>
       <nav class="photo-nav">
         {prevPhotoId !== undefined ? (
-          <a class="prev-link" href={`/albums/${albumId}/photos/${prevPhotoId}`}>
+          <a class="prev-link viewer-action" href={`/albums/${albumId}/photos/${prevPhotoId}`}>
             前の写真
           </a>
         ) : null}
         {nextPhotoId !== undefined ? (
-          <a class="next-link" href={`/albums/${albumId}/photos/${nextPhotoId}`}>
+          <a class="next-link viewer-action" href={`/albums/${albumId}/photos/${nextPhotoId}`}>
             次の写真
           </a>
         ) : null}
       </nav>
       {downloadEnabled ? (
-        <a class="download-link" href={`/download/${albumId}/preview/${photo.id}`} download>
+        <a class="download-link viewer-action" href={`/download/${albumId}/preview/${photo.id}`} download>
           ダウンロード
         </a>
       ) : null}
