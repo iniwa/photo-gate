@@ -23,4 +23,10 @@ export interface Env {
    * request time.
    */
   R2_CLEANUP_HMAC_KEY?: string
+  /**
+   * HMAC-SHA-256 key for admin hard-delete confirmation-preview tokens.
+   * Registered as a Worker secret, not in source. Optional so missing values
+   * fail closed to 500 in the preview routes. Must be at least 32 characters.
+   */
+  HARD_DELETE_HMAC_KEY?: string
 }

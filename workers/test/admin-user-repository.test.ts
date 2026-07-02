@@ -1255,3 +1255,45 @@ describe('AdminUserRepository.updateDisplayName error sanitization', () => {
     ).rejects.toThrow('database operation failed')
   })
 })
+
+// ---------------------------------------------------------------------------
+// getUserForHardDelete
+// ---------------------------------------------------------------------------
+
+describe('AdminUserRepository.getUserForHardDelete', () => {
+  it('selects only id, display_name, enabled', async () => {
+    const { db, queries } = makeMockDb([{ first: { id: VALID_ROW.id, display_name: VALID_ROW.display_name, enabled: 1 } }])
+    await new AdminUserRepository(db).getUserForHardDelete(VALID_ROW.id)
+    expect(queries[0]?.sql).toContain('SELECT id, display_name, enabled')
+    expect(queries[0]?.sql).toContain('FROM users')
+    expect(queries[0]?.sql).not.toMatch(/SELECT\s+\*/i)
+    expect(queries[0]?.sql).not.toContain('password_hash')
+    expect(queries[0]?.sql).not.toContain('fail_count')
+    expect(queries[0]?.sql).not.toContain('locked_until')
+  })
+
+  it('binds userId as the only parameter', async () => {
+    const { db, queries } = makeMockDb([{ first: { id: VALID_ROW.id, display_name: VALID_ROW.display_name, enabled: 1 } }])
+    await new AdminUserRepository(db).getUserForHardDelete(VALID_ROW.id)
+    expect(queries[0]?.params).toEqual([VALID_ROW.id])
+  })
+
+  it('returns null for a missing user', async () => {
+    const { db } = makeMockDb([{ first: null }])
+    await expect(new AdminUserRepository(db).getUserForHardDelete(VALID_ROW.id)).resolves.toBeNull()
+  })
+
+  it('rejects invalid IDs before D1', async () => {
+    const { db, queries } = makeMockDb([{ first: null }])
+    await expect(new AdminUserRepository(db).getUserForHardDelete('!bad!')).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+
+  it('sanitizes malformed rows and D1 errors', async () => {
+    const malformed = makeMockDb([{ first: { id: VALID_ROW.id, display_name: VALID_ROW.display_name, enabled: 2 } }])
+    await expect(new AdminUserRepository(malformed.db).getUserForHardDelete(VALID_ROW.id)).rejects.toThrow('database operation failed')
+
+    const throwing = makeMockDb([{ throws: new Error('password_hash leaked') }])
+    await expect(new AdminUserRepository(throwing.db).getUserForHardDelete(VALID_ROW.id)).rejects.toThrow('database operation failed')
+  })
+})

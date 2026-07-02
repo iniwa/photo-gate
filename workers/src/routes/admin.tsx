@@ -20,6 +20,12 @@ import {
   handleR2CleanupConfirm,
   handleR2CleanupDelete,
 } from './admin-r2-cleanup-delete.js'
+import {
+  handleAlbumHardDeleteConfirm,
+  handleAlbumHardDeletePreview,
+  handleUserHardDeleteConfirm,
+  handleUserHardDeletePreview,
+} from './admin-hard-delete.js'
 
 type AdminEnv = { Bindings: Env }
 type AdminContext = Context<AdminEnv>
@@ -31,6 +37,7 @@ export interface AdminRouteDeps {
     createUser(userId: string, displayName: string, passwordHash: string, createdAt: string, updatedAt: string): Promise<void>
     resetPassword(userId: string, passwordHash: string, updatedAt: string): Promise<void>
     updateDisplayName(userId: string, displayName: string, updatedAt: string): Promise<void>
+    getUserForHardDelete?(userId: string): Promise<{ id: string; display_name: string; enabled: 0 | 1 } | null>
   }
   albumRepo: {
     listAlbums(afterAlbumId?: string): Promise<AdminAlbumPage>
@@ -38,6 +45,7 @@ export interface AdminRouteDeps {
     updatePublicMetadata(albumId: string, title: string, expiresAt: string | null, downloadEnabled: number, updatedAt: string): Promise<void>
     createAlbum(albumId: string, title: string, photoprismAlbumUid: string, expiresAt: string | null, downloadEnabled: 0 | 1, createdAt: string, updatedAt: string): Promise<void>
     getAlbumForSync(albumId: string): Promise<{ id: string; title: string; expires_at: string | null; download_enabled: 0 | 1 } | null>
+    getAlbumForHardDelete?(albumId: string): Promise<{ id: string; title: string; enabled: 0 | 1 } | null>
   }
   syncTargetRepo: {
     upsertTarget(albumId: string, catalogId: string, title: string, expiresAt: string | null, downloadEnabled: 0 | 1, publishedAt: string): Promise<void>
@@ -1122,6 +1130,89 @@ export function createAdminRoutes(
     return c.body(null, 303)
   })
 
+
+  // Admin hard-delete Phase 2 preview routes. They validate the two-step guard
+  // pattern only; no D1 DELETE, R2 delete, sync-target mutation, or cascade runs.
+  admin.post('/users/confirm-delete', async (c) => {
+    const deps = depsFromEnv(c.env)
+    return handleUserHardDeleteConfirm(c, {
+      hmacKey: c.env.HARD_DELETE_HMAC_KEY,
+      userRepo: {
+        getUserForHardDelete: (userId) => {
+          if (deps.userRepo.getUserForHardDelete === undefined) throw new Error('hard delete user repo unavailable')
+          return deps.userRepo.getUserForHardDelete(userId)
+        },
+      },
+      albumRepo: {
+        getAlbumForHardDelete: (albumId) => {
+          if (deps.albumRepo.getAlbumForHardDelete === undefined) throw new Error('hard delete album repo unavailable')
+          return deps.albumRepo.getAlbumForHardDelete(albumId)
+        },
+      },
+      clock: deps.clock,
+    })
+  })
+
+  admin.post('/users/delete', async (c) => {
+    const deps = depsFromEnv(c.env)
+    return handleUserHardDeletePreview(c, {
+      hmacKey: c.env.HARD_DELETE_HMAC_KEY,
+      userRepo: {
+        getUserForHardDelete: (userId) => {
+          if (deps.userRepo.getUserForHardDelete === undefined) throw new Error('hard delete user repo unavailable')
+          return deps.userRepo.getUserForHardDelete(userId)
+        },
+      },
+      albumRepo: {
+        getAlbumForHardDelete: (albumId) => {
+          if (deps.albumRepo.getAlbumForHardDelete === undefined) throw new Error('hard delete album repo unavailable')
+          return deps.albumRepo.getAlbumForHardDelete(albumId)
+        },
+      },
+      clock: deps.clock,
+    })
+  })
+
+  admin.post('/albums/confirm-delete', async (c) => {
+    const deps = depsFromEnv(c.env)
+    return handleAlbumHardDeleteConfirm(c, {
+      hmacKey: c.env.HARD_DELETE_HMAC_KEY,
+      userRepo: {
+        getUserForHardDelete: (userId) => {
+          if (deps.userRepo.getUserForHardDelete === undefined) throw new Error('hard delete user repo unavailable')
+          return deps.userRepo.getUserForHardDelete(userId)
+        },
+      },
+      albumRepo: {
+        getAlbumForHardDelete: (albumId) => {
+          if (deps.albumRepo.getAlbumForHardDelete === undefined) throw new Error('hard delete album repo unavailable')
+          return deps.albumRepo.getAlbumForHardDelete(albumId)
+        },
+      },
+      clock: deps.clock,
+    })
+  })
+
+  admin.post('/albums/delete', async (c) => {
+    const deps = depsFromEnv(c.env)
+    return handleAlbumHardDeletePreview(c, {
+      hmacKey: c.env.HARD_DELETE_HMAC_KEY,
+      userRepo: {
+        getUserForHardDelete: (userId) => {
+          if (deps.userRepo.getUserForHardDelete === undefined) throw new Error('hard delete user repo unavailable')
+          return deps.userRepo.getUserForHardDelete(userId)
+        },
+      },
+      albumRepo: {
+        getAlbumForHardDelete: (albumId) => {
+          if (deps.albumRepo.getAlbumForHardDelete === undefined) throw new Error('hard delete album repo unavailable')
+          return deps.albumRepo.getAlbumForHardDelete(albumId)
+        },
+      },
+      clock: deps.clock,
+    })
+  })
+
   // Any other method/path under /admin stays behind the guard and returns a
   // generic authenticated 404 — never the viewer router, never any data.
   admin.all('*', (c) => {
@@ -1244,6 +1335,10 @@ function AdminUsersPage({ page }: { page: AdminUserPage }) {
                     <input type="hidden" name="userId" value={u.id} />
                     <input type="password" name="password" required />
                     <button type="submit">パスワードリセット</button>
+                  </form>
+                  <form method="post" action="/admin/users/confirm-delete">
+                    <input type="hidden" name="userId" value={u.id} />
+                    <button type="submit">削除確認プレビュー</button>
                   </form>
                 </td>
               </tr>
@@ -1377,6 +1472,10 @@ function AdminAlbumsPage({
                   <form method="post" action="/admin/albums/sync-target-remove">
                     <input type="hidden" name="albumId" value={a.id} />
                     <button type="submit">同期ターゲット削除</button>
+                  </form>
+                  <form method="post" action="/admin/albums/confirm-delete">
+                    <input type="hidden" name="albumId" value={a.id} />
+                    <button type="submit">削除確認プレビュー</button>
                   </form>
                 </td>
               </tr>

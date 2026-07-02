@@ -1,0 +1,322 @@
+import type { Context } from 'hono'
+import type { Env } from '../types/env.js'
+import { Layout } from '../templates/layout.js'
+import { forbiddenResponse } from '../middleware/auth-response.js'
+import { isValidId } from '../services/repository-validation.js'
+import {
+  type HardDeleteCategory,
+  type HardDeleteTokenPayload,
+  HARD_DELETE_HMAC_MIN_KEY_LEN,
+  HARD_DELETE_TOKEN_TTL_MS,
+  signHardDeleteToken,
+  verifyHardDeleteToken,
+} from '../services/admin-hard-delete-token.js'
+import type { UserForHardDelete } from '../services/admin-user-repository.js'
+import type { AlbumForHardDelete } from '../services/admin-album-repository.js'
+
+type AdminContext = Context<{ Bindings: Env }>
+
+type HardDeleteDeps = {
+  hmacKey: string | undefined
+  userRepo: { getUserForHardDelete(userId: string): Promise<UserForHardDelete | null> }
+  albumRepo: { getAlbumForHardDelete(albumId: string): Promise<AlbumForHardDelete | null> }
+  clock: () => Date
+}
+
+type TargetKind = 'user' | 'album'
+
+const PHRASES: Record<TargetKind, string> = {
+  user: 'DELETE USER',
+  album: 'DELETE ALBUM',
+}
+
+const CATEGORIES: Record<TargetKind, HardDeleteCategory> = {
+  user: 'user-delete',
+  album: 'album-delete',
+}
+
+function isSameOrigin(c: AdminContext): boolean {
+  const origin = c.req.header('Origin')
+  if (origin === undefined || origin === 'null') return false
+  try {
+    return origin === new URL(c.req.url).origin
+  } catch {
+    return false
+  }
+}
+
+function isFormContentType(contentType: string | undefined): boolean {
+  if (contentType === undefined) return false
+  const parts = contentType.split(';')
+  if (parts[0]?.trim().toLowerCase() !== 'application/x-www-form-urlencoded') return false
+  if (parts.length === 1) return true
+  if (parts.length !== 2) return false
+  return /^charset\s*=\s*(?:"[^"]+"|[a-z0-9._-]+)$/i.test(parts[1]!.trim())
+}
+
+async function parseConfirmBody(c: AdminContext, fieldName: 'userId' | 'albumId'): Promise<string | null> {
+  let body: Record<string, string | File | (string | File)[]>
+  try {
+    body = await c.req.parseBody({ all: true })
+  } catch {
+    return null
+  }
+  if (Object.keys(body).length !== 1) return null
+  const id = body[fieldName]
+  if (typeof id !== 'string') return null
+  if (id.length === 0 || !isValidId(id)) return null
+  return id
+}
+
+async function parseDeleteBody(c: AdminContext): Promise<{ token: string; phrase: string } | null> {
+  let body: Record<string, string | File | (string | File)[]>
+  try {
+    body = await c.req.parseBody({ all: true })
+  } catch {
+    return null
+  }
+  if (Object.keys(body).length !== 2) return null
+  const token = body['token']
+  const phrase = body['phrase']
+  if (typeof token !== 'string' || typeof phrase !== 'string') return null
+  if (token.length === 0 || token.length > 2048) return null
+  if (phrase.length === 0 || phrase.length > 64) return null
+  return { token, phrase }
+}
+
+function badRequest(c: AdminContext): Response {
+  c.header('Cache-Control', 'no-store')
+  return c.text('Bad Request', 400)
+}
+
+function internalError(c: AdminContext): Response {
+  c.header('Cache-Control', 'no-store')
+  return c.text('Internal Server Error', 500)
+}
+
+async function readTarget(
+  deps: HardDeleteDeps,
+  kind: TargetKind,
+  targetId: string,
+): Promise<UserForHardDelete | AlbumForHardDelete | null> {
+  if (kind === 'user') return deps.userRepo.getUserForHardDelete(targetId)
+  return deps.albumRepo.getAlbumForHardDelete(targetId)
+}
+
+function targetLabel(kind: TargetKind): string {
+  return kind === 'user' ? 'ユーザー' : 'アルバム'
+}
+
+function targetBackHref(kind: TargetKind): string {
+  return kind === 'user' ? '/admin/users' : '/admin/albums'
+}
+
+function deleteAction(kind: TargetKind): string {
+  return kind === 'user' ? '/admin/users/delete' : '/admin/albums/delete'
+}
+
+export async function handleUserHardDeleteConfirm(c: AdminContext, deps: HardDeleteDeps): Promise<Response> {
+  return handleHardDeleteConfirm(c, deps, 'user')
+}
+
+export async function handleAlbumHardDeleteConfirm(c: AdminContext, deps: HardDeleteDeps): Promise<Response> {
+  return handleHardDeleteConfirm(c, deps, 'album')
+}
+
+export async function handleUserHardDeletePreview(c: AdminContext, deps: HardDeleteDeps): Promise<Response> {
+  return handleHardDeletePreview(c, deps, 'user')
+}
+
+export async function handleAlbumHardDeletePreview(c: AdminContext, deps: HardDeleteDeps): Promise<Response> {
+  return handleHardDeletePreview(c, deps, 'album')
+}
+
+async function handleHardDeleteConfirm(
+  c: AdminContext,
+  deps: HardDeleteDeps,
+  kind: TargetKind,
+): Promise<Response> {
+  if (!isSameOrigin(c)) return forbiddenResponse(c)
+  if (!isFormContentType(c.req.header('Content-Type'))) return badRequest(c)
+
+  const targetId = await parseConfirmBody(c, kind === 'user' ? 'userId' : 'albumId')
+  if (targetId === null) return badRequest(c)
+
+  if (typeof deps.hmacKey !== 'string' || deps.hmacKey.length < HARD_DELETE_HMAC_MIN_KEY_LEN) {
+    return internalError(c)
+  }
+
+  let target: UserForHardDelete | AlbumForHardDelete | null
+  try {
+    target = await readTarget(deps, kind, targetId)
+  } catch {
+    return internalError(c)
+  }
+
+  if (target === null) {
+    c.header('Cache-Control', 'no-store')
+    return c.html(<HardDeleteTargetMissingPage kind={kind} />)
+  }
+
+  let issuedAt: number
+  try {
+    issuedAt = deps.clock().valueOf()
+  } catch {
+    return internalError(c)
+  }
+
+  const payload: HardDeleteTokenPayload = {
+    schema: 1,
+    issuedAt,
+    expiresAt: issuedAt + HARD_DELETE_TOKEN_TTL_MS,
+    category: CATEGORIES[kind],
+    targetId,
+  }
+
+  let token: string
+  try {
+    token = await signHardDeleteToken(deps.hmacKey, payload)
+  } catch {
+    return internalError(c)
+  }
+
+  c.header('Cache-Control', 'no-store')
+  return c.html(<HardDeleteConfirmPage kind={kind} target={target} token={token} />)
+}
+
+async function handleHardDeletePreview(
+  c: AdminContext,
+  deps: HardDeleteDeps,
+  kind: TargetKind,
+): Promise<Response> {
+  if (!isSameOrigin(c)) return forbiddenResponse(c)
+  if (!isFormContentType(c.req.header('Content-Type'))) return badRequest(c)
+
+  const fields = await parseDeleteBody(c)
+  if (fields === null) return badRequest(c)
+  if (fields.phrase !== PHRASES[kind]) return badRequest(c)
+
+  if (typeof deps.hmacKey !== 'string' || deps.hmacKey.length < HARD_DELETE_HMAC_MIN_KEY_LEN) {
+    return internalError(c)
+  }
+
+  let nowMs: number
+  try {
+    nowMs = deps.clock().valueOf()
+  } catch {
+    return internalError(c)
+  }
+
+  let tokenPayload: HardDeleteTokenPayload | null
+  try {
+    tokenPayload = await verifyHardDeleteToken(deps.hmacKey, fields.token, nowMs)
+  } catch {
+    return badRequest(c)
+  }
+  if (tokenPayload === null || tokenPayload.category !== CATEGORIES[kind]) return badRequest(c)
+
+  let target: UserForHardDelete | AlbumForHardDelete | null
+  try {
+    target = await readTarget(deps, kind, tokenPayload.targetId)
+  } catch {
+    return internalError(c)
+  }
+  if (target === null) {
+    c.header('Cache-Control', 'no-store')
+    return c.html(<HardDeleteTargetMissingPage kind={kind} />)
+  }
+
+  c.header('Cache-Control', 'no-store')
+  return c.html(<HardDeleteNotEnabledPage kind={kind} targetId={tokenPayload.targetId} />)
+}
+
+function HardDeleteTargetMissingPage({ kind }: { kind: TargetKind }) {
+  return (
+    <Layout title={`${targetLabel(kind)}削除確認`}>
+      <a class="back-link" href={targetBackHref(kind)}>
+        ← {targetLabel(kind)}一覧へ
+      </a>
+      <h1>{targetLabel(kind)}削除確認</h1>
+      <p class="empty-note">対象は見つかりませんでした。削除フォームは表示しません。</p>
+    </Layout>
+  )
+}
+
+function HardDeleteConfirmPage({
+  kind,
+  target,
+  token,
+}: {
+  kind: TargetKind
+  target: UserForHardDelete | AlbumForHardDelete
+  token: string
+}) {
+  const isUser = kind === 'user'
+  return (
+    <Layout title={`${targetLabel(kind)}削除確認プレビュー`}>
+      <a class="back-link" href={targetBackHref(kind)}>
+        ← {targetLabel(kind)}一覧へ
+      </a>
+      <h1>{targetLabel(kind)}削除確認プレビュー</h1>
+      <p>
+        <strong>注意:</strong> これは Phase 2 の確認プレビューです。このフォームを送信しても実際の削除は行われません。
+      </p>
+      <table class="user-table">
+        <tbody>
+          <tr>
+            <th>{isUser ? 'ユーザーID' : 'アルバムID'}</th>
+            <td>{target.id}</td>
+          </tr>
+          <tr>
+            <th>{isUser ? '表示名' : 'タイトル'}</th>
+            <td>{isUser ? (target as UserForHardDelete).display_name : (target as AlbumForHardDelete).title}</td>
+          </tr>
+          <tr>
+            <th>状態</th>
+            <td>{target.enabled === 1 ? '有効' : '無効'}</td>
+          </tr>
+        </tbody>
+      </table>
+      {isUser ? (
+        <p class="empty-note">
+          将来の実削除フェーズでは、このユーザー行の削除によりセッションとアルバム権限が cascade 削除されます。
+        </p>
+      ) : (
+        <div>
+          <p class="empty-note">
+            この Phase 2 では sync-target は検査しません。将来の実削除フェーズでは D1 削除前に同期ターゲット削除が必要です。
+          </p>
+          <p class="empty-note">
+            将来のアルバム実削除でも R2 アルバムオブジェクトは削除しません。D1 行削除後に孤立プレフィックスとして扱います。
+          </p>
+        </div>
+      )}
+      <p>
+        続行するには <code>{PHRASES[kind]}</code> を正確に入力してください。トークンは 15 分間有効です。
+      </p>
+      <form method="post" action={deleteAction(kind)}>
+        <input type="hidden" name="token" value={token} />
+        <label>
+          確認フレーズ
+          <input type="text" name="phrase" required autocomplete="off" />
+        </label>
+        <button type="submit">確認送信（Phase 2: 削除なし）</button>
+      </form>
+    </Layout>
+  )
+}
+
+function HardDeleteNotEnabledPage({ kind, targetId }: { kind: TargetKind; targetId: string }) {
+  return (
+    <Layout title={`${targetLabel(kind)}削除プレビュー結果`}>
+      <a class="back-link" href={targetBackHref(kind)}>
+        ← {targetLabel(kind)}一覧へ
+      </a>
+      <h1>{targetLabel(kind)}削除プレビュー結果</h1>
+      <p>確認フレーズ、署名トークン、対象の再読み取りに成功しました。</p>
+      <p class="empty-note">
+        対象 ID: {targetId}。実際の hard delete はこの Phase 2 では有効化されていません。D1 行、セッション、権限、R2 オブジェクト、sync-target は変更していません。
+      </p>
+    </Layout>
+  )
+}

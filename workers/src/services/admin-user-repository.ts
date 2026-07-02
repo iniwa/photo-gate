@@ -5,6 +5,12 @@ import {
 } from './repository-validation.js'
 import type { AdminUserPage, AdminUserSummary } from '../types/admin-user.js'
 
+export interface UserForHardDelete {
+  id: string
+  display_name: string
+  enabled: 0 | 1
+}
+
 export const ADMIN_USERS_PAGE_SIZE = 50
 
 const DISPLAY_NAME_MAX_CODE_POINTS = 1024
@@ -100,6 +106,11 @@ const RESET_PASSWORD_SQL = `
 const UPDATE_DISPLAY_NAME_SQL = `
   UPDATE users
   SET display_name = ?, updated_at = ?
+  WHERE id = ?`
+
+const GET_USER_FOR_HARD_DELETE_SQL = `
+  SELECT id, display_name, enabled
+  FROM users
   WHERE id = ?`
 
 export class AdminUserRepository {
@@ -226,6 +237,33 @@ export class AdminUserRepository {
     }
     if ((result as unknown as { meta?: { changes?: number } }).meta?.changes === 0) {
       throw databaseOperationError()
+    }
+  }
+  async getUserForHardDelete(userId: string): Promise<UserForHardDelete | null> {
+    if (!isValidId(userId)) throw databaseOperationError()
+
+    let row: unknown
+    try {
+      row = await this.db
+        .prepare(GET_USER_FOR_HARD_DELETE_SQL)
+        .bind(userId)
+        .first<unknown>()
+    } catch {
+      throw databaseOperationError()
+    }
+    if (row === null || row === undefined) return null
+    if (typeof row !== 'object' || row === null) throw databaseOperationError()
+    const r = row as Record<string, unknown>
+
+    if (!isValidId(r['id'])) throw databaseOperationError()
+    if (!isSafeDisplayName(r['display_name'])) throw databaseOperationError()
+    const enabled = r['enabled']
+    if (enabled !== 0 && enabled !== 1) throw databaseOperationError()
+
+    return {
+      id: r['id'] as string,
+      display_name: r['display_name'] as string,
+      enabled: enabled as 0 | 1,
     }
   }
 }

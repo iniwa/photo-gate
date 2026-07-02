@@ -12,6 +12,12 @@ export interface AlbumForSync {
   download_enabled: 0 | 1
 }
 
+export interface AlbumForHardDelete {
+  id: string
+  title: string
+  enabled: 0 | 1
+}
+
 export const ADMIN_ALBUMS_PAGE_SIZE = 50
 
 const TITLE_MAX_CODE_POINTS = 1024
@@ -98,6 +104,11 @@ function isValidTitle(value: unknown): value is string {
 
 const GET_ALBUM_FOR_SYNC_SQL = `
   SELECT id, title, expires_at, download_enabled
+  FROM albums
+  WHERE id = ?`
+
+const GET_ALBUM_FOR_HARD_DELETE_SQL = `
+  SELECT id, title, enabled
   FROM albums
   WHERE id = ?`
 
@@ -255,6 +266,34 @@ export class AdminAlbumRepository {
       title: title,
       expires_at: expiresAt as string | null,
       download_enabled: downloadEnabled as 0 | 1,
+    }
+  }
+
+  async getAlbumForHardDelete(albumId: string): Promise<AlbumForHardDelete | null> {
+    if (!isValidId(albumId)) throw databaseOperationError()
+
+    let row: unknown
+    try {
+      row = await this.db
+        .prepare(GET_ALBUM_FOR_HARD_DELETE_SQL)
+        .bind(albumId)
+        .first<unknown>()
+    } catch {
+      throw databaseOperationError()
+    }
+    if (row === null || row === undefined) return null
+    if (typeof row !== 'object' || row === null) throw databaseOperationError()
+    const r = row as Record<string, unknown>
+
+    if (!isValidId(r['id'])) throw databaseOperationError()
+    if (!isSafeTitle(r['title'])) throw databaseOperationError()
+    const enabled = r['enabled']
+    if (enabled !== 0 && enabled !== 1) throw databaseOperationError()
+
+    return {
+      id: r['id'] as string,
+      title: r['title'] as string,
+      enabled: enabled as 0 | 1,
     }
   }
 

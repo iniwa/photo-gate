@@ -1308,3 +1308,46 @@ describe('AdminAlbumRepository.getAlbumForSync - DB error sanitization', () => {
     expect((err as Error).message).not.toContain('secret-db-token-sync')
   })
 })
+
+// ---------------------------------------------------------------------------
+// getAlbumForHardDelete
+// ---------------------------------------------------------------------------
+
+describe('AdminAlbumRepository.getAlbumForHardDelete', () => {
+  it('selects only id, title, enabled', async () => {
+    const { db, queries } = makeMockDb([{ first: { id: VALID_ROW.id, title: VALID_ROW.title, enabled: 1 } }])
+    await new AdminAlbumRepository(db).getAlbumForHardDelete(VALID_ROW.id)
+    expect(queries[0]?.sql).toContain('SELECT id, title, enabled')
+    expect(queries[0]?.sql).toContain('FROM albums')
+    expect(queries[0]?.sql).not.toMatch(/SELECT\s+\*/i)
+    expect(queries[0]?.sql).not.toContain('photoprism_album_uid')
+    expect(queries[0]?.sql).not.toContain('strip_exif')
+    expect(queries[0]?.sql).not.toContain('thumb_')
+    expect(queries[0]?.sql).not.toContain('preview_')
+  })
+
+  it('binds albumId as the only parameter', async () => {
+    const { db, queries } = makeMockDb([{ first: { id: VALID_ROW.id, title: VALID_ROW.title, enabled: 1 } }])
+    await new AdminAlbumRepository(db).getAlbumForHardDelete(VALID_ROW.id)
+    expect(queries[0]?.params).toEqual([VALID_ROW.id])
+  })
+
+  it('returns null for a missing album', async () => {
+    const { db } = makeMockDb([{ first: null }])
+    await expect(new AdminAlbumRepository(db).getAlbumForHardDelete(VALID_ROW.id)).resolves.toBeNull()
+  })
+
+  it('rejects invalid IDs before D1', async () => {
+    const { db, queries } = makeMockDb([{ first: null }])
+    await expect(new AdminAlbumRepository(db).getAlbumForHardDelete('!bad!')).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+
+  it('sanitizes malformed rows and D1 errors', async () => {
+    const malformed = makeMockDb([{ first: { id: VALID_ROW.id, title: VALID_ROW.title, enabled: 2 } }])
+    await expect(new AdminAlbumRepository(malformed.db).getAlbumForHardDelete(VALID_ROW.id)).rejects.toThrow('database operation failed')
+
+    const throwing = makeMockDb([{ throws: new Error('photoprism_album_uid leaked') }])
+    await expect(new AdminAlbumRepository(throwing.db).getAlbumForHardDelete(VALID_ROW.id)).rejects.toThrow('database operation failed')
+  })
+})

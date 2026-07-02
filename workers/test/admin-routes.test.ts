@@ -78,6 +78,7 @@ type UserRepo = {
   createUser(userId: string, displayName: string, passwordHash: string, createdAt: string, updatedAt: string): Promise<void>
   resetPassword(userId: string, passwordHash: string, updatedAt: string): Promise<void>
   updateDisplayName(userId: string, displayName: string, updatedAt: string): Promise<void>
+  getUserForHardDelete(userId: string): Promise<{ id: string; display_name: string; enabled: 0 | 1 } | null>
 }
 
 type MutationUserRepo = UserRepo & {
@@ -94,6 +95,7 @@ function makeEmptyUserRepo(): UserRepo {
     createUser: async () => {},
     resetPassword: async () => {},
     updateDisplayName: async () => {},
+    getUserForHardDelete: async () => null,
   }
 }
 
@@ -107,6 +109,7 @@ function makeUserRepo(
     createUser: async () => {},
     resetPassword: async () => {},
     updateDisplayName: async () => {},
+    getUserForHardDelete: async () => null,
   }
 }
 
@@ -119,6 +122,7 @@ function makeThrowingUserRepo(): UserRepo {
     createUser: async () => {},
     resetPassword: async () => {},
     updateDisplayName: async () => {},
+    getUserForHardDelete: async () => null,
   }
 }
 
@@ -143,6 +147,7 @@ function makeMutationUserRepo(): MutationUserRepo {
     updateDisplayName: async (userId, displayName, updatedAt) => {
       updateDisplayNameCalls.push({ userId, displayName, updatedAt })
     },
+    getUserForHardDelete: async () => null,
   }
 }
 
@@ -153,6 +158,7 @@ function makeThrowingSetEnabledUserRepo(): UserRepo {
     createUser: async () => {},
     resetPassword: async () => {},
     updateDisplayName: async () => {},
+    getUserForHardDelete: async () => null,
   }
 }
 
@@ -163,6 +169,7 @@ function makeThrowingCreateUserRepo(): UserRepo {
     createUser: async () => { throw new Error('D1 exploded') },
     resetPassword: async () => {},
     updateDisplayName: async () => {},
+    getUserForHardDelete: async () => null,
   }
 }
 
@@ -173,6 +180,7 @@ function makeThrowingResetPasswordRepo(): UserRepo {
     createUser: async () => {},
     resetPassword: async () => { throw new Error('D1 exploded') },
     updateDisplayName: async () => {},
+    getUserForHardDelete: async () => null,
   }
 }
 
@@ -183,6 +191,7 @@ function makeThrowingUpdateDisplayNameRepo(): UserRepo {
     createUser: async () => {},
     resetPassword: async () => {},
     updateDisplayName: async () => { throw new Error('D1 exploded') },
+    getUserForHardDelete: async () => null,
   }
 }
 
@@ -192,6 +201,7 @@ type AlbumRepo = {
   updatePublicMetadata(albumId: string, title: string, expiresAt: string | null, downloadEnabled: number, updatedAt: string): Promise<void>
   createAlbum(albumId: string, title: string, photoprismAlbumUid: string, expiresAt: string | null, downloadEnabled: 0 | 1, createdAt: string, updatedAt: string): Promise<void>
   getAlbumForSync(albumId: string): Promise<AlbumForSync | null>
+  getAlbumForHardDelete(albumId: string): Promise<{ id: string; title: string; enabled: 0 | 1 } | null>
 }
 
 type MutationAlbumRepo = AlbumRepo & {
@@ -207,6 +217,7 @@ function makeEmptyAlbumRepo(): AlbumRepo {
     updatePublicMetadata: async () => {},
     createAlbum: async () => {},
     getAlbumForSync: async () => null,
+    getAlbumForHardDelete: async () => null,
   }
 }
 
@@ -220,6 +231,7 @@ function makeAlbumRepo(
     updatePublicMetadata: async () => {},
     createAlbum: async () => {},
     getAlbumForSync: async () => null,
+    getAlbumForHardDelete: async () => null,
   }
 }
 
@@ -232,6 +244,7 @@ function makeThrowingAlbumRepo(): AlbumRepo {
     updatePublicMetadata: async () => {},
     createAlbum: async () => {},
     getAlbumForSync: async () => null,
+    getAlbumForHardDelete: async () => null,
   }
 }
 
@@ -252,6 +265,7 @@ function makeMutationAlbumRepo(): MutationAlbumRepo {
       createAlbumCalls.push({ albumId, title, photoprismAlbumUid, expiresAt, downloadEnabled, createdAt, updatedAt })
     },
     getAlbumForSync: async () => null,
+    getAlbumForHardDelete: async () => null,
   }
 }
 
@@ -262,6 +276,7 @@ function makeThrowingSetEnabledAlbumRepo(): AlbumRepo {
     updatePublicMetadata: async () => {},
     createAlbum: async () => {},
     getAlbumForSync: async () => null,
+    getAlbumForHardDelete: async () => null,
   }
 }
 
@@ -272,6 +287,7 @@ function makeThrowingUpdatePublicMetadataRepo(): AlbumRepo {
     updatePublicMetadata: async () => { throw new Error('D1 exploded') },
     createAlbum: async () => {},
     getAlbumForSync: async () => null,
+    getAlbumForHardDelete: async () => null,
   }
 }
 
@@ -282,6 +298,7 @@ function makeThrowingCreateAlbumRepo(): AlbumRepo {
     updatePublicMetadata: async () => {},
     createAlbum: async () => { throw new Error('D1 exploded') },
     getAlbumForSync: async () => null,
+    getAlbumForHardDelete: async () => null,
   }
 }
 
@@ -5839,6 +5856,7 @@ function makeAlbumRepoWithSync(album: AlbumForSync | null): AlbumRepo {
     updatePublicMetadata: async () => {},
     createAlbum: async () => {},
     getAlbumForSync: async () => album,
+    getAlbumForHardDelete: async () => null,
   }
 }
 
@@ -5849,6 +5867,7 @@ function makeThrowingGetAlbumForSyncRepo(): AlbumRepo {
     updatePublicMetadata: async () => {},
     createAlbum: async () => {},
     getAlbumForSync: async () => { throw new Error('D1 exploded') },
+    getAlbumForHardDelete: async () => null,
   }
 }
 
@@ -6307,6 +6326,7 @@ function makeAlbumRepoWithSyncSpy(album: AlbumForSync | null): { repo: AlbumRepo
     updatePublicMetadata: async () => {},
     createAlbum: async () => {},
     getAlbumForSync: async () => { count++; return album },
+    getAlbumForHardDelete: async () => null,
   }
   return { repo, callCount: () => count }
 }
