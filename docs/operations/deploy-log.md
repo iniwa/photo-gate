@@ -38,6 +38,7 @@
 
 | 2026-07-02 | (pending - CI run `28558926039`) | `2b0941f` | CI (workers-ci) | Viewer UI cleanup Phase 1. Improves server-rendered viewer presentation for login, album list, album detail grid, photo preview page, and shared viewer controls without changing routes, auth, D1, R2, manifest parsing, image responses, or download responses. CI run `28558926039` succeeded. Unauthenticated smoke passed: `/` 200, `/albums` 303 to `/`, `/img/probe-nonexistent` 401 no-store, `/download/probe-album/preview/probe-photo` 401 no-store, `/albums/probe-album/photos/probe-photo` 303 to `/`, and `/admin` Cloudflare Access 302. |
 | 2026-07-02 | `6c017227-9d7d-47f8-b40b-e6392684269a` | `2260c2e` | CI (workers-ci) | Admin user hard delete Phase 3. `POST /admin/users/delete` now performs `DELETE FROM users WHERE id = ?` only after admin Access, same-origin, form validation, valid HMAC token, exact `DELETE USER` phrase, and target re-read. CI run `28570581091` succeeded. Unauthenticated smoke passed: `/` 200, `/admin` and `/admin/users` Cloudflare Access 302, `/api/probe` 401. Album hard delete remains preview-only; no R2/Docker/PhotoPrism/NAS/Portainer path added. |
+| 2026-07-02 | `1f567a03-33e3-47ac-8fbe-20c6e525010d` | `2260c2e` | `wrangler secret put` (OAuth) | Registered missing `HARD_DELETE_HMAC_KEY` after production hard-delete form returned fail-closed `500 Internal Server Error`. Secret list confirms `HARD_DELETE_HMAC_KEY` is present. Unauthenticated smoke passed: `/` 200, `/admin` and `/admin/users` Cloudflare Access 302, `/api/probe` 401. |
 
 ## Docker sync (ghcr.io/iniwa/photo-gate-sync)
 
@@ -64,12 +65,12 @@
 - Deployment path: Gitea push -> GitHub mirror -> workers-ci deploy
 - Scope: Admin hard-delete Phase 2 confirmation-preview routes only. Actual D1 DELETE, R2 delete, session/permission cascade, and sync-target mutation remain disabled.
 - Smoke: `/` 200; `/albums` 303 -> `/`; `/img/probe-nonexistent` 401 no-store; `/download/probe-album/preview/probe-photo` 401 no-store; `/albums/probe-album/photos/probe-photo` 303 -> `/`; `/admin` and `/admin/users` Cloudflare Access 302.
-- Operator follow-up: register `HARD_DELETE_HMAC_KEY` before using the authenticated confirm-delete preview forms in production.
+- Operator follow-up: complete authenticated browser smoke for a disposable test user if a live delete proof is needed. `HARD_DELETE_HMAC_KEY` is now registered.
 ## 2026-07-02 — Admin user hard delete Phase 3
 
 - Commit: `2260c2e` (`feat: enable admin user hard delete`)
 - GitHub Actions: workers-ci run `28570581091` — success
-- Worker version ID: `6c017227-9d7d-47f8-b40b-e6392684269a`
+- Worker version ID: `6c017227-9d7d-47f8-b40b-e6392684269a` (code deploy), then `1f567a03-33e3-47ac-8fbe-20c6e525010d` after `HARD_DELETE_HMAC_KEY` secret registration
 - Deployment path: Gitea push -> GitHub mirror -> workers-ci deploy
 - Scope: `POST /admin/users/delete` performs the approved D1 user hard delete after the existing two-step HMAC confirmation flow. Sessions and album permissions are removed by existing D1 cascade. Album hard delete remains preview-only; no R2 deletion, no sync-target mutation, no Docker/PhotoPrism/NAS/Portainer path.
-- Smoke: `/` 200; `/admin` and `/admin/users` Cloudflare Access 302; `/api/probe` 401. Authenticated browser confirmation and any real user deletion require operator action.
+- Smoke: `/` 200; `/admin` and `/admin/users` Cloudflare Access 302; `/api/probe` 401. Initial authenticated hard-delete POST failed closed with 500 because `HARD_DELETE_HMAC_KEY` was missing; the secret was then registered and verified by `wrangler secret list`. Authenticated browser confirmation and any real user deletion require operator action.

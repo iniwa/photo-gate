@@ -16,7 +16,7 @@ documented for incident use.
 ## Production Topology
 
 - Workers viewer: https://share-photo.iniwach.com
-  (commit `2260c2e`; active version ID `6c017227-9d7d-47f8-b40b-e6392684269a`; latest observed Workers CI run `28570581091`;
+  (commit `2260c2e`; active version ID `1f567a03-33e3-47ac-8fbe-20c6e525010d`; latest observed Workers CI run `28570581091`;
   cron 18:00 UTC session cleanup).
   Includes manual sync request writer, admin sync UI, status schema 2, user display-name editing, permission assignment dropdowns, D1-only album creation, browser-owned sync-target routes, the `/admin/albums` catalog picker, `/admin/r2-cleanup` dry-run plus deletion-preview routes (actual deletion disabled), preview JPEG download, manifest schema 2 viewing support, unique preview download filenames, the authenticated viewer photo preview page, viewer UI cleanup Phase 1, admin hard-delete confirmation-preview Phase 2, and user hard delete Phase 3 (users only; album hard delete remains preview-only).
   The former `photo-gate.iniwaiwana.workers.dev` route is disabled and returns 404.
@@ -113,7 +113,7 @@ documented for incident use.
   publication and picker smoke passed after the `0.4.1` type-filter hotfix.
   Album deletion and final hardening remain; dry-run R2 cleanup report is
   deployed (CI run `28415678789`, commit `b3c434c`, 2026-06-30); reupload
-  suppression is live-smoke verified. Viewer preview download is deployed (`c9409c1`), schema 2 manifests are accepted by Workers (`84bcbcf`), preview download filenames include photo IDs (`8ef26a4`), and the viewer photo preview page with previous/next navigation is deployed (`797682e`, CI run `28428506984`). Viewer UI cleanup Phase 1 is deployed (`2b0941f`, CI run `28558926039`) and changes presentation only. Admin hard-delete confirmation-preview Phase 2 is deployed (`ea39fc4`, CI run `28560281394`); `HARD_DELETE_HMAC_KEY` is registered; user hard delete Phase 3 is deployed (`2260c2e`, version `6c017227-9d7d-47f8-b40b-e6392684269a`, CI run `28570581091`) and album hard delete remains preview-only. RAW/original download is explicitly deferred pending a separate ADR because it would change current privacy boundaries.
+  suppression is live-smoke verified. Viewer preview download is deployed (`c9409c1`), schema 2 manifests are accepted by Workers (`84bcbcf`), preview download filenames include photo IDs (`8ef26a4`), and the viewer photo preview page with previous/next navigation is deployed (`797682e`, CI run `28428506984`). Viewer UI cleanup Phase 1 is deployed (`2b0941f`, CI run `28558926039`) and changes presentation only. Admin hard-delete confirmation-preview Phase 2 is deployed (`ea39fc4`, CI run `28560281394`); user hard delete Phase 3 is deployed (`2260c2e`, CI run `28570581091`), `HARD_DELETE_HMAC_KEY` is registered, active version is `1f567a03-33e3-47ac-8fbe-20c6e525010d`, and album hard delete remains preview-only. RAW/original download is explicitly deferred pending a separate ADR because it would change current privacy boundaries.
 
 ## Verification Baseline
 

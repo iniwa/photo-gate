@@ -45,7 +45,7 @@ Admin hard delete controls are partially implemented:
   with 15-minute HMAC tokens and exact typed phrases.
 - DONE: `HARD_DELETE_HMAC_KEY` is registered in production.
 - DONE: Phase 3 user hard delete is deployed at commit `2260c2e`, Worker version
-  `6c017227-9d7d-47f8-b40b-e6392684269a`, workers-ci run `28570581091`. It
+  `6c017227-9d7d-47f8-b40b-e6392684269a`, followed by active secret-change version `1f567a03-33e3-47ac-8fbe-20c6e525010d`, workers-ci run `28570581091`. It
   deletes only `users` after the existing two-step guard and relies on D1
   cascade for sessions and album permissions.
 - PENDING: Album hard delete remains separate and, if later approved, must
@@ -587,6 +587,6 @@ Important: actual hard delete remains disabled. No D1 DELETE, R2 delete, session
 Implemented, verified, committed, pushed, and deployed Admin Hard Delete Controls Phase 3 for users only.
 Commit `2260c2e` adds `AdminUserRepository.deleteUser`, wires `POST /admin/users/delete` to execute `DELETE FROM users WHERE id = ?` after admin Access, same-origin, strict form parsing, valid HMAC token, exact `DELETE USER` phrase, and D1 target re-read. Album hard delete remains preview-only.
 
-Verification: Workers lint/typecheck/test/build/audit passed locally; test count is 2416 tests across 40 files. GitHub workers-ci run `28570581091` completed success and deployed Worker version `6c017227-9d7d-47f8-b40b-e6392684269a`. Production unauthenticated smoke passed for `/`, `/admin`, `/admin/users`, and `/api/probe`.
+Verification: Workers lint/typecheck/test/build/audit passed locally; test count is 2416 tests across 40 files. GitHub workers-ci run `28570581091` completed success and deployed Worker version `6c017227-9d7d-47f8-b40b-e6392684269a`; `HARD_DELETE_HMAC_KEY` was then registered, producing active version `1f567a03-33e3-47ac-8fbe-20c6e525010d`. Production unauthenticated smoke passed for `/`, `/admin`, `/admin/users`, and `/api/probe`.
 
 Important: This enables real D1 user-row deletion in production. Sessions and album permissions are removed by existing D1 cascade. No R2 deletion, album deletion, sync-target mutation, Docker/PhotoPrism/NAS/Portainer path, or migration was added.
