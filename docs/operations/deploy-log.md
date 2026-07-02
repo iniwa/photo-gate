@@ -54,3 +54,13 @@
 公開済みだが Pi で稼働しなかったタグ: `0.1.0`〜`0.1.2`(初期イテレー
 ション)、`0.1.3`/`0.1.4` は CI ゲートで失敗したため未公開(欠番)、
 `0.1.5` は trixie 移行版(0.1.6 で即置換)。
+
+## 2026-07-02 — Admin hard-delete preview flow
+
+- Commit: `ea39fc4` (`feat: add admin hard-delete preview flow`)
+- GitHub Actions: workers-ci run `28560281394` — success
+- Worker version ID: pending (not retrieved from this environment)
+- Deployment path: Gitea push -> GitHub mirror -> workers-ci deploy
+- Scope: Admin hard-delete Phase 2 confirmation-preview routes only. Actual D1 DELETE, R2 delete, session/permission cascade, and sync-target mutation remain disabled.
+- Smoke: `/` 200; `/albums` 303 -> `/`; `/img/probe-nonexistent` 401 no-store; `/download/probe-album/preview/probe-photo` 401 no-store; `/albums/probe-album/photos/probe-photo` 303 -> `/`; `/admin` and `/admin/users` Cloudflare Access 302.
+- Operator follow-up: register `HARD_DELETE_HMAC_KEY` before using the authenticated confirm-delete preview forms in production.

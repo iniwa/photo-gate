@@ -16,9 +16,9 @@ documented for incident use.
 ## Production Topology
 
 - Workers viewer: https://share-photo.iniwach.com
-  (commit `2b0941f`; active version ID pending; latest observed Workers CI run `28558926039`;
+  (commit `ea39fc4`; active version ID pending; latest observed Workers CI run `28560281394`;
   cron 18:00 UTC session cleanup).
-  Includes manual sync request writer, admin sync UI, status schema 2, user display-name editing, permission assignment dropdowns, D1-only album creation, browser-owned sync-target routes, the `/admin/albums` catalog picker, `/admin/r2-cleanup` dry-run plus deletion-preview routes (actual deletion disabled), preview JPEG download, manifest schema 2 viewing support, unique preview download filenames, the authenticated viewer photo preview page, and viewer UI cleanup Phase 1.
+  Includes manual sync request writer, admin sync UI, status schema 2, user display-name editing, permission assignment dropdowns, D1-only album creation, browser-owned sync-target routes, the `/admin/albums` catalog picker, `/admin/r2-cleanup` dry-run plus deletion-preview routes (actual deletion disabled), preview JPEG download, manifest schema 2 viewing support, unique preview download filenames, the authenticated viewer photo preview page, viewer UI cleanup Phase 1, and admin hard-delete confirmation-preview Phase 2 (actual hard delete disabled).
   The former `photo-gate.iniwaiwana.workers.dev` route is disabled and returns 404.
 - D1 `photo-gate` (APAC, id `de77cb73-497a-4a41-bd1c-151fd907be3f`),
   2 migrations applied. One user, one album, one permission row (real
@@ -113,11 +113,11 @@ documented for incident use.
   publication and picker smoke passed after the `0.4.1` type-filter hotfix.
   Album deletion and final hardening remain; dry-run R2 cleanup report is
   deployed (CI run `28415678789`, commit `b3c434c`, 2026-06-30); reupload
-  suppression is live-smoke verified. Viewer preview download is deployed (`c9409c1`), schema 2 manifests are accepted by Workers (`84bcbcf`), preview download filenames include photo IDs (`8ef26a4`), and the viewer photo preview page with previous/next navigation is deployed (`797682e`, CI run `28428506984`). Viewer UI cleanup Phase 1 is deployed (`2b0941f`, CI run `28558926039`) and changes presentation only. RAW/original download is explicitly deferred pending a separate ADR because it would change current privacy boundaries.
+  suppression is live-smoke verified. Viewer preview download is deployed (`c9409c1`), schema 2 manifests are accepted by Workers (`84bcbcf`), preview download filenames include photo IDs (`8ef26a4`), and the viewer photo preview page with previous/next navigation is deployed (`797682e`, CI run `28428506984`). Viewer UI cleanup Phase 1 is deployed (`2b0941f`, CI run `28558926039`) and changes presentation only. Admin hard-delete confirmation-preview Phase 2 is deployed (`ea39fc4`, CI run `28560281394`); actual hard delete remains disabled and `HARD_DELETE_HMAC_KEY` must be registered before using the preview forms. RAW/original download is explicitly deferred pending a separate ADR because it would change current privacy boundaries.
 
 ## Verification Baseline
 
-- Workers: 894 tests / 24 files, lint, typecheck, build, audit green
+- Workers: 2403 tests / 40 files, lint, typecheck, build, audit green
   in the last production baseline (2026-06-12). The reviewed `/admin`
   authentication foundation, read-only inventories, permission mutations,
   album and user enable/disable controls, user create/password-reset controls,
@@ -127,7 +127,7 @@ documented for incident use.
   the `/admin/r2-cleanup` dry-run report plus deletion-preview Phase 2, preview JPEG download, manifest schema 2 viewing support, unique preview download filenames, viewer photo preview page, and viewer UI cleanup Phase 1 pass lint, typecheck, build, production
   dependency audit, and 2370 tests / 38 files locally (2026-07-02).
   Production audit is clean; full `npm audit` remains blocked by devDependency
-  advisories in Wrangler/Miniflare. Workers CI deployed commit `2b0941f` as
+  advisories in Wrangler/Miniflare. Workers CI deployed commit `ea39fc4` as
   CI run `28558926039` (2026-07-02); unauthenticated production smoke confirms
   viewer login page, /albums 303 redirect, /img 401 no-store, /api 401 no-store,
   `/download/probe-album/preview/probe-photo` 401 no-store, `/albums/probe-album/photos/probe-photo` 303 to `/`, /admin Cloudflare Access 302 intercept, and /admin/r2-cleanup Cloudflare Access

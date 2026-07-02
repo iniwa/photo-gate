@@ -37,12 +37,18 @@ Viewer photo download, preview-page, and first UI cleanup work is deployed:
 - DEFERRED: RAW/original download is not implemented. It requires a separate
   ADR because it would change the current no-originals/no-NAS/no-PhotoPrism
   viewer boundary.
-Admin hard delete controls are designed but not implemented:
+Admin hard delete controls are partially implemented as preview-only:
 
 - DONE: ADR `docs/decisions/2026-06-30-admin-hard-delete-controls.md` decides
   user and album hard-delete safety boundaries.
-- NOT IMPLEMENTED: no hard-delete routes, D1 DELETE handlers, HMAC secret,
-  deployment, or production action exists yet.
+- DONE: Phase 2 confirmation-preview routes are deployed at commit `ea39fc4`
+  with 15-minute HMAC tokens and exact typed phrases. Actual hard delete is not
+  enabled.
+- PENDING OPERATOR ACTION: register `HARD_DELETE_HMAC_KEY` before using the
+  authenticated preview forms in production. Missing/short secret fails closed
+  with 500.
+- NOT IMPLEMENTED: D1 DELETE handlers, session/permission cascade execution,
+  sync-target removal, and R2 deletion remain absent.
 - The normal operational path remains disable/depublish. Album hard delete, if
   later approved, must remove the matching browser-owned sync-target entry from
   `ops/sync-targets.json` before deleting the D1 album row, and must not delete
@@ -568,3 +574,12 @@ browser-complete sync is deployed. Track B reupload suppression is implemented,
 released as Docker `0.4.2`, applied in Portainer, and live-smoke verified. The
 next priority is the remaining Level 3 administration/cleanup work: album
 deletion design, R2 dry-run cleanup reporting, and final hardening.
+
+## 2026-07-02 — Admin hard-delete preview flow deployed
+
+Implemented, verified, committed, pushed, and deployed Admin Hard Delete Controls Phase 2 preview-only flow.
+Commit `ea39fc4` added HMAC-signed 15-minute confirmation tokens, four admin POST routes (`/admin/users/confirm-delete`, `/admin/users/delete`, `/admin/albums/confirm-delete`, `/admin/albums/delete`), read-only D1 target summaries, admin list preview buttons, tests, README updates, and archived the handoff.
+
+Verification: Workers lint/typecheck/test/build/audit passed locally; test count is 2403 tests across 40 files. GitHub workers-ci run `28560281394` completed success. Production unauthenticated smoke passed for `/`, `/albums`, `/img/probe-nonexistent`, `/download/probe-album/preview/probe-photo`, `/albums/probe-album/photos/probe-photo`, `/admin`, and `/admin/users`.
+
+Important: actual hard delete remains disabled. No D1 DELETE, R2 delete, session/permission cascade, or sync-target mutation is implemented. Production use of the confirmation-preview forms requires registering `HARD_DELETE_HMAC_KEY`; without it, preview POST routes fail closed with 500.

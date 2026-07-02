@@ -152,7 +152,7 @@ This is a priority-ordered plan. Update status as implementation progresses.
       Worker on 2026-06-29 (version `b1874993`, commit `de74227`). Docker
       `0.4.1` is released from tag `sync-v0.4.1` and deployed in Portainer;
       catalog publication and picker smoke passed after the type-filter hotfix.
-      Album deletion hard-delete controls have an ADR but remain unimplemented; reupload suppression is complete.)
+      Album deletion hard-delete controls have an ADR and Phase 2 confirmation-preview routes deployed; actual hard delete remains disabled; reupload suppression is complete.)
 - [x] Implement sync request/status administration.
       (Read-only `/admin/sync` status page, Docker best-effort R2 status
       publication, fixed private request object at `ops/sync-request.json`,
