@@ -47,6 +47,7 @@ export interface AdminRouteDeps {
     createAlbum(albumId: string, title: string, photoprismAlbumUid: string, expiresAt: string | null, downloadEnabled: 0 | 1, createdAt: string, updatedAt: string): Promise<void>
     getAlbumForSync(albumId: string): Promise<{ id: string; title: string; expires_at: string | null; download_enabled: 0 | 1 } | null>
     getAlbumForHardDelete?(albumId: string): Promise<{ id: string; title: string; enabled: 0 | 1 } | null>
+    deleteAlbum?(albumId: string): Promise<void>
   }
   syncTargetRepo: {
     upsertTarget(albumId: string, catalogId: string, title: string, expiresAt: string | null, downloadEnabled: 0 | 1, publishedAt: string): Promise<void>
@@ -1153,7 +1154,12 @@ export function createAdminRoutes(
           if (deps.albumRepo.getAlbumForHardDelete === undefined) throw new Error('hard delete album repo unavailable')
           return deps.albumRepo.getAlbumForHardDelete(albumId)
         },
+        deleteAlbum: (albumId) => {
+          if (deps.albumRepo.deleteAlbum === undefined) throw new Error('hard delete album repo unavailable')
+          return deps.albumRepo.deleteAlbum(albumId)
+        },
       },
+      syncTargetRepo: { removeTarget: (albumId, publishedAt) => deps.syncTargetRepo.removeTarget(albumId, publishedAt) },
       clock: deps.clock,
     })
   })
@@ -1177,7 +1183,12 @@ export function createAdminRoutes(
           if (deps.albumRepo.getAlbumForHardDelete === undefined) throw new Error('hard delete album repo unavailable')
           return deps.albumRepo.getAlbumForHardDelete(albumId)
         },
+        deleteAlbum: (albumId) => {
+          if (deps.albumRepo.deleteAlbum === undefined) throw new Error('hard delete album repo unavailable')
+          return deps.albumRepo.deleteAlbum(albumId)
+        },
       },
+      syncTargetRepo: { removeTarget: (albumId, publishedAt) => deps.syncTargetRepo.removeTarget(albumId, publishedAt) },
       clock: deps.clock,
     })
   })
@@ -1201,7 +1212,12 @@ export function createAdminRoutes(
           if (deps.albumRepo.getAlbumForHardDelete === undefined) throw new Error('hard delete album repo unavailable')
           return deps.albumRepo.getAlbumForHardDelete(albumId)
         },
+        deleteAlbum: (albumId) => {
+          if (deps.albumRepo.deleteAlbum === undefined) throw new Error('hard delete album repo unavailable')
+          return deps.albumRepo.deleteAlbum(albumId)
+        },
       },
+      syncTargetRepo: { removeTarget: (albumId, publishedAt) => deps.syncTargetRepo.removeTarget(albumId, publishedAt) },
       clock: deps.clock,
     })
   })
@@ -1225,7 +1241,12 @@ export function createAdminRoutes(
           if (deps.albumRepo.getAlbumForHardDelete === undefined) throw new Error('hard delete album repo unavailable')
           return deps.albumRepo.getAlbumForHardDelete(albumId)
         },
+        deleteAlbum: (albumId) => {
+          if (deps.albumRepo.deleteAlbum === undefined) throw new Error('hard delete album repo unavailable')
+          return deps.albumRepo.deleteAlbum(albumId)
+        },
       },
+      syncTargetRepo: { removeTarget: (albumId, publishedAt) => deps.syncTargetRepo.removeTarget(albumId, publishedAt) },
       clock: deps.clock,
     })
   })

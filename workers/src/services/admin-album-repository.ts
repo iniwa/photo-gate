@@ -112,6 +112,10 @@ const GET_ALBUM_FOR_HARD_DELETE_SQL = `
   FROM albums
   WHERE id = ?`
 
+const DELETE_ALBUM_SQL = `
+  DELETE FROM albums
+  WHERE id = ?`
+
 const UPDATE_PUBLIC_METADATA_SQL = `
   UPDATE albums
   SET title = ?, expires_at = ?, download_enabled = ?, updated_at = ?
@@ -297,6 +301,22 @@ export class AdminAlbumRepository {
     }
   }
 
+  async deleteAlbum(albumId: string): Promise<void> {
+    if (!isValidId(albumId)) throw databaseOperationError()
+
+    let result: D1Result
+    try {
+      result = await this.db.prepare(DELETE_ALBUM_SQL).bind(albumId).run()
+    } catch {
+      throw databaseOperationError()
+    }
+    if (result === null || typeof result !== 'object' || result.success !== true) {
+      throw databaseOperationError()
+    }
+    if ((result as unknown as { meta?: { changes?: number } }).meta?.changes === 0) {
+      throw databaseOperationError()
+    }
+  }
   async updatePublicMetadata(
     albumId: string,
     title: string,

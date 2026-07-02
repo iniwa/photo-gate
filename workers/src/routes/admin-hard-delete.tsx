@@ -22,7 +22,11 @@ type HardDeleteDeps = {
     getUserForHardDelete(userId: string): Promise<UserForHardDelete | null>
     deleteUser(userId: string): Promise<void>
   }
-  albumRepo: { getAlbumForHardDelete(albumId: string): Promise<AlbumForHardDelete | null> }
+  albumRepo: {
+    getAlbumForHardDelete(albumId: string): Promise<AlbumForHardDelete | null>
+    deleteAlbum(albumId: string): Promise<void>
+  }
+  syncTargetRepo: { removeTarget(albumId: string, publishedAt: string): Promise<void> }
   clock: () => Date
 }
 
@@ -241,8 +245,28 @@ async function handleHardDeletePreview(
     return c.html(<UserHardDeleteCompletedPage target={userTarget} />)
   }
 
+  const albumTarget = target as AlbumForHardDelete
+  let publishedAt: string
+  try {
+    publishedAt = deps.clock().toISOString()
+  } catch {
+    return internalError(c)
+  }
+
+  try {
+    await deps.syncTargetRepo.removeTarget(tokenPayload.targetId, publishedAt)
+  } catch {
+    return internalError(c)
+  }
+
+  try {
+    await deps.albumRepo.deleteAlbum(tokenPayload.targetId)
+  } catch {
+    return internalError(c)
+  }
+
   c.header('Cache-Control', 'no-store')
-  return c.html(<HardDeleteNotEnabledPage kind={kind} targetId={tokenPayload.targetId} />)
+  return c.html(<AlbumHardDeleteCompletedPage target={albumTarget} />)
 }
 
 function HardDeleteTargetMissingPage({ kind }: { kind: TargetKind }) {
@@ -321,23 +345,8 @@ function HardDeleteConfirmPage({
           確認フレーズ
           <input type="text" name="phrase" required autocomplete="off" />
         </label>
-        <button type="submit">{isUser ? 'ユーザーを完全削除' : '確認送信（Phase 2: 削除なし）'}</button>
+        <button type="submit">{isUser ? 'ユーザーを完全削除' : 'アルバムを完全削除'}</button>
       </form>
-    </Layout>
-  )
-}
-
-function HardDeleteNotEnabledPage({ kind, targetId }: { kind: TargetKind; targetId: string }) {
-  return (
-    <Layout title={`${targetLabel(kind)}削除プレビュー結果`}>
-      <a class="back-link" href={targetBackHref(kind)}>
-        ← {targetLabel(kind)}一覧へ
-      </a>
-      <h1>{targetLabel(kind)}削除プレビュー結果</h1>
-      <p>確認フレーズ、署名トークン、対象の再読み取りに成功しました。</p>
-      <p class="empty-note">
-        対象 ID: {targetId}。実際の hard delete はこの Phase 2 では有効化されていません。D1 行、セッション、権限、R2 オブジェクト、sync-target は変更していません。
-      </p>
     </Layout>
   )
 }
@@ -368,6 +377,40 @@ function UserHardDeleteCompletedPage({ target }: { target: UserForHardDelete }) 
       </table>
       <p class="empty-note">
         Sessions and album permissions are removed by the existing D1 foreign-key cascade.
+      </p>
+    </Layout>
+  )
+}
+
+function AlbumHardDeleteCompletedPage({ target }: { target: AlbumForHardDelete }) {
+  return (
+    <Layout title="Album hard delete completed">
+      <a class="back-link" href="/admin/albums">
+        Back to albums
+      </a>
+      <h1>Album hard delete completed</h1>
+      <p>The sync target entry was removed first, then the album row was deleted from D1.</p>
+      <table class="user-table">
+        <tbody>
+          <tr>
+            <th>Album ID</th>
+            <td>{target.id}</td>
+          </tr>
+          <tr>
+            <th>Title</th>
+            <td>{target.title}</td>
+          </tr>
+          <tr>
+            <th>Previous status</th>
+            <td>{target.enabled === 1 ? 'enabled' : 'disabled'}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="empty-note">
+        Album permissions are removed by the existing D1 foreign-key cascade.
+      </p>
+      <p class="empty-note">
+        R2 album objects were not deleted. They may appear as orphaned prefixes in /admin/r2-cleanup.
       </p>
     </Layout>
   )

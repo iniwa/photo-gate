@@ -23,7 +23,13 @@ type UserRepo = {
 }
 type AlbumRepo = {
   getAlbumForHardDelete(albumId: string): Promise<typeof ALBUM | null>
+  deleteAlbum(albumId: string): Promise<void>
   deleteCalls: string[]
+}
+
+type SyncTargetRepo = {
+  removeTarget(albumId: string, publishedAt: string): Promise<void>
+  removeCalls: { albumId: string; publishedAt: string }[]
 }
 
 function goodAuth(): ResolveAuth {
@@ -42,8 +48,27 @@ function makeUserRepo(user: typeof USER | null = USER): UserRepo {
   }
 }
 
-function makeAlbumRepo(album: typeof ALBUM | null = ALBUM): AlbumRepo {
-  return { getAlbumForHardDelete: async () => album, deleteCalls: [] }
+function makeAlbumRepo(album: typeof ALBUM | null = ALBUM, order?: string[]): AlbumRepo {
+  const deleteCalls: string[] = []
+  return {
+    getAlbumForHardDelete: async () => album,
+    deleteAlbum: async (albumId) => {
+      order?.push('deleteAlbum')
+      deleteCalls.push(albumId)
+    },
+    deleteCalls,
+  }
+}
+
+function makeSyncTargetRepo(order?: string[]): SyncTargetRepo {
+  const removeCalls: { albumId: string; publishedAt: string }[] = []
+  return {
+    removeCalls,
+    removeTarget: async (albumId, publishedAt) => {
+      order?.push('removeTarget')
+      removeCalls.push({ albumId, publishedAt })
+    },
+  }
 }
 
 function makeThrowingUserRepo(): UserRepo {
@@ -57,10 +82,29 @@ function makeThrowingUserRepo(): UserRepo {
 function makeThrowingAlbumRepo(): AlbumRepo {
   return {
     getAlbumForHardDelete: async () => { throw new Error('photoprism_album_uid must not escape') },
+    deleteAlbum: async () => { throw new Error('delete must not run') },
     deleteCalls: [],
   }
 }
 
+function makeThrowingDeleteAlbumRepo(): AlbumRepo {
+  const deleteCalls: string[] = []
+  return {
+    getAlbumForHardDelete: async () => ALBUM,
+    deleteAlbum: async (albumId) => {
+      deleteCalls.push(albumId)
+      throw new Error('D1 delete failed with photoprism_album_uid detail')
+    },
+    deleteCalls,
+  }
+}
+
+function makeThrowingSyncTargetRepo(): SyncTargetRepo {
+  return {
+    removeCalls: [],
+    removeTarget: async () => { throw new Error('R2 sync-target failure with ops/sync-targets.json detail') },
+  }
+}
 function makeThrowingDeleteUserRepo(): UserRepo {
   const deleteCalls: string[] = []
   return {
@@ -77,6 +121,8 @@ function makeApp(
   resolveAuth: ResolveAuth,
   userRepo: UserRepo = makeUserRepo(),
   albumRepo: AlbumRepo = makeAlbumRepo(),
+  syncTargetRepo: SyncTargetRepo = makeSyncTargetRepo(),
+  clock: () => Date = () => new Date(NOW_TS),
 ): Hono {
   const app = new Hono()
   app.route(
@@ -98,17 +144,18 @@ function makeApp(
         createAlbum: async () => {},
         getAlbumForSync: async () => null,
         getAlbumForHardDelete: albumRepo.getAlbumForHardDelete,
+        deleteAlbum: albumRepo.deleteAlbum,
       },
       permissionRepo: {
         listAssignmentOptions: async () => ({ users: [], albums: [], permissions: [], hasMore: false }),
         grantPermission: async () => {},
         revokePermission: async () => {},
       },
-      clock: () => new Date(NOW_TS),
+      clock,
       opsRepo: { getSummary: async () => ({ generatedAt: NOW_TS, users: { total: 0, enabled: 0, disabled: 0, locked: 0 }, albums: { total: 0, enabled: 0, disabled: 0, expired: 0, expiringSoon: 0, downloadable: 0 }, permissions: { total: 0 }, sessions: { total: 0, expired: 0 } }) },
       syncStatusRepo: { getStatus: async () => ({ status: 'missing' as const }) },
       syncRequestRepo: { writeRequest: async () => {}, getPendingRequest: async () => ({ status: 'missing' as const }) },
-      syncTargetRepo: { upsertTarget: async () => {}, removeTarget: async () => {} },
+      syncTargetRepo: { upsertTarget: async () => {}, removeTarget: syncTargetRepo.removeTarget },
       catalogRepo: { getCatalog: async () => ({ status: 'missing' as const }), hasCatalogId: async () => false },
       r2CleanupRepo: { getReport: async () => ({ albums: [], malformedCount: 0, malformedBytes: 0, excludedOpsCount: 0, truncated: false }) },
     })),
@@ -372,22 +419,103 @@ describe('admin hard delete preview routes', () => {
     expect(userRepo.deleteCalls).toHaveLength(0)
   })
 
-  it('album delete remains preview-only and does not call user delete', async () => {
+  it('album delete removes sync target, deletes the album once, and returns the completed page', async () => {
+    const order: string[] = []
     const userRepo = makeUserRepo()
-    const albumRepo = makeAlbumRepo()
+    const albumRepo = makeAlbumRepo(ALBUM, order)
+    const syncTargetRepo = makeSyncTargetRepo(order)
     const token = await buildToken('album')
-    const res = await postAdmin(makeApp(goodAuth(), userRepo, albumRepo), '/admin/albums/delete', {
+    const res = await postAdmin(makeApp(goodAuth(), userRepo, albumRepo, syncTargetRepo), '/admin/albums/delete', {
       origin: 'http://localhost',
       contentType: 'application/x-www-form-urlencoded',
       body: new URLSearchParams({ token, phrase: 'DELETE ALBUM' }).toString(),
     })
     expect(res.status).toBe(200)
+    expect(res.headers.get('cache-control')).toBe('no-store')
     const body = await res.text()
-    expect(body).toContain('実際の hard delete はこの Phase 2 では有効化されていません')
+    expect(body).toContain('Album hard delete completed')
     expect(body).toContain(ALBUM.id)
+    expect(body).toContain(ALBUM.title)
+    expect(body).toContain('disabled')
+    expect(body).toContain('Album permissions are removed by the existing D1 foreign-key cascade')
+    expect(body).toContain('R2 album objects were not deleted')
+    expect(body).toContain('/admin/r2-cleanup')
     expect(userRepo.deleteCalls).toHaveLength(0)
-    expect(albumRepo.deleteCalls).toHaveLength(0)
+    expect(syncTargetRepo.removeCalls).toEqual([{ albumId: ALBUM.id, publishedAt: NOW_TS }])
+    expect(albumRepo.deleteCalls).toEqual([ALBUM.id])
+    expect(order).toEqual(['removeTarget', 'deleteAlbum'])
+    expect(body).not.toContain('password_hash')
+    expect(body).not.toContain('token_hash')
     expect(body).not.toContain('photoprism_album_uid')
+    expect(body).not.toContain('ops/sync-targets.json')
+    expect(body).not.toContain('albums/')
+    expect(body).not.toContain('DELETE FROM')
+  })
+
+  it('user delete does not remove sync targets or delete albums', async () => {
+    const userRepo = makeUserRepo()
+    const albumRepo = makeAlbumRepo()
+    const syncTargetRepo = makeSyncTargetRepo()
+    const token = await buildToken('user')
+    const res = await postAdmin(makeApp(goodAuth(), userRepo, albumRepo, syncTargetRepo), '/admin/users/delete', {
+      origin: 'http://localhost',
+      contentType: 'application/x-www-form-urlencoded',
+      body: new URLSearchParams({ token, phrase: 'DELETE USER' }).toString(),
+    })
+    expect(res.status).toBe(200)
+    expect(userRepo.deleteCalls).toEqual([USER.id])
+    expect(syncTargetRepo.removeCalls).toHaveLength(0)
+    expect(albumRepo.deleteCalls).toHaveLength(0)
+  })
+
+  it('clock failure after album re-read does not remove sync target or delete the album', async () => {
+    const albumRepo = makeAlbumRepo()
+    const syncTargetRepo = makeSyncTargetRepo()
+    const token = await buildToken('album')
+    const res = await postAdmin(
+      makeApp(goodAuth(), makeUserRepo(), albumRepo, syncTargetRepo, (() => { let calls = 0; return () => { calls += 1; if (calls === 1) return new Date(NOW_TS); throw new Error('clock failure with secret') } })()),
+      '/admin/albums/delete',
+      {
+        origin: 'http://localhost',
+        contentType: 'application/x-www-form-urlencoded',
+        body: new URLSearchParams({ token, phrase: 'DELETE ALBUM' }).toString(),
+      },
+    )
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await res.text()).toBe('Internal Server Error')
+    expect(syncTargetRepo.removeCalls).toHaveLength(0)
+    expect(albumRepo.deleteCalls).toHaveLength(0)
+  })
+
+  it('sync-target removal failure does not delete the album', async () => {
+    const albumRepo = makeAlbumRepo()
+    const token = await buildToken('album')
+    const res = await postAdmin(makeApp(goodAuth(), makeUserRepo(), albumRepo, makeThrowingSyncTargetRepo()), '/admin/albums/delete', {
+      origin: 'http://localhost',
+      contentType: 'application/x-www-form-urlencoded',
+      body: new URLSearchParams({ token, phrase: 'DELETE ALBUM' }).toString(),
+    })
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await res.text()).toBe('Internal Server Error')
+    expect(albumRepo.deleteCalls).toHaveLength(0)
+  })
+
+  it('album D1 delete failure returns sanitized 500 after sync-target removal', async () => {
+    const albumRepo = makeThrowingDeleteAlbumRepo()
+    const syncTargetRepo = makeSyncTargetRepo()
+    const token = await buildToken('album')
+    const res = await postAdmin(makeApp(goodAuth(), makeUserRepo(), albumRepo, syncTargetRepo), '/admin/albums/delete', {
+      origin: 'http://localhost',
+      contentType: 'application/x-www-form-urlencoded',
+      body: new URLSearchParams({ token, phrase: 'DELETE ALBUM' }).toString(),
+    })
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await res.text()).toBe('Internal Server Error')
+    expect(syncTargetRepo.removeCalls).toHaveLength(1)
+    expect(albumRepo.deleteCalls).toEqual([ALBUM.id])
   })
 
   it('returns sanitized missing-target page after valid token and phrase', async () => {

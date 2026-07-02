@@ -214,6 +214,7 @@ type AlbumRepo = {
   createAlbum(albumId: string, title: string, photoprismAlbumUid: string, expiresAt: string | null, downloadEnabled: 0 | 1, createdAt: string, updatedAt: string): Promise<void>
   getAlbumForSync(albumId: string): Promise<AlbumForSync | null>
   getAlbumForHardDelete(albumId: string): Promise<{ id: string; title: string; enabled: 0 | 1 } | null>
+  deleteAlbum(albumId: string): Promise<void>
 }
 
 type MutationAlbumRepo = AlbumRepo & {
@@ -230,6 +231,7 @@ function makeEmptyAlbumRepo(): AlbumRepo {
     createAlbum: async () => {},
     getAlbumForSync: async () => null,
     getAlbumForHardDelete: async () => null,
+    deleteAlbum: async () => {},
   }
 }
 
@@ -244,6 +246,7 @@ function makeAlbumRepo(
     createAlbum: async () => {},
     getAlbumForSync: async () => null,
     getAlbumForHardDelete: async () => null,
+    deleteAlbum: async () => {},
   }
 }
 
@@ -257,6 +260,7 @@ function makeThrowingAlbumRepo(): AlbumRepo {
     createAlbum: async () => {},
     getAlbumForSync: async () => null,
     getAlbumForHardDelete: async () => null,
+    deleteAlbum: async () => {},
   }
 }
 
@@ -278,6 +282,7 @@ function makeMutationAlbumRepo(): MutationAlbumRepo {
     },
     getAlbumForSync: async () => null,
     getAlbumForHardDelete: async () => null,
+    deleteAlbum: async () => {},
   }
 }
 
@@ -289,6 +294,7 @@ function makeThrowingSetEnabledAlbumRepo(): AlbumRepo {
     createAlbum: async () => {},
     getAlbumForSync: async () => null,
     getAlbumForHardDelete: async () => null,
+    deleteAlbum: async () => {},
   }
 }
 
@@ -300,6 +306,7 @@ function makeThrowingUpdatePublicMetadataRepo(): AlbumRepo {
     createAlbum: async () => {},
     getAlbumForSync: async () => null,
     getAlbumForHardDelete: async () => null,
+    deleteAlbum: async () => {},
   }
 }
 
@@ -311,6 +318,7 @@ function makeThrowingCreateAlbumRepo(): AlbumRepo {
     createAlbum: async () => { throw new Error('D1 exploded') },
     getAlbumForSync: async () => null,
     getAlbumForHardDelete: async () => null,
+    deleteAlbum: async () => {},
   }
 }
 
@@ -5869,6 +5877,7 @@ function makeAlbumRepoWithSync(album: AlbumForSync | null): AlbumRepo {
     createAlbum: async () => {},
     getAlbumForSync: async () => album,
     getAlbumForHardDelete: async () => null,
+    deleteAlbum: async () => {},
   }
 }
 
@@ -5880,6 +5889,7 @@ function makeThrowingGetAlbumForSyncRepo(): AlbumRepo {
     createAlbum: async () => {},
     getAlbumForSync: async () => { throw new Error('D1 exploded') },
     getAlbumForHardDelete: async () => null,
+    deleteAlbum: async () => {},
   }
 }
 
@@ -6339,6 +6349,7 @@ function makeAlbumRepoWithSyncSpy(album: AlbumForSync | null): { repo: AlbumRepo
     createAlbum: async () => {},
     getAlbumForSync: async () => { count++; return album },
     getAlbumForHardDelete: async () => null,
+    deleteAlbum: async () => {},
   }
   return { repo, callCount: () => count }
 }

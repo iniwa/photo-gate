@@ -1351,3 +1351,82 @@ describe('AdminAlbumRepository.getAlbumForHardDelete', () => {
     await expect(new AdminAlbumRepository(throwing.db).getAlbumForHardDelete(VALID_ROW.id)).rejects.toThrow('database operation failed')
   })
 })
+
+// ---------------------------------------------------------------------------
+// deleteAlbum
+// ---------------------------------------------------------------------------
+
+const DELETE_ALBUM_ID = 'album-delete-001'
+
+async function issueDeleteAlbum(config: NonNullable<Parameters<typeof makeMockDb>[0]>[number] = {}) {
+  const { db, queries } = makeMockDb([config])
+  await new AdminAlbumRepository(db).deleteAlbum(DELETE_ALBUM_ID)
+  return queries
+}
+
+describe('AdminAlbumRepository.deleteAlbum SQL structure', () => {
+  it('uses exactly DELETE FROM albums WHERE id = ?', async () => {
+    const queries = await issueDeleteAlbum()
+    expect(queries[0]?.sql.replace(/\s+/g, ' ').trim()).toBe('DELETE FROM albums WHERE id = ?')
+  })
+
+  it('binds albumId as the only parameter', async () => {
+    const queries = await issueDeleteAlbum()
+    expect(queries[0]?.params).toEqual([DELETE_ALBUM_ID])
+  })
+
+  it('does not reference sensitive or unrelated data', async () => {
+    const queries = await issueDeleteAlbum()
+    const sql = queries[0]?.sql ?? ''
+    expect(sql).not.toMatch(/photoprism_album_uid/i)
+    expect(sql).not.toMatch(/users/i)
+    expect(sql).not.toMatch(/sessions/i)
+    expect(sql).not.toMatch(/album_permissions/i)
+    expect(sql).not.toMatch(/sync-targets/i)
+    expect(sql).not.toMatch(/r2/i)
+  })
+})
+
+describe('AdminAlbumRepository.deleteAlbum validation and success', () => {
+  it('rejects invalid album IDs before D1', async () => {
+    const { db, queries } = makeMockDb([])
+    await expect(new AdminAlbumRepository(db).deleteAlbum('!bad!')).rejects.toThrow('database operation failed')
+    expect(queries).toHaveLength(0)
+  })
+
+  it('resolves on default successful D1 result', async () => {
+    const { db } = makeMockDb([{}])
+    await expect(new AdminAlbumRepository(db).deleteAlbum(DELETE_ALBUM_ID)).resolves.toBeUndefined()
+  })
+
+  it('resolves when meta.changes is positive', async () => {
+    const { db } = makeMockDb([{ runResult: { success: true, meta: { changes: 1 } } }])
+    await expect(new AdminAlbumRepository(db).deleteAlbum(DELETE_ALBUM_ID)).resolves.toBeUndefined()
+  })
+})
+
+describe('AdminAlbumRepository.deleteAlbum error sanitization', () => {
+  it('rejects success=false', async () => {
+    const { db } = makeMockDb([{ runResult: { success: false } }])
+    await expect(new AdminAlbumRepository(db).deleteAlbum(DELETE_ALBUM_ID)).rejects.toThrow('database operation failed')
+  })
+
+  it('rejects null result', async () => {
+    const { db } = makeMockDb([{ runResult: null }])
+    await expect(new AdminAlbumRepository(db).deleteAlbum(DELETE_ALBUM_ID)).rejects.toThrow('database operation failed')
+  })
+
+  it('rejects meta.changes = 0', async () => {
+    const { db } = makeMockDb([{ runResult: { success: true, meta: { changes: 0 } } }])
+    await expect(new AdminAlbumRepository(db).deleteAlbum(DELETE_ALBUM_ID)).rejects.toThrow('database operation failed')
+  })
+
+  it('sanitizes thrown D1 errors', async () => {
+    const secret = 'photoprism_album_uid secret detail'
+    const { db } = makeMockDb([{ throws: new Error(secret) }])
+    const err = await new AdminAlbumRepository(db).deleteAlbum(DELETE_ALBUM_ID).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(Error)
+    expect((err as Error).message).toBe('database operation failed')
+    expect((err as Error).message).not.toContain(secret)
+  })
+})
