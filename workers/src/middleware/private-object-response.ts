@@ -69,16 +69,10 @@ export function objectInternalErrorResponse(): Response {
   })
 }
 
-/** Maximum character length of the base filename (before `.jpg` extension). */
+/** Maximum character length of the title-derived base filename (before extension). */
 const FILENAME_MAX_LEN = 100
 
-/**
- * Derives a safe ASCII filename from a manifest photo title and always includes
- * photoId for per-photo uniqueness. Strips control chars, path separators,
- * non-ASCII, collapses whitespace to underscores, caps length, and always appends `.jpg`.
- * Never includes album IDs, R2 keys, bucket names, PhotoPrism UIDs, or source hashes.
- */
-export function buildDownloadFilename(rawTitle: string, photoId: string): string {
+function buildDownloadBase(rawTitle: string, photoId: string): string {
   const stripped = rawTitle
     .replace(/[\x00-\x1f\x7f]/g, '')
     .replace(/[/\\:"*?<>|]/g, '')
@@ -86,17 +80,32 @@ export function buildDownloadFilename(rawTitle: string, photoId: string): string
     .replace(/\s+/g, '_')
     .trim()
     .slice(0, FILENAME_MAX_LEN)
-  if (stripped.length === 0) return `${photoId.slice(0, FILENAME_MAX_LEN)}.jpg`
+  if (stripped.length === 0) return photoId
   const suffix = `_${photoId}`
+  if (suffix.length >= FILENAME_MAX_LEN) return photoId
   const titleMaxLen = Math.max(0, FILENAME_MAX_LEN - suffix.length)
-  return `${stripped.slice(0, titleMaxLen)}${suffix}`.slice(0, FILENAME_MAX_LEN) + '.jpg'
+  return `${stripped.slice(0, titleMaxLen)}${suffix}`.slice(0, FILENAME_MAX_LEN)
+}
+
+/**
+ * Derives a safe ASCII `.jpg` filename for preview downloads.
+ * Never includes album IDs, R2 keys, bucket names, PhotoPrism UIDs, or source hashes.
+ */
+export function buildDownloadFilename(rawTitle: string, photoId: string): string {
+  return buildDownloadBase(rawTitle, photoId) + '.jpg'
+}
+
+/**
+ * Derives a safe ASCII `.webp` filename for thumb downloads.
+ * Never includes album IDs, R2 keys, bucket names, PhotoPrism UIDs, or source hashes.
+ */
+export function buildThumbDownloadFilename(rawTitle: string, photoId: string): string {
+  return buildDownloadBase(rawTitle, photoId) + '.webp'
 }
 
 /**
  * Constructs a 200 attachment response for an authenticated private preview download.
- * Content-Type is fixed to image/jpeg; Content-Disposition is attachment with the
- * caller-supplied safe filename. No R2 object metadata, ETag, Last-Modified,
- * Content-Length, Content-Range, or stored Cache-Control is forwarded.
+ * Content-Type is fixed to image/jpeg. No R2 object metadata is forwarded.
  */
 export function privateDownloadResponse(
   body: ReadableStream,
@@ -110,6 +119,32 @@ export function privateDownloadResponse(
       status: 200,
       headers: {
         'Content-Type': 'image/jpeg',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    })
+  } catch {
+    throw new Error('invalid private download response')
+  }
+}
+
+/**
+ * Constructs a 200 attachment response for an authenticated private thumb download.
+ * Content-Type is fixed to image/webp. No R2 object metadata is forwarded.
+ */
+export function privateThumbDownloadResponse(
+  body: ReadableStream,
+  filename: string,
+): Response {
+  if (!(body instanceof ReadableStream)) {
+    throw new Error('invalid private download response')
+  }
+  try {
+    return new Response(body, {
+      status: 200,
+      headers: {
+        'Content-Type': 'image/webp',
         'Content-Disposition': `attachment; filename="${filename}"`,
         'Cache-Control': 'private, no-store',
         'X-Content-Type-Options': 'nosniff',

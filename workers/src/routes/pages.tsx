@@ -363,9 +363,14 @@ function AlbumDetailPage({
             </a>
             <p class="photo-caption">{photo.title}</p>
             {downloadEnabled ? (
-              <a class="download-link viewer-action" href={`/download/${albumId}/preview/${photo.id}`} download>
-                ダウンロード
-              </a>
+              <>
+                <a class="download-link viewer-action" href={`/download/${albumId}/thumb/${photo.id}`} download>
+                  低画質ダウンロード
+                </a>
+                <a class="download-link viewer-action" href={`/download/${albumId}/preview/${photo.id}`} download>
+                  高画質ダウンロード
+                </a>
+              </>
             ) : null}
           </div>
         ))}
@@ -419,9 +424,14 @@ function PhotoPreviewPage({
           </a>
         ) : null}
         {downloadEnabled ? (
-          <a class="viewer-action" href={`/download/${albumId}/preview/${photo.id}`} download>
-            ダウンロード
-          </a>
+          <>
+            <a class="viewer-action" href={`/download/${albumId}/thumb/${photo.id}`} download>
+              低画質ダウンロード
+            </a>
+            <a class="viewer-action" href={`/download/${albumId}/preview/${photo.id}`} download>
+              高画質ダウンロード
+            </a>
+          </>
         ) : null}
       </div>
     </Layout>

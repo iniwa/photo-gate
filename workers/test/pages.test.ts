@@ -371,6 +371,43 @@ describe('GET /albums/:albumId', () => {
     expect(text).toContain('ダウンロード')
   })
 
+  it('download_enabled=1 renders thumb download links per photo', async () => {
+    const objects = new Map<string, PrivateObjectBody>()
+    objects.set(
+      albumManifestKey(ALBUM_ID),
+      manifestBody(
+        manifestJson([
+          { id: 'photo-1', title: 'First' },
+          { id: 'photo-2', title: 'Second' },
+        ]),
+      ),
+    )
+    const { deps } = makeDeps({
+      summary: { id: ALBUM_ID, title: 'D1 Album Title', download_enabled: 1 },
+      reader: mapReader(objects),
+    })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}`, await validCookie())
+    const text = await res.text()
+    expect(text).toContain(`href="/download/${ALBUM_ID}/thumb/photo-1"`)
+    expect(text).toContain(`href="/download/${ALBUM_ID}/thumb/photo-2"`)
+  })
+
+  it('download_enabled=1 album detail: no RAW download link', async () => {
+    const objects = new Map<string, PrivateObjectBody>()
+    objects.set(albumManifestKey(ALBUM_ID), manifestBody(manifestJson([{ id: 'photo-1', title: 'P' }])))
+    const { deps } = makeDeps({
+      summary: { id: ALBUM_ID, title: 'D1 Album Title', download_enabled: 1 },
+      reader: mapReader(objects),
+    })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}`, await validCookie())
+    const text = await res.text()
+    expect(text).not.toContain('/download/' + ALBUM_ID + '/raw/')
+    expect(text.toLowerCase()).not.toContain('original')
+    expect(text.toLowerCase()).not.toContain('raw')
+  })
+
   it('download_enabled=0 renders no /download/ links', async () => {
     const objects = new Map<string, PrivateObjectBody>()
     objects.set(
@@ -600,6 +637,29 @@ describe('GET /albums/:albumId/photos/:photoId', () => {
     const text = await res.text()
     expect(text).toContain(`href="/download/${ALBUM_ID}/preview/${PHOTO_1}"`)
     expect(text).toContain('ダウンロード')
+  })
+
+  it('download_enabled=1 renders thumb download link on photo preview page', async () => {
+    const { deps } = makeDeps({
+      summary: { id: ALBUM_ID, title: 'D1 Album Title', download_enabled: 1 },
+      reader: threePhotoManifest(),
+    })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_1}`, await validCookie())
+    const text = await res.text()
+    expect(text).toContain(`href="/download/${ALBUM_ID}/thumb/${PHOTO_1}"`)
+  })
+
+  it('download_enabled=1 photo preview: no RAW download link', async () => {
+    const { deps } = makeDeps({
+      summary: { id: ALBUM_ID, title: 'D1 Album Title', download_enabled: 1 },
+      reader: threePhotoManifest(),
+    })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_1}`, await validCookie())
+    const text = await res.text()
+    expect(text).not.toContain('/download/' + ALBUM_ID + '/raw/')
+    expect(text.toLowerCase()).not.toContain('original')
   })
 
   it('download_enabled=0 renders no download link', async () => {

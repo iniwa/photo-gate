@@ -4,7 +4,9 @@ import {
   objectNotFoundResponse,
   objectInternalErrorResponse,
   buildDownloadFilename,
+  buildThumbDownloadFilename,
   privateDownloadResponse,
+  privateThumbDownloadResponse,
   objectForbiddenResponse,
 } from '../src/middleware/private-object-response.js'
 import type { ImageKind } from '../src/middleware/private-object-response.js'
@@ -434,12 +436,135 @@ describe('buildDownloadFilename — non-ASCII fallback', () => {
     expect(buildDownloadFilename('', 'photo-1')).toBe('photo-1.jpg')
   })
 
+  it('preserves a long valid photoId in fallback filenames', () => {
+    const longPhotoId = 'p' + 'a'.repeat(127)
+    expect(buildDownloadFilename('', longPhotoId)).toBe(longPhotoId + '.jpg')
+  })
+
   it('falls back to photoId when title is all non-ASCII', () => {
     expect(buildDownloadFilename('αβγ', 'photo-2')).toBe('photo-2.jpg')
   })
 
   it('uses ASCII part of mixed title', () => {
     expect(buildDownloadFilename('Ocean海_photo', 'photo-1')).toBe('Ocean_photo_photo-1.jpg')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// buildThumbDownloadFilename
+// ---------------------------------------------------------------------------
+
+describe('buildThumbDownloadFilename — ASCII title', () => {
+  it('appends .webp to an ASCII title', () => {
+    expect(buildThumbDownloadFilename('Sunset_Beach', 'photo-1')).toBe('Sunset_Beach_photo-1.webp')
+  })
+
+  it('replaces spaces with underscores', () => {
+    expect(buildThumbDownloadFilename('My Photo', 'photo-1')).toBe('My_Photo_photo-1.webp')
+  })
+
+  it('strips forward slashes', () => {
+    expect(buildThumbDownloadFilename('path/to/photo', 'photo-1')).toBe('pathtophoto_photo-1.webp')
+  })
+
+  it('uses photoId to make identical titles unique', () => {
+    expect(buildThumbDownloadFilename('Photo', 'photo-a')).toBe('Photo_photo-a.webp')
+    expect(buildThumbDownloadFilename('Photo', 'photo-b')).toBe('Photo_photo-b.webp')
+  })
+
+  it('falls back to photoId when title is empty string', () => {
+    expect(buildThumbDownloadFilename('', 'photo-1')).toBe('photo-1.webp')
+  })
+
+  it('preserves a long valid photoId in fallback filenames', () => {
+    const longPhotoId = 'p' + 'a'.repeat(127)
+    expect(buildThumbDownloadFilename('', longPhotoId)).toBe(longPhotoId + '.webp')
+  })
+
+  it('strips Japanese characters and falls back to photoId when result is empty', () => {
+    expect(buildThumbDownloadFilename('写真', 'photo-abc')).toBe('photo-abc.webp')
+  })
+
+  it('caps at 100 characters (base before extension)', () => {
+    const long = 'a'.repeat(200)
+    const result = buildThumbDownloadFilename(long, 'photo-1')
+    expect(result).toBe('a'.repeat(92) + '_photo-1.webp')
+    expect(result).toHaveLength(105)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// privateThumbDownloadResponse
+// ---------------------------------------------------------------------------
+
+describe('privateThumbDownloadResponse', () => {
+  it('returns status 200', () => {
+    expect(privateThumbDownloadResponse(makeStream(), 'photo.webp').status).toBe(200)
+  })
+
+  it('sets Content-Type: image/webp', () => {
+    expect(
+      privateThumbDownloadResponse(makeStream(), 'photo.webp').headers.get('Content-Type'),
+    ).toBe('image/webp')
+  })
+
+  it('sets Content-Disposition attachment with supplied filename', () => {
+    const cd = privateThumbDownloadResponse(makeStream(), 'sunset.webp').headers.get(
+      'Content-Disposition',
+    )
+    expect(cd).toBe('attachment; filename="sunset.webp"')
+  })
+
+  it('sets Cache-Control: private, no-store', () => {
+    expect(
+      privateThumbDownloadResponse(makeStream(), 'photo.webp').headers.get('Cache-Control'),
+    ).toBe('private, no-store')
+  })
+
+  it('sets X-Content-Type-Options: nosniff', () => {
+    expect(
+      privateThumbDownloadResponse(makeStream(), 'photo.webp').headers.get('X-Content-Type-Options'),
+    ).toBe('nosniff')
+  })
+
+  it('does not set ETag', () => {
+    expect(privateThumbDownloadResponse(makeStream(), 'photo.webp').headers.get('ETag')).toBeNull()
+  })
+
+  it('does not set Last-Modified', () => {
+    expect(
+      privateThumbDownloadResponse(makeStream(), 'photo.webp').headers.get('Last-Modified'),
+    ).toBeNull()
+  })
+
+  it('does not set Content-Length', () => {
+    expect(
+      privateThumbDownloadResponse(makeStream(), 'photo.webp').headers.get('Content-Length'),
+    ).toBeNull()
+  })
+
+  it('does not set Content-Range', () => {
+    expect(
+      privateThumbDownloadResponse(makeStream(), 'photo.webp').headers.get('Content-Range'),
+    ).toBeNull()
+  })
+
+  it('streams the body without buffering', () => {
+    const stream = makeStream()
+    const res = privateThumbDownloadResponse(stream, 'photo.webp')
+    expect(res.body).toBe(stream)
+  })
+
+  it('rejects a null body', () => {
+    expect(() =>
+      privateThumbDownloadResponse(null as unknown as ReadableStream, 'photo.webp'),
+    ).toThrowError('invalid private download response')
+  })
+
+  it('does not set image/jpeg (must be image/webp)', () => {
+    expect(
+      privateThumbDownloadResponse(makeStream(), 'photo.webp').headers.get('Content-Type'),
+    ).not.toBe('image/jpeg')
   })
 })
 
