@@ -583,7 +583,7 @@ Level 3 is complete. Final Hardening closure on 2026-07-03:
   tag comments. `docker/Dockerfile` base image `python:3.12-slim-trixie` pinned to
   manifest-list digest `sha256:423ed6ab…` preserving `linux/amd64` + `linux/arm64`.
   No application code, workflow triggers, permissions, or Docker entrypoints changed.
-- NEXT: `deploy-log-backfill` for old pending Worker version IDs remains open.
+- DONE: `deploy-log-backfill` partially completed from `wrangler deployments list` and GitHub Actions run timestamps. Recent Worker version IDs were backfilled for commits `84bcbcf`, `8ef26a4`, `797682e`, `2b0941f`, and `ea39fc4`; CI run IDs were also recorded for `d57ba95` and `c9409c1`. Older pending Worker version IDs (`c884256`, `b3c434c`, `d57ba95`, `c9409c1`) are no longer in Wrangler's latest-10 deployment list and remain unresolved unless Cloudflare dashboard history or CI logs with version IDs are available.
 
 ## 2026-07-02 — Admin hard-delete preview flow deployed
 
