@@ -1,181 +1,284 @@
-# オペレーター対応事項と全体進捗 (2026-06-23 更新)
+# オペレーター対応事項 (2026-07-03 更新)
 
-このドキュメントは「人間(オペレーター)が手を動かす必要がある作業」と
-「プロジェクト全体の現在地」を 1 枚にまとめたものです。状態の最終的な
-正は `docs/fable/progress.md` / `roadmap.md` ですが、まず本書を見れば
-次にやることが分かるようにしてあります。
+このドキュメントは「人間(オペレーター)が手を動かす必要がある作業」を
+まとめたものです。現在の本番状態を反映しています。
+
+関連ドキュメント:
+- ロールバック手順: `docs/operations/rollback.md`
+- バックアップ・リカバリ: `docs/operations/backup.md`
+- 管理画面アクセス設定: `docs/operations/admin-access.md`
+- 初回ブートストラップ: `docs/operations/bootstrap.md`
 
 ---
 
-## A. いま対応が必要なこと(優先度順)
+## A. 通常運用
 
-### A-0. 【要対応】sync イメージを `0.2.1` に上げる(ログ漏えい修正)
+### A-1. Workers デプロイ (CI 経由)
 
-**背景**: 2026-06-15 に本番ログを確認したところ、0.2.0 のデーモンが
-httpx のリクエストログ(`HTTP Request: GET <URL>`)を出力しており、
-その URL に **PhotoPrism のプレビュートークンとホスト名が露出**して
-いた。デーモンのログ設定がルートロガーを INFO にしていたのが原因
-(0.2.0 のリグレッション)。0.2.1 でルートロガーを WARNING に戻し、
-`photo_gate.*` のみ INFO・httpx 等を WARNING に固定して修正した。
+通常のデプロイは Gitea への push が GitHub にミラーされ、
+`workers-ci` ワークフローが自動実行されます。
 
-**対応手順**:
+1. Gitea の `main` ブランチへ push する。
+2. GitHub → Actions → `workers-ci` の実行結果を確認する。
+   `checks` ジョブと `deploy` ジョブの両方が `success` になることを確認する。
+3. `docs/operations/deploy-log.md` にバージョン ID・コミット・備考を記録する。
 
-1. docker-ci(`sync-v0.2.1` タグ)で GHCR に `0.2.1` が公開されるのを待つ。
-2. Portainer → Stacks → `iniwa-photo-gate` → `image:` のタグを
-   `0.2.1` に変更 → **Update the stack**(`command:` ブロックの変更は
-   不要。0.2.0 から据え置き)。
-3. 起動ログに `photo-gate-sync 0.2.1 starting ...` が出て、`HTTP Request:`
-   行が**出ていない**ことを確認する。
+> バージョン ID は CI ログの `Current Version ID:` 行、または
+> Cloudflare ダッシュボード → Workers → photo-gate → Deployments で確認できる。
 
-> **漏えいの影響について**: プレビュートークンは sync のたびに
-> PhotoPrism から取り直す短命なトークンで、ログを見られる範囲も
-> Portainer にアクセスできる運用者に限られる。実害は限定的だが、
-> 不変条件(ログにトークン・URL を出さない)違反なので修正する。
-> 既に表示された分のトークンは次回 sync で自然に切り替わるため、
-> 緊急の無効化操作は不要。
+緊急時のローカルデプロイ・ロールバック手順は `rollback.md` §1 を参照。
 
-### A-1. 【完了 2026-06-15】R2 アクセスキーの再発行
+### A-2. Docker sync のタグ更新 (Portainer)
 
-**症状**: sync 0.2.0 デーモンは正常に起動しているが、R2 への書き込みが
-`Unauthorized` で失敗している。
+Docker sync の新バージョンは `docker-ci` ワークフローが `sync-vX.Y.Z` タグの
+push で GHCR に自動公開します。Portainer への適用は手動です。
 
+1. `docker-ci` の `release` ジョブが成功し、
+   GHCR に `X.Y.Z` タグが公開されたことを確認する。
+2. Portainer → Stacks → `iniwa-photo-gate` → compose 内の
+   `image: ghcr.io/iniwa/photo-gate-sync:X.Y.Z` を新タグに書き換え →
+   **Update the stack** を実行する。
+3. コンテナログで `photo-gate-sync X.Y.Z starting ...` を確認する。
+4. `docs/operations/deploy-log.md` に GHCR タグ・コミット・Pi 稼働開始日時を記録する。
+
+> `latest` タグは使用しない。immutable version タグ (`X.Y.Z`) が
+> Portainer ロールバックの基点になる。
+
+現在稼働中: `ghcr.io/iniwa/photo-gate-sync:0.4.2`
+
+### A-3. Worker シークレットの確認
+
+以下の 5 件のシークレットが登録されていることを確認する。
+**ロールバック後は必ず最初に確認すること。**
+
+```sh
+cd workers
+npx wrangler secret list
 ```
-INFO photo-gate-sync 0.2.0 starting: album_id=ise-ryokou-id interval=86400s preview_size=fit_1920 concurrency=2
-INFO album ise-ryokou-id: 234 photos to sync
-Sync failed ... ObjectStoreError: R2 put failed ... (caused by ClientError: ... (Unauthorized) ... PutObject ... Unauthorized)
+
+| シークレット名 | 用途 | 欠落時の影響 |
+|---|---|---|
+| `CF_ACCESS_TEAM_DOMAIN` | Cloudflare Access JWT 検証 (チームドメイン) | `/admin` が全員 403 |
+| `CF_ACCESS_AUD` | Cloudflare Access JWT 検証 (AUD タグ) | `/admin` が全員 403 |
+| `ADMIN_EMAILS` | 管理者メールアドレス allowlist | `/admin` が全員 403 |
+| `HARD_DELETE_HMAC_KEY` | ハードデリート確認フォームの HMAC 署名 | confirm-delete/delete ルートが 500 |
+| `R2_CLEANUP_HMAC_KEY` | R2 クリーンアップ削除プレビューの HMAC 署名 | /r2-cleanup/confirm が 500 |
+
+1 件でも欠けていたら `docs/operations/rollback.md` §1.3 A の手順で再登録する。
+
+### A-4. アルバムカタログの公開
+
+ビューワー管理画面の同期ターゲット選択に使うカタログを更新する場合:
+
+1. PhotoPrism のアルバム一覧が正しい状態であることを確認する。
+2. sync サービスが実行できる環境 (Pi または docker exec) で以下を実行する:
+
+```sh
+photo-gate-sync publish-catalog
 ```
 
-**原因(推定)**: 2026-06-12 に Cloudflare API トークンを再作成/ロール
-した際、Pi の sync が使っていた **R2 用の認証情報(S3 互換アクセスキー)**
-も無効化されたとみられる。0.1.6 では同じキーで成功していたため時期が
-一致する。
+3. 管理画面 `https://share-photo.iniwach.com/admin/albums` で
+   カタログの内容が正しく表示されることを確認する。
 
-**解決済み (2026-06-15)**: 運用者が photo-gate 限定の
-Object Read & Write キーを再発行し Portainer env を更新。0.2.0 デーモン
-が 234/234 を同期、cover + manifest を更新、`sync attempt 1 succeeded
-in 134.1s` を確認した。本番は 0.2.x で完全稼働(ただし A-0 のログ修正
-を 0.2.1 で適用すること)。
+> publish-catalog は PhotoPrism アルバム UID をハッシュ化した `catalogId` のみを
+> R2 の `ops/album-catalog.json` に書き込む。生 UID・URL・トークン・R2 認証情報は
+> 公開しない。
 
-<details><summary>当時の対応手順(記録)</summary>
+### A-5. ブラウザ管理同期ターゲットの設定
 
-1. Cloudflare ダッシュボード → **R2** → **API** →
-   **Manage API tokens**(R2 専用のトークン管理画面。プロフィールの
-   API Tokens とは別物)
+管理画面からアルバムの同期ターゲットを設定する場合:
+
+1. まず A-4 でカタログを最新化しておく。
+2. 管理画面 `https://share-photo.iniwach.com/admin/albums` を開く。
+3. 対象アルバム行のドロップダウンで PhotoPrism アルバムを選択し、
+   **Set sync target** を押す。
+4. Docker デーモンは次回同期時に `ops/sync-targets.json` を読んで
+   選択されたアルバムを同期する。
+
+同期ターゲットを外す場合は **Remove sync target** を押す。
+
+### A-6. 手動同期の実行
+
+デーモンは 86400 秒(約 1 日)ごとに自動同期します。
+即時同期をトリガーしたい場合:
+
+1. 管理画面 `https://share-photo.iniwach.com/admin/sync` を開く。
+2. **Sync Now** ボタンを押す。
+3. ページをリロードし、保留中インジケーターが消え、
+   `runsCompleted` が増加していることを確認する。
+
+### A-7. R2 クリーンアップ dry-run の確認
+
+孤立した R2 オブジェクトを確認する場合:
+
+1. 管理画面 `https://share-photo.iniwach.com/admin/r2-cleanup` を開く。
+2. アルバムプレフィックスごとのオブジェクト数と分類を確認する。
+
+**実際の削除は現在無効です (§C-2 参照)。削除ボタンは表示されません。**
+
+---
+
+## B. 緊急運用
+
+### B-1. Worker のロールバック
+
+`docs/operations/rollback.md` §1 を参照。
+ロールバック後は **必ず §A-3 のシークレット確認を最初に実施すること**。
+`wrangler rollback` はシークレットを復元しないため、欠落したシークレットが
+原因で管理画面やハードデリートフォームが機能しなくなる。
+
+### B-2. Docker sync のロールバック
+
+`docs/operations/rollback.md` §2 を参照。
+GHCR のタグは immutable なので、ロールバック = Portainer のタグを前バージョンに戻すこと。
+
+### B-3. R2 アクセスキーの再発行
+
+**症状**: sync デーモンが R2 書き込みで `Unauthorized` エラーを返す。
+
+1. Cloudflare ダッシュボード → **R2** → **API** → **Manage API tokens**
+   (R2 専用管理画面。プロフィールの API Tokens とは別物)
 2. **Create API token**:
    - Permissions: **Object Read & Write**
-   - Specify bucket: **`photo-gate` のみ**に限定(最小権限)
-   - TTL: 無期限(期限付きにすると失効で再発する)
-3. 表示される **Access Key ID** と **Secret Access Key** を控える
+   - Specify bucket: **`photo-gate` のみ** (最小権限)
+   - TTL: 無期限
+3. 発行された **Access Key ID** と **Secret Access Key** を控える
    (この画面でしか表示されない)
-4. Portainer → Stacks → `iniwa-photo-gate` → **Environment variables**:
+4. Portainer → Stacks → `iniwa-photo-gate` → Environment variables:
    - `R2_ACCESS_KEY_ID` を新しい Access Key ID に置換
    - `R2_SECRET_ACCESS_KEY` を新しい Secret Access Key に置換
    - **Update the stack** で再デプロイ
-5. コンテナログで復旧確認:
-   - `synced <uid> (N/234)` が流れる
-   - 最後に `uploaded cover ...` と `uploaded manifest ...`
-   - 起動から約 2 分後、Portainer のコンテナに **healthy** バッジ
+5. コンテナログで復旧確認 (`synced N/M` が流れ、`uploaded cover` と
+   `uploaded manifest` が出る)
 
-> 値は Portainer の環境変数にのみ入れる。リポジトリには絶対に
-> コミットしない(`R2_ENDPOINT_URL` / `R2_BUCKET` も同様に env 管理)。
+> API トークン (Workers 用・D1 用) と R2 アクセスキー (S3 互換) は別物。
+> R2 キーの Roll/Delete は R2 アクセスを即座に遮断する。Edit を使うこと。
 
-</details>
+### B-4. D1 バックアップ・リカバリ
 
-### A-2. 【任意・急がない】ローカルトークンへ Workers 権限を追加
-
-現在のローカルトークン(`~\.photo-gate-cf-token`)は **D1 権限のみ**。
-そのため `wrangler d1 export`(バックアップ)は成功するが、
-`wrangler versions list` / `wrangler rollback` / ローカルからの緊急
-`wrangler deploy` は 403 になる。**通常のデプロイは CI 経由なので実害
-なし。** 緊急ローカルデプロイ手段が欲しい場合のみ対応する。
-
-**対応手順(値は変わらないのでファイル差し替え不要)**:
-
-1. https://dash.cloudflare.com/profile/api-tokens
-2. 当該トークンの **⋯ → Edit**(**Roll は押さない**。押すと値が変わり
-   A-1 と同じ事故になる)
-3. Permissions に **Account → Workers Scripts → Edit** を追加
-4. **Continue to summary → Save**
-
-完了後にエージェントへ伝えれば、`wrangler versions list` の疎通確認と
-`deploy-log.md` への本番バージョン ID 追記を行う。
+`docs/operations/backup.md` を参照。
 
 ---
 
-## B. トークンに関する整理(今後の事故防止)
+## C. 人間の明示的承認が必要な操作
 
-photo-gate は **3 種類**の Cloudflare 認証情報を使う。混同が今回の
-R2 停止の原因になったため、用途と保管先を明確にしておく。
+以下の操作は `docs/fable/autonomy-contract.md` により
+エージェントが単独で実施することを禁止されています。
+
+### C-1. ハードデリート
+
+ユーザーまたはアルバムの本番削除は **取り消せません**。
+
+操作手順: 管理画面の各一覧ページから「削除プレビュー」→「ハードデリート確認」の
+2 段階フォームで実施。`HARD_DELETE_HMAC_KEY` シークレットが必要。
+
+**ユーザーハードデリートの注意事項**:
+- 対象ユーザーのセッション・アルバム権限も D1 CASCADE で削除される。
+- R2 上のデータは削除されない。
+
+**アルバムハードデリートの注意事項**:
+- ブラウザ管理同期ターゲット (`ops/sync-targets.json` の該当エントリ) が
+  先に除去される。
+- アルバムの権限が D1 CASCADE で削除される。
+- R2 上のアルバムオブジェクトは削除されない (孤立プレフィックスとして残る)。
+  `/admin/r2-cleanup` で確認可能。
+- R2 クリーンアップが必要な場合は §C-2 を参照。
+
+### C-2. R2 実削除の有効化
+
+現在、R2 の実削除は無効です。`POST /admin/r2-cleanup/delete` は
+"not yet enabled" を返します。
+
+有効化するには:
+1. Codex による安全削除設計レビューと承認を取得する。
+2. Workers コードの変更を含む専用ハンドオフを経由する。
+
+**現在の handoff・エージェント権限では実施できません。**
+
+### C-3. D1 Time Travel リストア
+
+特定時点以降の書き込みが消える破壊的操作です。
+`backup.md` §2.3 を参照し、オペレーターが直接操作してください。
+
+### C-4. シークレットのロール・削除
+
+既存シークレットの値を変更する場合:
+
+```sh
+npx wrangler secret put <SECRETNAME>
+```
+
+> **Roll/Delete は使用しない**。Cloudflare の Roll はシークレット値を変えるため、
+> それを使っている経路が黙って壊れる (2026-06-23 のロールバック事故で確認済み)。
+
+---
+
+## D. 明示的に延期された機能
+
+以下はエージェントが独自判断で実装・有効化してはいけません。
+
+| 機能 | 状態 | 有効化条件 |
+|---|---|---|
+| R2 実削除 | 意図的に無効 | Codex 設計レビューと専用ハンドオフ (§C-2) |
+| RAW/オリジナル画像ダウンロード | 未実装 | 別途 ADR 作成と人間承認 |
+
+---
+
+## E. 不変条件 (エージェント・オペレーター共通)
+
+- R2 は非公開のままにする。画像は Workers 経由のみ配信する。
+- Workers は NAS・PhotoPrism に直接アクセスしない。
+- Docker sync は D1・ビューワー認証に直接アクセスしない。
+- RAW・オリジナル画像・PhotoPrism データ・位置情報付き元ファイルを R2 に配置しない。
+- R2 削除は Codex 承認まで dry-run のみ。
+- シークレット・認証情報をリポジトリ・ログ・チャット履歴に記録しない。
+
+---
+
+## F. 現在の本番トポロジー (2026-07-03)
+
+| コンポーネント | 現状 |
+|---|---|
+| Workers | `https://share-photo.iniwach.com` (commit `0864043`, version `940fd57d`) |
+| D1 `photo-gate` | APAC (`de77cb73-497a-4a41-bd1c-151fd907be3f`), 2 migrations applied |
+| R2 `photo-gate` | 非公開, 2 album targets |
+| Docker sync | `ghcr.io/iniwa/photo-gate-sync:0.4.2` (Portainer スタック `iniwa-photo-gate`) |
+| Cloudflare Access | `/admin` パス限定アプリ, 5 Worker secrets 登録済み |
+| cron | 毎日 18:00 UTC (03:00 JST) に期限切れセッション削除 |
+
+旧ルート `photo-gate.iniwaiwana.workers.dev` は無効化済み (404 を返す)。
+
+---
+
+## G. トークン・認証情報の整理
+
+photo-gate では 3 種類の Cloudflare 認証情報を使う。
 
 | 認証情報 | 用途 | 保管先 | 必要権限 |
 |---|---|---|---|
-| ローカル API トークン | 手元からの `wrangler`(D1 操作・バックアップ・任意でデプロイ) | `~\.photo-gate-cf-token`(リポジトリ外) | D1 Edit(+任意で Workers Scripts Edit) |
-| GitHub Actions トークン | CI からの Workers デプロイ・D1 migration | GitHub repo secrets `CLOUDFLARE_API_TOKEN` | D1 Edit + Workers Scripts Edit |
-| R2 アクセスキー(S3 互換) | Pi の sync が R2 へ画像をアップロード | Portainer env `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | R2 Object Read & Write(photo-gate のみ) |
+| ローカル API トークン | 手元 `wrangler` (D1 操作・バックアップ) | `~\.photo-gate-cf-token` (リポジトリ外) | D1 Edit (+任意で Workers Scripts Edit) |
+| GitHub Actions トークン | CI からの Workers デプロイ・D1 migration | GitHub repo secrets `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` | D1 Edit + Workers Scripts Edit |
+| R2 アクセスキー (S3 互換) | Pi の sync が R2 へアップロード | Portainer env `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | R2 Object Read & Write (photo-gate のみ) |
 
-**鉄則**:
-
-- 既存トークンを更新したいときは **Edit のみ**。**Roll/Delete は値を
-  変え、それを使っている経路を黙って壊す**(今回 R2 が停止した原因)。
-- R2 アクセスキーと API トークンは**別物**。R2 のキーは R2 専用画面で
-  発行し、Pi の Portainer env だけに入れる。
-- いずれの値も**表示・ログ出力・コミットをしない**。差し替えは
-  `scripts/update-cf-token.ps1`(SecureString 入力・自動検証)を使う。
+現在のローカルトークンは **D1 権限のみ**。`wrangler versions list` / `wrangler rollback` /
+ローカルからの緊急 `wrangler deploy` には OAuth セッション (`wrangler login`) が必要。
+通常のデプロイは CI 経由なので実害なし。
 
 ---
 
-## C. 全体進捗
+## H. Worker シークレットの登録コマンド (値は対話入力のみ)
 
-### 完了レベル
+```sh
+cd workers
+npx wrangler secret put CF_ACCESS_TEAM_DOMAIN  # <team>.cloudflareaccess.com 形式
+npx wrangler secret put CF_ACCESS_AUD          # Cloudflare One ダッシュボードからコピー
+npx wrangler secret put ADMIN_EMAILS           # カンマ区切りメールアドレス
+npx wrangler secret put HARD_DELETE_HMAC_KEY   # 安全な乱数値 (32 bytes 以上推奨)
+npx wrangler secret put R2_CLEANUP_HMAC_KEY    # 安全な乱数値 (32 bytes 以上推奨)
+```
 
-- **Level 1(Securely Usable): 完了**(2026-06-12)。本番で 1 アルバム
-  234 枚を end-to-end 配信し、ブラウザでログイン→一覧→サムネイル→
-  プレビュー→カバー表示まで人間が確認済み。
-- **Level 2(Operable): ほぼ完了**。残りは下表の 2 点のみ。
+> `CF_ACCESS_AUD` は必ず Cloudflare One ダッシュボード → Access → Applications
+> → アプリを Configure → Overview タブの値をコピー貼り付けすること。
+> 手入力は 1 文字の差異で `/admin` が 403 になる (2026-06-23 に実際に発生)。
 
-### Level 2 詳細
-
-| 項目 | 状態 |
-|---|---|
-| Workers CI(lint/typecheck/test/build/deploy) | ✅ 完了。CI 自動デプロイを実地検証済み(c884256) |
-| Docker CI(libvips テスト + container-test ゲート + GHCR リリース) | ✅ 完了 |
-| Portainer スタック自動更新 | ✅ 廃止(CE に webhook なし。手動タグ更新が正式運用) |
-| デプロイ版数記録 + ロールバック手順 | ✅ `deploy-log.md` / `rollback.md` |
-| ネイティブスケジュール同期 | ✅ sync 0.2.0 `sync-daemon`(GHCR 公開済み) |
-| ヘルス/レディネス | ✅ health file + `healthcheck` + Dockerfile HEALTHCHECK |
-| サニタイズ済み運用ログ | ✅ daemon/sync の INFO ログ(URL/トークン/タイトル非出力) |
-| D1/設定のバックアップ・リカバリ手順 | ✅ `backup.md`(D1 export を実地検証・初回ダンプ取得済み) |
-| **本番での同期成功の確認** | ✅ 完了。0.2.1 が Pi 上で稼働・234/234 同期確認済み(2026-06-23) |
-| ロールバック運用 | ✅ Worker は実地検証済み(2026-06-23)。Docker は immutable tag の Portainer 手順を文書化済みで、本番往復検証は運用者判断により必須外 |
-
-### Level 3(Feature Complete): 進行中
-
-- `/admin` の Cloudflare Access 保護: 実装・デプロイ・Access アプリ設定・
-  3 値登録・オペレーター確認済み (2026-06-23)
-- 管理機能: ユーザー/アルバム/権限の読み取り専用一覧・権限 grant/revoke・
-  アルバム/ユーザー有効化/無効化を実装・デプロイ済み。より広範なユーザー/
-  アルバム操作・同期管理・監査情報は未実装
-- R2 安全クリーンアップ(ADR + dry-run 先行、削除は人間承認まで無効)
-- 最終ハードニング(依存関係・サプライチェーン・GitHub Actions 権限の
-  レビュー、SHA pinning 等)
-
-### 本番トポロジー(現状)
-
-- Workers: https://share-photo.iniwach.com (CI デプロイ運用、カスタムドメイン)
-  旧 `photo-gate.iniwaiwana.workers.dev` ルートは無効化済み (404 を返す)
-- D1 `photo-gate`(APAC)/ R2 `photo-gate`(非公開)
-- Pi 上 Portainer スタック `iniwa-photo-gate`:
-  `ghcr.io/iniwa/photo-gate-sync:0.2.1`(sync-daemon、interval 86400s、
-  preview_size fit_1920)
-- GHCR 公開タグ: `0.1.6`(旧稼働)/ `0.1.7`(スキップ)/ `0.2.0`(ログ漏えい修正前)/ `0.2.1`(現行)
-- Cloudflare Access: `/admin` パス限定アプリを設定済み・3 値登録済み・
-  オペレーター動作確認済み (2026-06-23)
-
----
-
-## D. 次のエージェント作業
-
-1. (A-2 完了時)`wrangler versions list` 疎通確認 → ローカルトークンへの
-   Workers Scripts Edit 権限追加を確認する。緊急時の備えとして任意。
-2. Level 3 の次の項目(より広範なユーザー/アルバム管理・同期管理・監査情報)を
-   Codex と検討する。
+> 値は対話入力のみ。argv・スクリプト・ログ・チャット履歴に値を書かないこと。

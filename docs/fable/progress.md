@@ -1,14 +1,15 @@
 # Progress
 
-Last updated: 2026-07-02.
+Last updated: 2026-07-03.
 
 ## Current Completion Level
 
-**Level 2: Operable — COMPLETE (2026-06-23).** Level 1 production viewing,
-automated checks/releases, scheduled operation, health and sanitized logs,
-backup procedures, and Worker rollback verification are complete. By operator
-decision, a production Docker rollback exercise is not required; the documented
-immutable-tag Portainer procedure remains available for incident use.
+**Level 3: Feature Complete — COMPLETE (2026-07-03).** Level 1 production
+viewing and Level 2 operation are complete. Level 3 administration, sync
+controls, cleanup dry-run/deletion-preview, hard-delete controls, operator
+documentation, and final E2E authorization/privacy review are complete. Actual
+R2 deletion remains disabled until explicit human approval; RAW/original download
+remains deferred pending a separate ADR.
 
 ## Current Task
 
@@ -37,7 +38,7 @@ Viewer photo download, preview-page, and first UI cleanup work is deployed:
 - DEFERRED: RAW/original download is not implemented. It requires a separate
   ADR because it would change the current no-originals/no-NAS/no-PhotoPrism
   viewer boundary.
-Admin hard delete controls are partially implemented:
+Admin hard delete controls are implemented:
 
 - DONE: ADR `docs/decisions/2026-06-30-admin-hard-delete-controls.md` decides
   user and album hard-delete safety boundaries.
@@ -48,9 +49,10 @@ Admin hard delete controls are partially implemented:
   `6c017227-9d7d-47f8-b40b-e6392684269a`, followed by active secret-change version `1f567a03-33e3-47ac-8fbe-20c6e525010d`, workers-ci run `28570581091`. It
   deletes only `users` after the existing two-step guard and relies on D1
   cascade for sessions and album permissions.
-- PENDING: Album hard delete remains separate and, if later approved, must
-  remove the matching browser-owned sync-target entry from `ops/sync-targets.json`
-  before deleting the D1 album row, and must not delete R2 album assets.
+- DONE: Phase 4 album hard delete is deployed at commit `0864043`, Worker version
+  `940fd57d-6836-4875-97f5-cbb14f586356`, workers-ci run `28629950561`. It
+  removes the matching browser-owned sync-target entry before deleting the D1
+  album row and does not delete R2 album assets.
 
 The R2 cleanup deletion-preview Phase 2 handoff is reviewed, committed, pushed by
 the operator, and partially runtime-checked:
@@ -567,11 +569,18 @@ action list and full status snapshot.
 
 ## Next Priority
 
-Level 2 is complete. Manual sync deployment and smoke are complete. Track A1/A2/A3
-browser-complete sync is deployed. Track B reupload suppression is implemented,
-released as Docker `0.4.2`, applied in Portainer, and live-smoke verified. The
-next priority is the remaining Level 3 administration/cleanup work: album
-deletion design, R2 dry-run cleanup reporting, and final hardening.
+Level 3 is complete. Final Hardening closure on 2026-07-03:
+
+- DONE: Operator documentation rewrite complete. `operator-actions.md` fully
+  rewritten; `rollback.md` updated to 5 secrets.
+- DONE: E2E Final Hardening smoke complete. Eight unauthenticated checks passed
+  and the operator confirmed authenticated browser checks for admin, viewer,
+  R2 cleanup dry-run, hard-delete preview, and preview download.
+- DONE: Level 3 Definition of Done confirmed. Actual R2 deletion remains disabled
+  until explicit human approval; RAW/original download remains deferred.
+- NEXT: Post-Level-3 hardening candidates are `ci-hardening` (GitHub Actions SHA
+  pinning, Docker base image pinning) and `deploy-log-backfill` for old pending
+  Worker version IDs.
 
 ## 2026-07-02 — Admin hard-delete preview flow deployed
 

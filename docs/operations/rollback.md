@@ -66,17 +66,27 @@ cd workers
 npx wrangler secret list
 ```
 
-`CF_ACCESS_TEAM_DOMAIN`・`CF_ACCESS_AUD`・`ADMIN_EMAILS` の 3 件が表示されることを
-確認する。1 件でも欠けていたら、以下で再登録してから次の手順へ進むこと:
+以下の **5 件すべて**が表示されることを確認する。
+1 件でも欠けていたら、以下で再登録してから次の手順へ進むこと:
+
+| シークレット名 | 欠落時の影響 |
+|---|---|
+| `CF_ACCESS_TEAM_DOMAIN` | `/admin` が全員 403 |
+| `CF_ACCESS_AUD` | `/admin` が全員 403 |
+| `ADMIN_EMAILS` | `/admin` が全員 403 |
+| `HARD_DELETE_HMAC_KEY` | ハードデリート confirm-delete/delete ルートが 500 |
+| `R2_CLEANUP_HMAC_KEY` | `/admin/r2-cleanup/confirm` ルートが 500 |
 
 ```sh
 npx wrangler secret put CF_ACCESS_TEAM_DOMAIN   # <team>.cloudflareaccess.com 形式
-npx wrangler secret put CF_ACCESS_AUD
+npx wrangler secret put CF_ACCESS_AUD           # Cloudflare One ダッシュボードからコピー
 npx wrangler secret put ADMIN_EMAILS            # カンマ区切りメールアドレス
+npx wrangler secret put HARD_DELETE_HMAC_KEY    # 安全な乱数値 (32 bytes 以上推奨)
+npx wrangler secret put R2_CLEANUP_HMAC_KEY     # 安全な乱数値 (32 bytes 以上推奨)
 ```
 
 > 値は対話入力のみ。スクリプト引数・シェル履歴・ログへの書き込みは禁止。
-> 再登録後、新しいバージョン ID が発行される。`wrangler secret list` で 3 件を
+> 再登録後、新しいバージョン ID が発行される。`wrangler secret list` で 5 件を
 > 再確認してから次へ進む。
 >
 > **CF_ACCESS_AUD は必ず Cloudflare One ダッシュボードからコピー貼り付けすること。**

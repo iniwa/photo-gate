@@ -1,17 +1,15 @@
 # Current State
 
-Last audited: 2026-07-02.
+Last audited: 2026-07-03.
 
 ## Level
 
-**Level 2 (Operable) is complete.** A real family album is served
-end-to-end in production: PhotoPrism -> Docker sync on the Pi -> private
-R2 -> Workers viewer, with a human-confirmed browser login, album list,
-thumbnail grid, and preview display (2026-06-12). Delivery, scheduled
-operation, observability, backup procedures, and Worker rollback verification
-are in place. By operator decision on 2026-06-23, a production Docker rollback
-exercise is not required; the immutable-tag Portainer procedure remains
-documented for incident use.
+**Level 3 (Feature Complete) is complete as of 2026-07-03.** A real family
+album is served end-to-end in production: PhotoPrism -> Docker sync on the Pi
+-> private R2 -> Workers viewer. Level 1 and Level 2 are complete; Level 3 admin,
+sync, cleanup dry-run, hard-delete controls, viewer download/preview, operator
+documentation, and final E2E authorization/privacy review are complete. Actual
+R2 deletion and RAW/original download remain intentionally disabled/deferred.
 
 ## Production Topology
 
@@ -63,7 +61,7 @@ documented for incident use.
 
 ## Missing / Next (see roadmap)
 
-- Level 2 is complete. Worker version rollback was verified 2026-06-23 —
+- Level 2 is complete. Album hard delete (user Phase 3 + album Phase 4) is deployed and confirmed. Worker version rollback was verified 2026-06-23 窶・
   `wrangler rollback` (OAuth session) rolled back and restored production between version IDs
   `0fa7821a` and `495c9ae6`; unauthenticated smoke checks passed both ways.
   The exercise revealed that rollback did not restore Worker secrets; the
@@ -135,6 +133,14 @@ documented for incident use.
   report link is visible, the dry-run page renders, no delete control is shown,
   and full R2 keys, photo IDs, bucket name, PhotoPrism UID/URL/token, and
   credentials are not visible.
+  E2E Final Hardening unauthenticated smoke (8 checks) passed 2026-07-03 against
+  commit `0864043` version `940fd57d`: / 200 CSP, /albums 303 no-store,
+  /img 401 no-store, /download 401 no-store, /albums/:id/photos/:id 303 no-store,
+  /api 401 no-store, /admin Cloudflare Access 302 intercept, /admin/r2-cleanup
+  Cloudflare Access 302 intercept. All responses carry consistent CSP,
+  referrer-policy: same-origin, x-content-type-options: nosniff, and
+  x-frame-options: SAMEORIGIN. Authenticated browser checks passed by operator
+  confirmation on 2026-07-03 (see docs/handoffs/2026-07-03-e2e-security-smoke-report.md §3).
 - Docker: sync `0.4.2` is running in production; sync `0.4.0` was superseded
   by the catalog type-filter hotfix before completing live use. sync`r`n  `0.2.1` reports 183 tests green in the previous published baseline;
   the admin sync-status handoff passed 190 tests with 34 expected libvips/pyvips

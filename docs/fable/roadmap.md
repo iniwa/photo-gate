@@ -133,7 +133,7 @@ This is a priority-ordered plan. Update status as implementation progresses.
       documentation are implemented, reviewed, and deployed 2026-06-15.
       The path-scoped Access application, all three Worker values, and
       authenticated smoke verification are complete as of 2026-06-23.)
-- [ ] Implement user, album, and permission administration.
+- [x] Implement user, album, and permission administration.
       (Read-only, keyset-paginated user inventory implemented and reviewed
       2026-06-15. Read-only, keyset-paginated album and permission inventories
       implemented and reviewed 2026-06-16. Idempotent permission grant/revoke
@@ -177,14 +177,27 @@ This is a priority-ordered plan. Update status as implementation progresses.
       (Phase 2 commit `d57ba95`: HMAC token, typed phrase, re-scan/fingerprint
       validation, and "not yet enabled" result page. Operator registered
       `R2_CLEANUP_HMAC_KEY`; no orphan prefixes are currently present.)
-- [ ] Keep actual R2 deletion disabled until explicit human approval.
+- [x] Keep actual R2 deletion disabled until explicit human approval.
+      (Actual R2 deletion remains disabled. Dry-run and deletion-preview are
+      available, but no route performs R2 object deletion.)
 
 ### 8. Final Hardening
 
-- [ ] Complete deployment, security, recovery, and operator documentation.
-- [ ] Run end-to-end authorization and privacy tests.
-- [ ] Review dependency, supply-chain, and GitHub Actions permissions.
-- [ ] Confirm every Definition of Done item.
+- [x] Complete deployment, security, recovery, and operator documentation.
+      (`docs/operations/operator-actions.md` was rewritten for the current
+      production state on 2026-07-03; `rollback.md` now covers all five Worker
+      secrets.)
+- [x] Run end-to-end authorization and privacy tests.
+      (Final Hardening E2E smoke passed on 2026-07-03: eight unauthenticated
+      checks plus operator-confirmed authenticated browser checks for admin,
+      viewer, R2 cleanup dry-run, hard-delete preview, and preview download.)
+- [x] Review dependency, supply-chain, and GitHub Actions permissions.
+      (Reviewed during Final Hardening audit. Existing permissions are acceptable;
+      SHA pinning and Docker base image pinning are deferred to a post-Level-3
+      `ci-hardening` phase.)
+- [x] Confirm every Definition of Done item.
+      (Level 3 Definition of Done confirmed on 2026-07-03. R2 deletion remains
+      intentionally disabled unless separately approved.)
 
 ## Deferred Unless Explicitly Needed
 
