@@ -35,6 +35,13 @@ Viewer photo download, preview-page, and first UI cleanup work is deployed:
   It is presentation-only: no route, auth, D1, R2, manifest, image response, or
   download response behavior changed. Workers CI run `28558926039` succeeded, and
   unauthenticated production smoke passed.
+- DONE: Commit `edc8950` completed viewer UI cleanup Phase 2 for photo browsing
+  usability: visible photo titles, position indicators, grouped photo actions,
+  album photo counts, and thumbnail captions. It is presentation-only: no route,
+  auth, D1, R2, manifest, image response, or download response behavior changed.
+  Workers CI run `28639028558` succeeded, deployed Worker version
+  `ad0ef34b-3b80-4b50-bfe7-4b17670e1adc`, and unauthenticated production smoke
+  passed.
 - DEFERRED: RAW/original download is not implemented. It requires a separate
   ADR because it would change the current no-originals/no-NAS/no-PhotoPrism
   viewer boundary.

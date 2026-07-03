@@ -14,9 +14,9 @@ R2 deletion and RAW/original download remain intentionally disabled/deferred.
 ## Production Topology
 
 - Workers viewer: https://share-photo.iniwach.com
-  (commit `0864043`; active version ID `940fd57d-6836-4875-97f5-cbb14f586356`; latest observed Workers CI run `28629950561`;
+  (commit `edc8950`; active version ID `ad0ef34b-3b80-4b50-bfe7-4b17670e1adc`; latest observed Workers CI run `28639028558`;
   cron 18:00 UTC session cleanup).
-  Includes manual sync request writer, admin sync UI, status schema 2, user display-name editing, permission assignment dropdowns, D1-only album creation, browser-owned sync-target routes, the `/admin/albums` catalog picker, `/admin/r2-cleanup` dry-run plus deletion-preview routes (actual deletion disabled), preview JPEG download, manifest schema 2 viewing support, unique preview download filenames, the authenticated viewer photo preview page, viewer UI cleanup Phase 1, admin hard-delete confirmation-preview Phase 2, user hard delete Phase 3, and album hard delete Phase 4.
+  Includes manual sync request writer, admin sync UI, status schema 2, user display-name editing, permission assignment dropdowns, D1-only album creation, browser-owned sync-target routes, the `/admin/albums` catalog picker, `/admin/r2-cleanup` dry-run plus deletion-preview routes (actual deletion disabled), preview JPEG download, manifest schema 2 viewing support, unique preview download filenames, the authenticated viewer photo preview page, viewer UI cleanup Phase 1 and Phase 2, admin hard-delete confirmation-preview Phase 2, user hard delete Phase 3, and album hard delete Phase 4.
   The former `photo-gate.iniwaiwana.workers.dev` route is disabled and returns 404.
 - D1 `photo-gate` (APAC, id `de77cb73-497a-4a41-bd1c-151fd907be3f`),
   2 migrations applied. One user, one album, one permission row (real
