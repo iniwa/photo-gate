@@ -43,6 +43,7 @@ Viewer photo download, preview-page, and first UI cleanup work is deployed:
   `ad0ef34b-3b80-4b50-bfe7-4b17670e1adc`, and unauthenticated production smoke
   passed.
 - DECIDED: ADR `docs/decisions/2026-07-03-download-variants-and-raw-boundary.md` accepts derived `thumb`/`preview` download variants only. RAW/original download remains unimplemented and requires a separate future ADR plus human approval because it would change the current no-originals/no-NAS/no-PhotoPrism viewer boundary.
+- DONE: Commit `a8691e6` implemented generated thumb/preview download variants. `GET /download/:albumId/thumb/:photoId` serves existing generated thumb WebP attachments; `GET /download/:albumId/preview/:photoId` remains the high-quality preview JPEG path. RAW/original routes and links remain absent. Workers CI run `28640407688` succeeded and deployed Worker version `a748a696-f6ed-486f-994a-9e9046a1e6b7`; unauthenticated smoke passed for `/`, `/albums`, `/img`, both `/download/.../thumb` and `/download/.../preview`, and `/admin` Access interception.
 Admin hard delete controls are implemented:
 
 - DONE: ADR `docs/decisions/2026-06-30-admin-hard-delete-controls.md` decides
