@@ -347,7 +347,7 @@ describe('GET /albums/:albumId', () => {
     expect(text).not.toContain('D1 down')
   })
 
-  it('download_enabled=1 renders /download/ links per photo', async () => {
+  it('download_enabled=1 grid renders no per-photo download links (selection replaces them)', async () => {
     const objects = new Map<string, PrivateObjectBody>()
     objects.set(
       albumManifestKey(ALBUM_ID),
@@ -366,12 +366,15 @@ describe('GET /albums/:albumId', () => {
     const res = await get(app, `/albums/${ALBUM_ID}`, await validCookie())
     expect(res.status).toBe(200)
     const text = await res.text()
-    expect(text).toContain(`href="/download/${ALBUM_ID}/preview/photo-1"`)
-    expect(text).toContain(`href="/download/${ALBUM_ID}/preview/photo-2"`)
-    expect(text).toContain('ダウンロード')
+    expect(text).not.toContain(`href="/download/${ALBUM_ID}/preview/photo-1"`)
+    expect(text).not.toContain(`href="/download/${ALBUM_ID}/preview/photo-2"`)
+    expect(text).not.toContain(`href="/download/${ALBUM_ID}/thumb/photo-1"`)
+    expect(text).not.toContain(`href="/download/${ALBUM_ID}/thumb/photo-2"`)
+    expect(text).not.toContain('低画質ダウンロード')
+    expect(text).not.toContain('高画質ダウンロード')
   })
 
-  it('download_enabled=1 renders thumb download links per photo', async () => {
+  it('download_enabled=1 grid renders a checkbox per photo, wrapped in the selection form', async () => {
     const objects = new Map<string, PrivateObjectBody>()
     objects.set(
       albumManifestKey(ALBUM_ID),
@@ -389,8 +392,9 @@ describe('GET /albums/:albumId', () => {
     const app = makeApp(deps)
     const res = await get(app, `/albums/${ALBUM_ID}`, await validCookie())
     const text = await res.text()
-    expect(text).toContain(`href="/download/${ALBUM_ID}/thumb/photo-1"`)
-    expect(text).toContain(`href="/download/${ALBUM_ID}/thumb/photo-2"`)
+    expect(text).toContain(`action="/download/${ALBUM_ID}/selection"`)
+    expect(text).toContain('aria-label="「First」を選択"')
+    expect(text).toContain('aria-label="「Second」を選択"')
   })
 
   it('download_enabled=1 album detail: no RAW download link', async () => {
@@ -529,10 +533,10 @@ describe('GET /albums/:albumId', () => {
     const res = await get(app, `/albums/${ALBUM_ID}`, await validCookie())
     expect(res.status).toBe(200)
     const text = await res.text()
-    expect(text).toContain('2 枚')
+    expect(text).toContain('2枚')
   })
 
-  it('renders photo captions from manifest entries, JSX-escaped', async () => {
+  it('renders photo titles as grid thumbnail alt text, JSX-escaped (captions removed from the grid)', async () => {
     const objects = new Map<string, PrivateObjectBody>()
     objects.set(
       albumManifestKey(ALBUM_ID),
@@ -542,8 +546,9 @@ describe('GET /albums/:albumId', () => {
     const app = makeApp(deps)
     const res = await get(app, `/albums/${ALBUM_ID}`, await validCookie())
     const text = await res.text()
-    expect(text).toContain('Caption &lt;b&gt;bold&lt;/b&gt;')
+    expect(text).toContain('alt="Caption &lt;b&gt;bold&lt;/b&gt;"')
     expect(text).not.toContain('Caption <b>bold</b>')
+    expect(text).not.toContain('class="photo-caption"')
   })
 })
 

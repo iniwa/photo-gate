@@ -320,18 +320,22 @@ function SelectionResultPage({
   variant: 'thumb' | 'preview'
   photos: { id: string; title: string }[]
 }) {
+  const variantLabel = variant === 'thumb' ? '低画質 (WebP)' : '高画質 (JPEG)'
   return (
     <Layout title={`ダウンロード — ${albumTitle}`} authenticated>
-      <a class="back-link" href={`/albums/${albumId}`}>
-        アルバムへ戻る
+      <a class="detail-back-link" href={`/albums/${albumId}`}>
+        ← アルバム
       </a>
       <h1>{albumTitle}</h1>
-      <p class="selection-count">{photos.length} 枚のダウンロードリンク</p>
+      <p class="selection-count">
+        {photos.length}枚 ・ {variantLabel}
+      </p>
       <ul class="selection-result">
         {photos.map((photo) => (
           <li key={photo.id}>
-            <a class="viewer-action" href={`/download/${albumId}/${variant}/${photo.id}`} download>
-              {photo.title}
+            <a class="result-row" href={`/download/${albumId}/${variant}/${photo.id}`} download>
+              <span class="result-title">{photo.title}</span>
+              <span class="result-save">保存</span>
             </a>
           </li>
         ))}

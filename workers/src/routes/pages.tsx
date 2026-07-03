@@ -304,24 +304,20 @@ function AlbumsPage({
     <Layout title="アルバム" authenticated>
       <h1>アルバム</h1>
       {albums.length === 0 ? (
-        <p class="empty-note">閲覧できるアルバムがありません</p>
+        <p class="albums-empty">閲覧できるアルバムがありません</p>
       ) : (
-        <div class="card-grid">
+        <div class="album-grid">
           {albums.map((album) => (
-            <div class="card" key={album.id}>
-              <a href={`/albums/${album.id}`}>
-                <img class="card-cover" src={`/img/${album.id}/cover`} alt="" />
-                <div class="card-body">
-                  <div class="card-title">{album.title}</div>
-                </div>
-              </a>
-            </div>
+            <a class="album-card" href={`/albums/${album.id}`} key={album.id}>
+              <img class="album-card-cover" src={`/img/${album.id}/cover`} alt="" />
+              <span class="album-card-title">{album.title}</span>
+            </a>
           ))}
         </div>
       )}
       {nextCursor !== undefined ? (
         <nav class="pagination">
-          <a class="next-link viewer-action" href={`/albums?after=${nextCursor}`}>
+          <a class="pagination-next" href={`/albums?after=${nextCursor}`}>
             次へ
           </a>
         </nav>
@@ -356,60 +352,52 @@ function AlbumDetailPage({
   photos: { id: string; title: string }[]
   downloadEnabled: boolean
 }) {
+  const grid = (
+    <div class="contact-sheet">
+      {photos.map((photo) => (
+        <div class="contact-cell" key={photo.id}>
+          <a class="contact-link" href={`/albums/${albumId}/photos/${photo.id}`}>
+            <img src={`/img/${albumId}/thumb/${photo.id}`} alt={photo.title} loading="lazy" />
+          </a>
+          {downloadEnabled ? (
+            <input
+              type="checkbox"
+              class="contact-checkbox"
+              name="photoId"
+              value={photo.id}
+              aria-label={`「${photo.title}」を選択`}
+            />
+          ) : null}
+        </div>
+      ))}
+    </div>
+  )
+
   return (
     <Layout title={title} authenticated>
-      <a class="back-link" href="/albums">
-        アルバム一覧へ戻る
-      </a>
       <div class="album-detail-header">
+        <a class="detail-back-link" href="/albums">
+          ← アルバム
+        </a>
         <h1>{title}</h1>
-        <span class="photo-count">{photos.length} 枚</span>
-      </div>
-      <div class="photo-grid">
-        {photos.map((photo) => (
-          <div class="photo-item" key={photo.id}>
-            <a class="photo" href={`/albums/${albumId}/photos/${photo.id}`}>
-              <img src={`/img/${albumId}/thumb/${photo.id}`} alt={photo.title} loading="lazy" />
-            </a>
-            <p class="photo-caption">{photo.title}</p>
-            {downloadEnabled ? (
-              <>
-                <a class="download-link viewer-action" href={`/download/${albumId}/thumb/${photo.id}`} download>
-                  低画質ダウンロード
-                </a>
-                <a class="download-link viewer-action" href={`/download/${albumId}/preview/${photo.id}`} download>
-                  高画質ダウンロード
-                </a>
-              </>
-            ) : null}
-          </div>
-        ))}
+        <span class="photo-count">{photos.length}枚</span>
       </div>
       {downloadEnabled ? (
         <form method="post" action={`/download/${albumId}/selection`} class="selection-form">
-          <fieldset>
-            <legend>複数選択ダウンロード</legend>
-            <div class="selection-list">
-              {photos.map((photo) => (
-                <label key={photo.id} class="selection-item">
-                  <input type="checkbox" name="photoId" value={photo.id} />
-                  {photo.title}
-                </label>
-              ))}
-            </div>
-            <div class="selection-controls">
-              <label class="variant-label">
-                品質:
-                <select name="variant">
-                  <option value="thumb">低画質 (WebP)</option>
-                  <option value="preview">高画質 (JPEG)</option>
-                </select>
-              </label>
-              <button type="submit">ダウンロードリンクを表示</button>
-            </div>
-          </fieldset>
+          {grid}
+          <div class="selection-bar">
+            <select name="variant" class="selection-variant">
+              <option value="thumb">低画質 (WebP)</option>
+              <option value="preview">高画質 (JPEG)</option>
+            </select>
+            <button type="submit" class="selection-submit">
+              ダウンロードリンクを表示
+            </button>
+          </div>
         </form>
-      ) : null}
+      ) : (
+        grid
+      )}
     </Layout>
   )
 }

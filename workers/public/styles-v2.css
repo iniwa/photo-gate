@@ -284,87 +284,333 @@ summary:focus-visible,
 }
 
 /* ==========================================================================
-   LEGACY COMPAT (removed in Phase 4)
-   Dark-token-adapted rules for classes still emitted by pages not yet
-   migrated to the v2 design (album list, album detail, photo preview,
-   selection form/result, admin tables/notices). Kept intentionally plain —
-   these components are redesigned in their own phase, not here.
+   Album list / Album detail / Selection result (Phase 2)
+   See docs/decisions/2026-07-03-ui-redesign.md §2.3. Selection = the grid
+   itself: the corner checkbox and fixed bottom bar are :has()-driven, no JS.
    ========================================================================== */
 
-.card-grid {
+.album-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 1.25rem;
+  grid-template-columns: 1fr;
+  gap: 1rem;
   margin-top: 1.5rem;
 }
 
-.card {
-  background: var(--surface);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
+@media (min-width: 641px) {
+  .album-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
-.card a {
+@media (min-width: 1025px) {
+  .album-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+  }
+}
+
+.album-card {
+  position: relative;
   display: block;
-  color: var(--text);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--surface-raised);
   text-decoration: none;
 }
 
-.card-cover {
-  display: block;
+.album-card-cover {
   width: 100%;
-  height: 160px;
+  aspect-ratio: 16 / 10;
   object-fit: cover;
-  background: var(--surface-raised);
 }
 
-.card-body {
-  padding: 0.875rem 1rem 1rem;
-}
-
-.card-title {
+.album-card-title {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 2.5rem 1rem 0.75rem;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.62), transparent);
+  color: #fff;
   font-weight: 600;
-  font-size: 0.95rem;
+  font-size: 1rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.photo-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 0.875rem;
-  margin-top: 1.5rem;
+@media (min-width: 1025px) and (prefers-reduced-motion: no-preference) {
+  .album-card-cover {
+    transition: box-shadow 150ms ease;
+  }
+
+  .album-card:hover .album-card-cover {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  }
 }
 
-.photo-item {
-  min-width: 0;
+.albums-empty {
+  text-align: center;
+  color: var(--text-muted);
+  margin-top: 3rem;
 }
 
-.photo {
+.pagination-next {
   display: block;
-  aspect-ratio: 1 / 1;
-  overflow: hidden;
+  width: 100%;
+  min-height: 44px;
+  line-height: 44px;
+  text-align: center;
+  border: 1px solid var(--hairline);
   border-radius: var(--radius);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.pagination-next:hover {
+  background: var(--surface);
+}
+
+.detail-back-link {
+  display: inline-block;
+  min-height: 44px;
+  line-height: 44px;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.detail-back-link:hover {
+  color: var(--text);
+}
+
+.contact-sheet {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  margin-top: 1rem;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+@media (min-width: 641px) {
+  .contact-sheet {
+    grid-template-columns: repeat(5, 1fr);
+  }
+}
+
+@media (min-width: 1025px) {
+  .contact-sheet {
+    grid-template-columns: repeat(6, 1fr);
+  }
+}
+
+.contact-cell {
+  position: relative;
+  aspect-ratio: 1 / 1;
   background: var(--surface-raised);
 }
 
-.photo img {
+.contact-link {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.contact-link img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
 }
 
-.photo-caption {
-  font-size: 0.8125rem;
+@media (min-width: 1025px) and (prefers-reduced-motion: no-preference) {
+  .contact-link img {
+    transition: filter 150ms ease;
+  }
+}
+
+.contact-checkbox {
+  appearance: none;
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  border-radius: 50%;
+  background: var(--scrim);
+  border: 1.5px solid rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  z-index: 1;
+}
+
+.contact-checkbox::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
+.contact-checkbox:checked {
+  background: var(--amber);
+  border-color: var(--amber);
+}
+
+.contact-checkbox:checked::before {
+  content: '\2713';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--on-amber);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.contact-cell:has(.contact-checkbox:checked) {
+  box-shadow: inset 0 0 0 3px var(--amber);
+}
+
+.contact-cell:has(.contact-checkbox:checked) img {
+  filter: brightness(0.75);
+}
+
+.selection-form {
+  display: block;
+  padding-bottom: 5.5rem;
+}
+
+.selection-bar {
+  display: flex;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
+  background: var(--surface);
+  border-top: 1px solid var(--hairline);
+}
+
+@supports selector(:has(*)) {
+  .selection-bar {
+    display: none;
+  }
+
+  .selection-form:has(input[name='photoId']:checked) .selection-bar {
+    display: flex;
+  }
+}
+
+.selection-variant {
+  flex: 1;
+  min-height: 44px;
+  background: var(--bg);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 0.5rem 0.75rem;
+}
+
+.selection-submit {
+  min-height: 44px;
+  padding: 0.6rem 1.25rem;
+  background: var(--amber);
+  color: var(--on-amber);
+  border: none;
+  border-radius: var(--radius);
+  font-weight: 650;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.selection-submit:hover {
+  background: var(--amber-strong);
+}
+
+.selection-count {
   color: var(--text-muted);
-  margin-top: 0.375rem;
+  font-size: 0.9rem;
+  margin-top: 0.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.selection-result {
+  list-style: none;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.selection-result li + li {
+  border-top: 1px solid var(--hairline);
+}
+
+.result-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 56px;
+  padding: 0.875rem 1.25rem;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.result-row:hover {
+  background: var(--surface-raised);
+}
+
+.result-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.result-save {
+  color: var(--amber);
+  font-weight: 650;
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.album-detail-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.album-detail-header h1 {
+  margin-bottom: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.photo-count {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+   LEGACY COMPAT (removed in Phase 4)
+   Dark-token-adapted rules for classes still emitted by pages not yet
+   migrated to the v2 design (photo preview, admin tables/notices, and
+   back-link/next-link/empty-note shared with admin). Kept intentionally
+   plain — these components are redesigned in their own phase, not here.
+   ========================================================================== */
 
 .viewer-action {
   display: inline-block;
@@ -383,14 +629,6 @@ summary:focus-visible,
 .viewer-action:hover {
   background: var(--surface-raised);
   border-color: var(--amber);
-}
-
-.download-link {
-  width: 100%;
-  margin-top: 0.5rem;
-  text-align: center;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.8125rem;
 }
 
 .back-link {
@@ -477,97 +715,6 @@ summary:focus-visible,
   margin-top: 1rem;
 }
 
-.selection-form fieldset {
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius);
-  padding: 1rem;
-  margin-top: 1.5rem;
-}
-
-.selection-form legend {
-  color: var(--text-muted);
-  padding: 0 0.375rem;
-}
-
-.selection-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-}
-
-.selection-item {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: var(--text);
-}
-
-.selection-controls {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-top: 1rem;
-  flex-wrap: wrap;
-}
-
-.selection-controls select,
-.selection-controls button {
-  min-height: 44px;
-  background: var(--surface);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius);
-  color: var(--text);
-  padding: 0.5rem 0.75rem;
-}
-
-.selection-controls button {
-  background: var(--amber);
-  color: var(--on-amber);
-  border: none;
-  font-weight: 650;
-  cursor: pointer;
-}
-
-.variant-label {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: var(--text-muted);
-}
-
-.selection-result {
-  list-style: none;
-  margin-top: 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.selection-count {
-  color: var(--text-muted);
-  margin-top: 0.5rem;
-}
-
-.album-detail-header {
-  display: flex;
-  align-items: baseline;
-  gap: 1rem;
-  flex-wrap: wrap;
-  margin-bottom: 0.5rem;
-}
-
-.album-detail-header h1 {
-  margin-bottom: 0;
-}
-
-.photo-count {
-  font-size: 0.875rem;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
 .empty-note {
   color: var(--text-muted);
   margin-top: 1.5rem;
@@ -606,20 +753,6 @@ summary:focus-visible,
 }
 
 @media (max-width: 640px) {
-  .card-grid {
-    grid-template-columns: 1fr;
-    gap: 1rem;
-  }
-
-  .card-cover {
-    height: 180px;
-  }
-
-  .photo-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.75rem;
-  }
-
   .photo-preview {
     border-radius: var(--radius);
     min-height: auto;
