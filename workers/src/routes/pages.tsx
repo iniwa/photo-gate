@@ -263,8 +263,13 @@ async function genericNotFound(c: Parameters<MiddlewareHandler<PageEnv>>[0]): Pr
 function LoginPage({ showError }: { showError: boolean }) {
   return (
     <Layout title="ログイン">
-      <div class="login-box viewer-login-box">
-        <h1>photo-gate</h1>
+      <div class="login-page">
+        <p class="login-wordmark">
+          photo-gate
+          <span class="login-wordmark-dot" aria-hidden="true">
+            ・
+          </span>
+        </p>
         {showError ? (
           <p class="form-error" role="alert">
             ユーザーIDまたはパスワードが正しくありません
@@ -272,14 +277,16 @@ function LoginPage({ showError }: { showError: boolean }) {
         ) : null}
         <form class="login-form" method="post" action="/api/auth/login">
           <label class="field">
-            <span>ユーザーID</span>
+            <span class="field-label">ユーザーID</span>
             <input type="text" name="userId" autocomplete="username" required />
           </label>
           <label class="field">
-            <span>パスワード</span>
+            <span class="field-label">パスワード</span>
             <input type="password" name="password" autocomplete="current-password" required />
           </label>
-          <button type="submit">ログイン</button>
+          <button type="submit" class="login-submit">
+            ログイン
+          </button>
         </form>
       </div>
     </Layout>
@@ -326,11 +333,14 @@ function AlbumsPage({
 function AlbumPreparingPage({ title }: { title: string }) {
   return (
     <Layout title={title} authenticated>
-      <a class="back-link" href="/albums">
-        アルバム一覧へ戻る
-      </a>
-      <h1>{title}</h1>
-      <p class="empty-note">このアルバムは準備中です</p>
+      <div class="status-page">
+        <p class="status-glyph">準備中</p>
+        <h1 class="status-title">{title}</h1>
+        <p class="status-message">このアルバムは準備中です</p>
+        <a class="status-link" href="/albums">
+          アルバム一覧へ戻る
+        </a>
+      </div>
     </Layout>
   )
 }
@@ -466,11 +476,13 @@ function PhotoPreviewPage({
 function ErrorPage() {
   return (
     <Layout title="エラー">
-      <div class="not-found">
-        <div class="code">500</div>
-        <h1>エラーが発生しました</h1>
-        <p>時間をおいて再度お試しください。</p>
-        <a href="/albums">アルバム一覧へ戻る</a>
+      <div class="status-page">
+        <p class="status-glyph">500</p>
+        <h1 class="status-title">エラーが発生しました</h1>
+        <p class="status-message">時間をおいて再度お試しください。</p>
+        <a class="status-link" href="/albums">
+          アルバム一覧へ戻る
+        </a>
       </div>
     </Layout>
   )
@@ -479,11 +491,13 @@ function ErrorPage() {
 function ForbiddenPage() {
   return (
     <Layout title="アクセスできません">
-      <div class="not-found">
-        <div class="code">403</div>
-        <h1>アクセスできません</h1>
-        <p>このアルバムを閲覧する権限がありません。</p>
-        <a href="/albums">アルバム一覧へ戻る</a>
+      <div class="status-page">
+        <p class="status-glyph">403</p>
+        <h1 class="status-title">アクセスできません</h1>
+        <p class="status-message">このアルバムを閲覧する権限がありません。</p>
+        <a class="status-link" href="/albums">
+          アルバム一覧へ戻る
+        </a>
       </div>
     </Layout>
   )
@@ -491,12 +505,14 @@ function ForbiddenPage() {
 
 export function NotFound() {
   return (
-    <Layout title="Not Found">
-      <div class="not-found">
-        <div class="code">404</div>
-        <h1>Page not found</h1>
-        <p>The page you requested does not exist.</p>
-        <a href="/albums">Back to albums</a>
+    <Layout title="ページが見つかりません">
+      <div class="status-page">
+        <p class="status-glyph">404</p>
+        <h1 class="status-title">ページが見つかりません</h1>
+        <p class="status-message">お探しのページは見つかりませんでした。</p>
+        <a class="status-link" href="/albums">
+          アルバム一覧へ戻る
+        </a>
       </div>
     </Layout>
   )
