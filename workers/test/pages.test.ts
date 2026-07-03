@@ -428,6 +428,91 @@ describe('GET /albums/:albumId', () => {
     expect(text).not.toContain('ダウンロード')
   })
 
+  it('download_enabled=1 renders multi-select form with correct action', async () => {
+    const objects = new Map<string, PrivateObjectBody>()
+    objects.set(
+      albumManifestKey(ALBUM_ID),
+      manifestBody(manifestJson([{ id: 'photo-1', title: 'First' }])),
+    )
+    const { deps } = makeDeps({
+      summary: { id: ALBUM_ID, title: 'D1 Album Title', download_enabled: 1 },
+      reader: mapReader(objects),
+    })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}`, await validCookie())
+    const text = await res.text()
+    expect(text).toContain(`action="/download/${ALBUM_ID}/selection"`)
+    expect(text).toContain('method="post"')
+  })
+
+  it('download_enabled=1 multi-select form has photoId checkboxes for each photo', async () => {
+    const objects = new Map<string, PrivateObjectBody>()
+    objects.set(
+      albumManifestKey(ALBUM_ID),
+      manifestBody(
+        manifestJson([
+          { id: 'photo-1', title: 'First' },
+          { id: 'photo-2', title: 'Second' },
+        ]),
+      ),
+    )
+    const { deps } = makeDeps({
+      summary: { id: ALBUM_ID, title: 'D1 Album Title', download_enabled: 1 },
+      reader: mapReader(objects),
+    })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}`, await validCookie())
+    const text = await res.text()
+    expect(text).toContain('name="photoId"')
+    expect(text).toContain('value="photo-1"')
+    expect(text).toContain('value="photo-2"')
+    expect(text).toContain('type="checkbox"')
+  })
+
+  it('download_enabled=1 multi-select form has variant select with thumb and preview options', async () => {
+    const objects = new Map<string, PrivateObjectBody>()
+    objects.set(albumManifestKey(ALBUM_ID), manifestBody(manifestJson([{ id: 'photo-1', title: 'P' }])))
+    const { deps } = makeDeps({
+      summary: { id: ALBUM_ID, title: 'D1 Album Title', download_enabled: 1 },
+      reader: mapReader(objects),
+    })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}`, await validCookie())
+    const text = await res.text()
+    expect(text).toContain('name="variant"')
+    expect(text).toContain('value="thumb"')
+    expect(text).toContain('value="preview"')
+  })
+
+  it('download_enabled=0 renders no multi-select form', async () => {
+    const objects = new Map<string, PrivateObjectBody>()
+    objects.set(albumManifestKey(ALBUM_ID), manifestBody(manifestJson([{ id: 'photo-1', title: 'P' }])))
+    const { deps } = makeDeps({
+      summary: { id: ALBUM_ID, title: 'D1 Album Title', download_enabled: 0 },
+      reader: mapReader(objects),
+    })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}`, await validCookie())
+    const text = await res.text()
+    expect(text).not.toContain('selection')
+    expect(text).not.toContain('name="photoId"')
+    expect(text).not.toContain('name="variant"')
+  })
+
+  it('download_enabled=1 multi-select form: no RAW option in variant select', async () => {
+    const objects = new Map<string, PrivateObjectBody>()
+    objects.set(albumManifestKey(ALBUM_ID), manifestBody(manifestJson([{ id: 'photo-1', title: 'P' }])))
+    const { deps } = makeDeps({
+      summary: { id: ALBUM_ID, title: 'D1 Album Title', download_enabled: 1 },
+      reader: mapReader(objects),
+    })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}`, await validCookie())
+    const text = await res.text()
+    expect(text.toLowerCase()).not.toContain('value="raw"')
+    expect(text.toLowerCase()).not.toContain('original')
+  })
+
   it('shows photo count derived from manifest length', async () => {
     const objects = new Map<string, PrivateObjectBody>()
     objects.set(

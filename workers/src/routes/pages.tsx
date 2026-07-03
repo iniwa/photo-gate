@@ -375,6 +375,31 @@ function AlbumDetailPage({
           </div>
         ))}
       </div>
+      {downloadEnabled ? (
+        <form method="post" action={`/download/${albumId}/selection`} class="selection-form">
+          <fieldset>
+            <legend>複数選択ダウンロード</legend>
+            <div class="selection-list">
+              {photos.map((photo) => (
+                <label key={photo.id} class="selection-item">
+                  <input type="checkbox" name="photoId" value={photo.id} />
+                  {photo.title}
+                </label>
+              ))}
+            </div>
+            <div class="selection-controls">
+              <label class="variant-label">
+                品質:
+                <select name="variant">
+                  <option value="thumb">低画質 (WebP)</option>
+                  <option value="preview">高画質 (JPEG)</option>
+                </select>
+              </label>
+              <button type="submit">ダウンロードリンクを表示</button>
+            </div>
+          </fieldset>
+        </form>
+      ) : null}
     </Layout>
   )
 }

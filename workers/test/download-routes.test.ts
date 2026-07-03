@@ -150,6 +150,27 @@ async function get(
   return app.request(path, { method: 'GET', headers })
 }
 
+async function post(
+  app: Hono<{ Bindings: Env; Variables: AuthVariables }>,
+  path: string,
+  body: string,
+  cookie?: string,
+  origin?: string,
+  contentType = 'application/x-www-form-urlencoded',
+): Promise<Response> {
+  const headers: Record<string, string> = { 'Content-Type': contentType }
+  if (cookie !== undefined) headers['Cookie'] = cookie
+  if (origin !== undefined) headers['Origin'] = origin
+  return app.request(path, { method: 'POST', headers, body })
+}
+
+function selectionBody(photoIds: string[], variant: 'thumb' | 'preview'): string {
+  const params = new URLSearchParams()
+  for (const id of photoIds) params.append('photoId', id)
+  params.set('variant', variant)
+  return params.toString()
+}
+
 function fullObjects(photoIds: string[] = [PHOTO_ID]): Map<string, PrivateObjectBody> {
   const map = new Map<string, PrivateObjectBody>()
   map.set(albumManifestKey(ALBUM_ID), manifestBody(manifestJson(photoIds)))
@@ -680,5 +701,344 @@ describe('GET /download/:albumId/thumb/:photoId — no sensitive data in errors'
     const text = await res.text()
     expect(text.toLowerCase()).not.toContain(ALBUM_ID)
     expect(text.toLowerCase()).not.toContain('download')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Selection route: authentication guard
+// ---------------------------------------------------------------------------
+
+describe('POST /download/:albumId/selection — authentication', () => {
+  it('no cookie -> 401', async () => {
+    const app = makeApp(makeDeps())
+    const res = await post(app, `/download/${ALBUM_ID}/selection`, selectionBody([PHOTO_ID], 'thumb'), undefined, 'http://localhost')
+    expect(res.status).toBe(401)
+  })
+
+  it('invalid session -> 401', async () => {
+    const app = makeApp(makeDeps({ validSession: null }))
+    const cookie = await validCookie()
+    const res = await post(app, `/download/${ALBUM_ID}/selection`, selectionBody([PHOTO_ID], 'thumb'), cookie, 'http://localhost')
+    expect(res.status).toBe(401)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Selection route: album permission guard
+// ---------------------------------------------------------------------------
+
+describe('POST /download/:albumId/selection — album permission', () => {
+  it('no album permission -> 403', async () => {
+    const app = makeApp(makeDeps({ permission: false }))
+    const cookie = await validCookie()
+    const res = await post(app, `/download/${ALBUM_ID}/selection`, selectionBody([PHOTO_ID], 'thumb'), cookie, 'http://localhost')
+    expect(res.status).toBe(403)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Selection route: same-origin check
+// ---------------------------------------------------------------------------
+
+describe('POST /download/:albumId/selection — same-origin check', () => {
+  it('missing Origin -> 400', async () => {
+    const app = makeApp(makeDeps())
+    const cookie = await validCookie()
+    const res = await post(app, `/download/${ALBUM_ID}/selection`, selectionBody([PHOTO_ID], 'thumb'), cookie, undefined)
+    expect(res.status).toBe(400)
+  })
+
+  it('wrong Origin -> 400', async () => {
+    const app = makeApp(makeDeps())
+    const cookie = await validCookie()
+    const res = await post(app, `/download/${ALBUM_ID}/selection`, selectionBody([PHOTO_ID], 'thumb'), cookie, 'http://evil.example.com')
+    expect(res.status).toBe(400)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Selection route: Content-Type check
+// ---------------------------------------------------------------------------
+
+describe('POST /download/:albumId/selection — Content-Type check', () => {
+  it('wrong content-type (application/json) -> 400', async () => {
+    const app = makeApp(makeDeps())
+    const cookie = await validCookie()
+    const res = await post(app, `/download/${ALBUM_ID}/selection`, '{}', cookie, 'http://localhost', 'application/json')
+    expect(res.status).toBe(400)
+  })
+
+  it('application/x-www-form-urlencoded; charset=utf-8 is accepted', async () => {
+    const objects = new Map<string, PrivateObjectBody>()
+    objects.set(albumManifestKey(ALBUM_ID), manifestBody(manifestJson([PHOTO_ID])))
+    const app = makeApp(makeDeps({ reader: mapReader(objects) }))
+    const cookie = await validCookie()
+    const res = await post(
+      app,
+      `/download/${ALBUM_ID}/selection`,
+      selectionBody([PHOTO_ID], 'thumb'),
+      cookie,
+      'http://localhost',
+      'application/x-www-form-urlencoded; charset=utf-8',
+    )
+    expect(res.status).toBe(200)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Selection route: body validation
+// ---------------------------------------------------------------------------
+
+describe('POST /download/:albumId/selection — body validation', () => {
+  async function postForm(body: string): Promise<Response> {
+    const app = makeApp(makeDeps())
+    const cookie = await validCookie()
+    return post(app, `/download/${ALBUM_ID}/selection`, body, cookie, 'http://localhost')
+  }
+
+  it('missing variant -> 400', async () => {
+    const params = new URLSearchParams()
+    params.append('photoId', PHOTO_ID)
+    const res = await postForm(params.toString())
+    expect(res.status).toBe(400)
+  })
+
+  it('invalid variant (raw) -> 400', async () => {
+    const res = await postForm(selectionBody([PHOTO_ID], 'thumb').replace('thumb', 'raw'))
+    expect(res.status).toBe(400)
+  })
+
+  it('unknown field -> 400', async () => {
+    const params = new URLSearchParams(selectionBody([PHOTO_ID], 'thumb'))
+    params.set('extra', 'unexpected')
+    const res = await postForm(params.toString())
+    expect(res.status).toBe(400)
+  })
+
+  it('no photoId -> 400', async () => {
+    const params = new URLSearchParams()
+    params.set('variant', 'thumb')
+    const res = await postForm(params.toString())
+    expect(res.status).toBe(400)
+  })
+
+  it('101 photoIds -> 400', async () => {
+    const params = new URLSearchParams()
+    params.set('variant', 'thumb')
+    for (let i = 0; i < 101; i++) params.append('photoId', `photo-${i}`)
+    const res = await postForm(params.toString())
+    expect(res.status).toBe(400)
+  })
+
+  it('invalid photoId format -> 400', async () => {
+    const params = new URLSearchParams()
+    params.set('variant', 'thumb')
+    params.append('photoId', '!bad!')
+    const res = await postForm(params.toString())
+    expect(res.status).toBe(400)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Selection route: download_enabled gate
+// ---------------------------------------------------------------------------
+
+describe('POST /download/:albumId/selection — download_enabled gate', () => {
+  it('download_enabled = 0 -> 403', async () => {
+    const app = makeApp(makeDeps({ summary: albumSummary(0) }))
+    const cookie = await validCookie()
+    const res = await post(app, `/download/${ALBUM_ID}/selection`, selectionBody([PHOTO_ID], 'thumb'), cookie, 'http://localhost')
+    expect(res.status).toBe(403)
+  })
+
+  it('album summary null (race) -> 403', async () => {
+    const app = makeApp(makeDeps({ summary: null }))
+    const cookie = await validCookie()
+    const res = await post(app, `/download/${ALBUM_ID}/selection`, selectionBody([PHOTO_ID], 'thumb'), cookie, 'http://localhost')
+    expect(res.status).toBe(403)
+  })
+
+  it('album repo throws -> 500', async () => {
+    const app = makeApp(makeDeps({ summary: 'throw' }))
+    const cookie = await validCookie()
+    const res = await post(app, `/download/${ALBUM_ID}/selection`, selectionBody([PHOTO_ID], 'thumb'), cookie, 'http://localhost')
+    expect(res.status).toBe(500)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Selection route: manifest and photo membership
+// ---------------------------------------------------------------------------
+
+describe('POST /download/:albumId/selection — manifest', () => {
+  it('manifest absent -> 404', async () => {
+    const app = makeApp(makeDeps({ reader: mapReader(new Map()) }))
+    const cookie = await validCookie()
+    const res = await post(app, `/download/${ALBUM_ID}/selection`, selectionBody([PHOTO_ID], 'thumb'), cookie, 'http://localhost')
+    expect(res.status).toBe(404)
+  })
+
+  it('selected photo not in manifest -> 404', async () => {
+    const objects = new Map<string, PrivateObjectBody>()
+    objects.set(albumManifestKey(ALBUM_ID), manifestBody(manifestJson([UNLISTED_PHOTO_ID])))
+    const app = makeApp(makeDeps({ reader: mapReader(objects) }))
+    const cookie = await validCookie()
+    const res = await post(app, `/download/${ALBUM_ID}/selection`, selectionBody([PHOTO_ID], 'thumb'), cookie, 'http://localhost')
+    expect(res.status).toBe(404)
+  })
+
+  it('manifest reader throws -> 500', async () => {
+    const app = makeApp(makeDeps({ reader: throwingReader() }))
+    const cookie = await validCookie()
+    const res = await post(app, `/download/${ALBUM_ID}/selection`, selectionBody([PHOTO_ID], 'thumb'), cookie, 'http://localhost')
+    expect(res.status).toBe(500)
+  })
+
+  it('manifest invalid JSON -> 500', async () => {
+    const objects = new Map<string, PrivateObjectBody>()
+    objects.set(albumManifestKey(ALBUM_ID), manifestBody('{ bad json'))
+    const app = makeApp(makeDeps({ reader: mapReader(objects) }))
+    const cookie = await validCookie()
+    const res = await post(app, `/download/${ALBUM_ID}/selection`, selectionBody([PHOTO_ID], 'thumb'), cookie, 'http://localhost')
+    expect(res.status).toBe(500)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Selection route: successful result
+// ---------------------------------------------------------------------------
+
+describe('POST /download/:albumId/selection — success', () => {
+  function manifestWithPhotos(photoIds: string[]): Map<string, PrivateObjectBody> {
+    const m = new Map<string, PrivateObjectBody>()
+    m.set(albumManifestKey(ALBUM_ID), manifestBody(manifestJson(photoIds)))
+    return m
+  }
+
+  it('returns 200 with Cache-Control: private, no-store', async () => {
+    const app = makeApp(makeDeps({ reader: mapReader(manifestWithPhotos([PHOTO_ID])) }))
+    const cookie = await validCookie()
+    const res = await post(app, `/download/${ALBUM_ID}/selection`, selectionBody([PHOTO_ID], 'thumb'), cookie, 'http://localhost')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Cache-Control')).toBe('private, no-store')
+  })
+
+  it('Content-Type is text/html', async () => {
+    const app = makeApp(makeDeps({ reader: mapReader(manifestWithPhotos([PHOTO_ID])) }))
+    const cookie = await validCookie()
+    const res = await post(app, `/download/${ALBUM_ID}/selection`, selectionBody([PHOTO_ID], 'thumb'), cookie, 'http://localhost')
+    expect(res.headers.get('Content-Type')).toContain('text/html')
+  })
+
+  it('result page contains album title from D1 summary', async () => {
+    const app = makeApp(makeDeps({ reader: mapReader(manifestWithPhotos([PHOTO_ID])) }))
+    const cookie = await validCookie()
+    const res = await post(app, `/download/${ALBUM_ID}/selection`, selectionBody([PHOTO_ID], 'thumb'), cookie, 'http://localhost')
+    const text = await res.text()
+    expect(text).toContain('Test Album')
+  })
+
+  it('result page contains selected photo title', async () => {
+    const app = makeApp(makeDeps({ reader: mapReader(manifestWithPhotos([PHOTO_ID])) }))
+    const cookie = await validCookie()
+    const res = await post(app, `/download/${ALBUM_ID}/selection`, selectionBody([PHOTO_ID], 'thumb'), cookie, 'http://localhost')
+    const text = await res.text()
+    expect(text).toContain(`Photo ${PHOTO_ID}`)
+  })
+
+  it('thumb variant: result page links to /download/:albumId/thumb/:photoId', async () => {
+    const app = makeApp(makeDeps({ reader: mapReader(manifestWithPhotos([PHOTO_ID])) }))
+    const cookie = await validCookie()
+    const res = await post(app, `/download/${ALBUM_ID}/selection`, selectionBody([PHOTO_ID], 'thumb'), cookie, 'http://localhost')
+    const text = await res.text()
+    expect(text).toContain(`href="/download/${ALBUM_ID}/thumb/${PHOTO_ID}"`)
+  })
+
+  it('preview variant: result page links to /download/:albumId/preview/:photoId', async () => {
+    const app = makeApp(makeDeps({ reader: mapReader(manifestWithPhotos([PHOTO_ID])) }))
+    const cookie = await validCookie()
+    const res = await post(app, `/download/${ALBUM_ID}/selection`, selectionBody([PHOTO_ID], 'preview'), cookie, 'http://localhost')
+    const text = await res.text()
+    expect(text).toContain(`href="/download/${ALBUM_ID}/preview/${PHOTO_ID}"`)
+  })
+
+  it('result page links have download attribute', async () => {
+    const app = makeApp(makeDeps({ reader: mapReader(manifestWithPhotos([PHOTO_ID])) }))
+    const cookie = await validCookie()
+    const res = await post(app, `/download/${ALBUM_ID}/selection`, selectionBody([PHOTO_ID], 'thumb'), cookie, 'http://localhost')
+    const text = await res.text()
+    expect(text).toContain('download')
+  })
+
+  it('result page contains back link to /albums/:albumId', async () => {
+    const app = makeApp(makeDeps({ reader: mapReader(manifestWithPhotos([PHOTO_ID])) }))
+    const cookie = await validCookie()
+    const res = await post(app, `/download/${ALBUM_ID}/selection`, selectionBody([PHOTO_ID], 'thumb'), cookie, 'http://localhost')
+    const text = await res.text()
+    expect(text).toContain(`href="/albums/${ALBUM_ID}"`)
+  })
+
+  it('multiple selected photos: all titles and links appear', async () => {
+    const photoIds = [PHOTO_ID, 'photo-2']
+    const app = makeApp(makeDeps({ reader: mapReader(manifestWithPhotos(photoIds)) }))
+    const cookie = await validCookie()
+    const res = await post(app, `/download/${ALBUM_ID}/selection`, selectionBody(photoIds, 'preview'), cookie, 'http://localhost')
+    const text = await res.text()
+    expect(text).toContain(`href="/download/${ALBUM_ID}/preview/${PHOTO_ID}"`)
+    expect(text).toContain(`href="/download/${ALBUM_ID}/preview/photo-2"`)
+    expect(text).toContain(`Photo ${PHOTO_ID}`)
+    expect(text).toContain('Photo photo-2')
+  })
+
+  it('does not read any thumb or preview R2 object body', async () => {
+    let thumbPreviewRead = false
+    const objects = new Map<string, PrivateObjectBody>()
+    objects.set(albumManifestKey(ALBUM_ID), manifestBody(manifestJson([PHOTO_ID])))
+    objects.set(photoThumbKey(ALBUM_ID, PHOTO_ID), imageBody(makeStream('webp-bytes')))
+    objects.set(photoPreviewKey(ALBUM_ID, PHOTO_ID), imageBody())
+    const trackingReader: PrivateObjectReader = {
+      get: async (key) => {
+        if (key.includes('thumbs/') || key.includes('previews/')) thumbPreviewRead = true
+        return objects.get(key) ?? null
+      },
+    }
+    const app = makeApp(makeDeps({ reader: trackingReader }))
+    const cookie = await validCookie()
+    await post(app, `/download/${ALBUM_ID}/selection`, selectionBody([PHOTO_ID], 'thumb'), cookie, 'http://localhost')
+    expect(thumbPreviewRead).toBe(false)
+  })
+
+  it('result page does not contain /raw/ link', async () => {
+    const app = makeApp(makeDeps({ reader: mapReader(manifestWithPhotos([PHOTO_ID])) }))
+    const cookie = await validCookie()
+    const res = await post(app, `/download/${ALBUM_ID}/selection`, selectionBody([PHOTO_ID], 'thumb'), cookie, 'http://localhost')
+    const text = await res.text()
+    expect(text).not.toContain('/raw/')
+    expect(text.toLowerCase()).not.toContain('original')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Selection route: error privacy
+// ---------------------------------------------------------------------------
+
+describe('POST /download/:albumId/selection — error privacy', () => {
+  it('400 body does not reveal album ID, photo ID, or internal details', async () => {
+    const app = makeApp(makeDeps())
+    const cookie = await validCookie()
+    const res = await post(app, `/download/${ALBUM_ID}/selection`, selectionBody([PHOTO_ID], 'thumb'), cookie, undefined)
+    const text = await res.text()
+    expect(text).not.toContain(ALBUM_ID)
+    expect(text).not.toContain(PHOTO_ID)
+  })
+
+  it('500 body does not reveal internal error details', async () => {
+    const app = makeApp(makeDeps({ reader: throwingReader() }))
+    const cookie = await validCookie()
+    const res = await post(app, `/download/${ALBUM_ID}/selection`, selectionBody([PHOTO_ID], 'thumb'), cookie, 'http://localhost')
+    const text = await res.text()
+    expect(text.toLowerCase()).not.toContain('r2')
+    expect(text.toLowerCase()).not.toContain('unavailable')
+    expect(text.toLowerCase()).not.toContain('stack')
   })
 })

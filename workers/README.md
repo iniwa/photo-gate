@@ -29,6 +29,7 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 | Image delivery | `GET /img/:albumId/{cover,thumb/:photoId,preview/:photoId}` | D1 + R2 |
 | Thumb download | `GET /download/:albumId/thumb/:photoId` | D1 (session + album permission + `download_enabled` gate) + R2 (manifest membership check, then thumb WebP as attachment); serves only existing generated thumb WebP — no originals, no new R2 objects, no R2 mutation |
 | Preview download | `GET /download/:albumId/preview/:photoId` | D1 (session + album permission + `download_enabled` gate) + R2 (manifest membership check, then preview JPEG as attachment); serves only existing generated preview JPEG — no originals, no new R2 objects, no R2 mutation |
+| Multi-select download | `POST /download/:albumId/selection` | D1 (session + album permission + `download_enabled` gate) + R2 (manifest membership check only); validates same-origin, form Content-Type, variant (`thumb`\|`preview`), and 1–100 selected photo IDs against the manifest; renders a private no-store HTML page of individual links to existing GET download routes — no R2 photo object reads, no ZIP, no JavaScript, no RAW/original |
 | Admin surface | `GET /admin` | Cloudflare Access JWT + email allowlist |
 | Admin user inventory | `GET /admin/users` | D1 (read-only; no `password_hash`) |
 | Admin album inventory | `GET /admin/albums` | D1 (read-only; no `photoprism_album_uid`, transform settings, or `strip_exif`) |
