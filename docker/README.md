@@ -179,6 +179,13 @@ Release images are published to GitHub Container Registry as
   env vars).
 - **Design:** see
   [`docs/decisions/2026-06-11-delivery-pipeline.md`](../docs/decisions/2026-06-11-delivery-pipeline.md).
+- **Supply chain hardening (2026-07-03):** All GitHub Actions `uses:` entries in
+  `.github/workflows/workers-ci.yml` and `.github/workflows/docker-ci.yml` are
+  pinned to full commit SHAs (not moving major-version tags). The Docker runtime
+  base image `python:3.12-slim-trixie` is pinned to a manifest-list digest in
+  `docker/Dockerfile`, preserving multi-arch (`linux/amd64`, `linux/arm64`)
+  compatibility. When upgrading an action or the base image, intentionally refresh
+  the SHA/digest pin and update both the workflow/Dockerfile line and this note.
 
 ## Architecture
 

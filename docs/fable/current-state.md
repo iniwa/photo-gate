@@ -45,6 +45,13 @@ R2 deletion and RAW/original download remain intentionally disabled/deferred.
   release. Stack updates are manual tag bumps in Portainer: automated
   stack webhooks were dropped 2026-06-12 (Business Edition feature;
   this deployment runs Community Edition).
+- Supply chain hardening (2026-07-03): all GitHub Actions `uses:` entries in
+  `workers-ci.yml` and `docker-ci.yml` are pinned to full commit SHAs with
+  human-readable tag comments. `docker/Dockerfile` pins
+  `python:3.12-slim-trixie` to manifest-list digest
+  `sha256:423ed6ab25b1921a477529254bfeeabf5855151dc2c3141699a1bfc852199fbf`
+  (multi-arch: `linux/amd64` + `linux/arm64`). Future action or base-image
+  updates require an intentional SHA/digest refresh.
 - workers-ci: checks green; the secret-gated deploy job was verified end to
   end on 2026-06-12, including migrations, deploy, and live smoke checks.
 

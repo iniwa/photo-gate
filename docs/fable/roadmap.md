@@ -192,9 +192,12 @@ This is a priority-ordered plan. Update status as implementation progresses.
       checks plus operator-confirmed authenticated browser checks for admin,
       viewer, R2 cleanup dry-run, hard-delete preview, and preview download.)
 - [x] Review dependency, supply-chain, and GitHub Actions permissions.
-      (Reviewed during Final Hardening audit. Existing permissions are acceptable;
-      SHA pinning and Docker base image pinning are deferred to a post-Level-3
-      `ci-hardening` phase.)
+      (Reviewed during Final Hardening audit. Existing permissions are acceptable.
+      Post-Level-3 `ci-hardening` complete 2026-07-03: all GitHub Actions `uses:`
+      entries in `workers-ci.yml` and `docker-ci.yml` pinned to full commit SHAs;
+      `docker/Dockerfile` base image `python:3.12-slim-trixie` pinned to
+      manifest-list digest `sha256:423ed6ab…`. Future action/base-image updates
+      require an intentional hardening refresh.)
 - [x] Confirm every Definition of Done item.
       (Level 3 Definition of Done confirmed on 2026-07-03. R2 deletion remains
       intentionally disabled unless separately approved.)

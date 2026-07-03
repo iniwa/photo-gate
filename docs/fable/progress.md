@@ -578,9 +578,12 @@ Level 3 is complete. Final Hardening closure on 2026-07-03:
   R2 cleanup dry-run, hard-delete preview, and preview download.
 - DONE: Level 3 Definition of Done confirmed. Actual R2 deletion remains disabled
   until explicit human approval; RAW/original download remains deferred.
-- NEXT: Post-Level-3 hardening candidates are `ci-hardening` (GitHub Actions SHA
-  pinning, Docker base image pinning) and `deploy-log-backfill` for old pending
-  Worker version IDs.
+- DONE: CI hardening complete (2026-07-03). All GitHub Actions `uses:` entries in
+  `workers-ci.yml` and `docker-ci.yml` pinned to full commit SHAs with human-readable
+  tag comments. `docker/Dockerfile` base image `python:3.12-slim-trixie` pinned to
+  manifest-list digest `sha256:423ed6ab…` preserving `linux/amd64` + `linux/arm64`.
+  No application code, workflow triggers, permissions, or Docker entrypoints changed.
+- NEXT: `deploy-log-backfill` for old pending Worker version IDs remains open.
 
 ## 2026-07-02 — Admin hard-delete preview flow deployed
 

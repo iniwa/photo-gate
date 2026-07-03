@@ -3,7 +3,7 @@
 # even when all metadata has been removed from the image, which the
 # fail-closed output validator rejects (first production sync failures,
 # 2026-06-11). libvips >= 8.15 (keep-based metadata handling) is required.
-FROM python:3.12-slim-trixie AS runtime
+FROM python:3.12-slim-trixie@sha256:423ed6ab25b1921a477529254bfeeabf5855151dc2c3141699a1bfc852199fbf AS runtime
 
 # In trixie "libvips" is only a virtual package; libvips42t64 is the real
 # binary package providing libvips.so.42 for pyvips.
