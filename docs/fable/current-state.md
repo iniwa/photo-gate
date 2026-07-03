@@ -9,7 +9,7 @@ album is served end-to-end in production: PhotoPrism -> Docker sync on the Pi
 -> private R2 -> Workers viewer. Level 1 and Level 2 are complete; Level 3 admin,
 sync, cleanup dry-run, hard-delete controls, viewer download/preview, operator
 documentation, and final E2E authorization/privacy review are complete. Actual
-R2 deletion and RAW/original download remain intentionally disabled/deferred.
+R2 deletion and RAW/original download remain intentionally disabled/deferred; derived thumb/preview download variants are approved for implementation by ADR.
 
 ## Production Topology
 
@@ -118,7 +118,7 @@ R2 deletion and RAW/original download remain intentionally disabled/deferred.
   publication and picker smoke passed after the `0.4.1` type-filter hotfix.
   Album deletion and final hardening remain; dry-run R2 cleanup report is
   deployed (CI run `28415678789`, commit `b3c434c`, 2026-06-30); reupload
-  suppression is live-smoke verified. Viewer preview download is deployed (`c9409c1`), schema 2 manifests are accepted by Workers (`84bcbcf`), preview download filenames include photo IDs (`8ef26a4`), and the viewer photo preview page with previous/next navigation is deployed (`797682e`, CI run `28428506984`). Viewer UI cleanup Phase 1 is deployed (`2b0941f`, CI run `28558926039`) and changes presentation only. Admin hard-delete confirmation-preview Phase 2 is deployed (`ea39fc4`, CI run `28560281394`); user hard delete Phase 3 is deployed (`2260c2e`, CI run `28570581091`), `HARD_DELETE_HMAC_KEY` is registered, authenticated disposable-user delete is confirmed, and album hard delete Phase 4 is deployed (`0864043`, CI run `28629950561`, version `940fd57d-6836-4875-97f5-cbb14f586356`); album hard delete removes the matching sync target before D1 album deletion and leaves R2 album objects for R2 cleanup. RAW/original download is explicitly deferred pending a separate ADR because it would change current privacy boundaries.
+  suppression is live-smoke verified. Viewer preview download is deployed (`c9409c1`), schema 2 manifests are accepted by Workers (`84bcbcf`), preview download filenames include photo IDs (`8ef26a4`), and the viewer photo preview page with previous/next navigation is deployed (`797682e`, CI run `28428506984`). Viewer UI cleanup Phase 1 is deployed (`2b0941f`, CI run `28558926039`) and changes presentation only. Admin hard-delete confirmation-preview Phase 2 is deployed (`ea39fc4`, CI run `28560281394`); user hard delete Phase 3 is deployed (`2260c2e`, CI run `28570581091`), `HARD_DELETE_HMAC_KEY` is registered, authenticated disposable-user delete is confirmed, and album hard delete Phase 4 is deployed (`0864043`, CI run `28629950561`, version `940fd57d-6836-4875-97f5-cbb14f586356`); album hard delete removes the matching sync target before D1 album deletion and leaves R2 album objects for R2 cleanup. ADR `docs/decisions/2026-07-03-download-variants-and-raw-boundary.md` approves generated thumb/preview download variants only; RAW/original download remains unimplemented and would require a separate future ADR plus human approval because it would change current privacy boundaries.
 
 ## Verification Baseline
 

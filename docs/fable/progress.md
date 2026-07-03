@@ -42,9 +42,7 @@ Viewer photo download, preview-page, and first UI cleanup work is deployed:
   Workers CI run `28639028558` succeeded, deployed Worker version
   `ad0ef34b-3b80-4b50-bfe7-4b17670e1adc`, and unauthenticated production smoke
   passed.
-- DEFERRED: RAW/original download is not implemented. It requires a separate
-  ADR because it would change the current no-originals/no-NAS/no-PhotoPrism
-  viewer boundary.
+- DECIDED: ADR `docs/decisions/2026-07-03-download-variants-and-raw-boundary.md` accepts derived `thumb`/`preview` download variants only. RAW/original download remains unimplemented and requires a separate future ADR plus human approval because it would change the current no-originals/no-NAS/no-PhotoPrism viewer boundary.
 Admin hard delete controls are implemented:
 
 - DONE: ADR `docs/decisions/2026-06-30-admin-hard-delete-controls.md` decides
