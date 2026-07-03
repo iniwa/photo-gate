@@ -211,6 +211,8 @@ export function createPages(depsFromEnv: (env: Env) => PageDeps): Hono<PageEnv> 
       <PhotoPreviewPage
         albumId={albumId}
         photo={photo}
+        position={photoIndex + 1}
+        total={photos.length}
         prevPhotoId={prevPhoto?.id}
         nextPhotoId={nextPhoto?.id}
         downloadEnabled={summary.download_enabled === 1}
@@ -349,13 +351,17 @@ function AlbumDetailPage({
       <a class="back-link" href="/albums">
         アルバム一覧へ戻る
       </a>
-      <h1>{title}</h1>
+      <div class="album-detail-header">
+        <h1>{title}</h1>
+        <span class="photo-count">{photos.length} 枚</span>
+      </div>
       <div class="photo-grid">
         {photos.map((photo) => (
           <div class="photo-item" key={photo.id}>
             <a class="photo" href={`/albums/${albumId}/photos/${photo.id}`}>
               <img src={`/img/${albumId}/thumb/${photo.id}`} alt={photo.title} loading="lazy" />
             </a>
+            <p class="photo-caption">{photo.title}</p>
             {downloadEnabled ? (
               <a class="download-link viewer-action" href={`/download/${albumId}/preview/${photo.id}`} download>
                 ダウンロード
@@ -371,21 +377,26 @@ function AlbumDetailPage({
 function PhotoPreviewPage({
   albumId,
   photo,
+  position,
+  total,
   prevPhotoId,
   nextPhotoId,
   downloadEnabled,
 }: {
   albumId: string
   photo: { id: string; title: string }
+  position: number
+  total: number
   prevPhotoId: string | undefined
   nextPhotoId: string | undefined
   downloadEnabled: boolean
 }) {
   return (
     <Layout title={photo.title} authenticated>
-      <a class="back-link" href={`/albums/${albumId}`}>
-        アルバムへ戻る
-      </a>
+      <div class="photo-preview-header">
+        <h1 class="photo-title">{photo.title}</h1>
+        <span class="photo-position">{position} / {total}</span>
+      </div>
       <div class="photo-preview">
         <img
           class="preview-image"
@@ -393,23 +404,26 @@ function PhotoPreviewPage({
           alt={photo.title}
         />
       </div>
-      <nav class="photo-nav">
+      <div class="photo-actions">
+        <a class="viewer-action" href={`/albums/${albumId}`}>
+          アルバムへ戻る
+        </a>
         {prevPhotoId !== undefined ? (
-          <a class="prev-link viewer-action" href={`/albums/${albumId}/photos/${prevPhotoId}`}>
+          <a class="viewer-action" href={`/albums/${albumId}/photos/${prevPhotoId}`}>
             前の写真
           </a>
         ) : null}
         {nextPhotoId !== undefined ? (
-          <a class="next-link viewer-action" href={`/albums/${albumId}/photos/${nextPhotoId}`}>
+          <a class="viewer-action" href={`/albums/${albumId}/photos/${nextPhotoId}`}>
             次の写真
           </a>
         ) : null}
-      </nav>
-      {downloadEnabled ? (
-        <a class="download-link viewer-action" href={`/download/${albumId}/preview/${photo.id}`} download>
-          ダウンロード
-        </a>
-      ) : null}
+        {downloadEnabled ? (
+          <a class="viewer-action" href={`/download/${albumId}/preview/${photo.id}`} download>
+            ダウンロード
+          </a>
+        ) : null}
+      </div>
     </Layout>
   )
 }

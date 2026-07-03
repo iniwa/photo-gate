@@ -390,6 +390,39 @@ describe('GET /albums/:albumId', () => {
     expect(text).not.toContain('/download/')
     expect(text).not.toContain('ダウンロード')
   })
+
+  it('shows photo count derived from manifest length', async () => {
+    const objects = new Map<string, PrivateObjectBody>()
+    objects.set(
+      albumManifestKey(ALBUM_ID),
+      manifestBody(
+        manifestJson([
+          { id: 'photo-1', title: 'First' },
+          { id: 'photo-2', title: 'Second' },
+        ]),
+      ),
+    )
+    const { deps } = makeDeps({ reader: mapReader(objects) })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}`, await validCookie())
+    expect(res.status).toBe(200)
+    const text = await res.text()
+    expect(text).toContain('2 枚')
+  })
+
+  it('renders photo captions from manifest entries, JSX-escaped', async () => {
+    const objects = new Map<string, PrivateObjectBody>()
+    objects.set(
+      albumManifestKey(ALBUM_ID),
+      manifestBody(manifestJson([{ id: 'photo-1', title: 'Caption <b>bold</b>' }])),
+    )
+    const { deps } = makeDeps({ reader: mapReader(objects) })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}`, await validCookie())
+    const text = await res.text()
+    expect(text).toContain('Caption &lt;b&gt;bold&lt;/b&gt;')
+    expect(text).not.toContain('Caption <b>bold</b>')
+  })
 })
 
 describe('GET /albums/:albumId/photos/:photoId', () => {
@@ -579,6 +612,36 @@ describe('GET /albums/:albumId/photos/:photoId', () => {
     const text = await res.text()
     expect(text).not.toContain('/download/')
     expect(text).not.toContain('ダウンロード')
+  })
+
+  it('renders photo title as visible page content, JSX-escaped', async () => {
+    const objects = new Map<string, PrivateObjectBody>()
+    objects.set(
+      albumManifestKey(ALBUM_ID),
+      manifestBody(manifestJson([{ id: PHOTO_1, title: 'Sunset <script>alert(1)</script>' }])),
+    )
+    const { deps } = makeDeps({ reader: mapReader(objects) })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_1}`, await validCookie())
+    const text = await res.text()
+    expect(text).toContain('Sunset &lt;script&gt;alert(1)&lt;/script&gt;')
+    expect(text).not.toContain('<script>')
+  })
+
+  it('renders position indicator (first photo: 1 / 3)', async () => {
+    const { deps } = makeDeps({ reader: threePhotoManifest() })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_1}`, await validCookie())
+    const text = await res.text()
+    expect(text).toContain('1 / 3')
+  })
+
+  it('renders position indicator (middle photo: 2 / 3)', async () => {
+    const { deps } = makeDeps({ reader: threePhotoManifest() })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_2}`, await validCookie())
+    const text = await res.text()
+    expect(text).toContain('2 / 3')
   })
 
   it('page does not read the preview object directly', async () => {
