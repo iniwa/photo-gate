@@ -16,9 +16,9 @@ documented for incident use.
 ## Production Topology
 
 - Workers viewer: https://share-photo.iniwach.com
-  (commit `2260c2e`; active version ID `1f567a03-33e3-47ac-8fbe-20c6e525010d`; latest observed Workers CI run `28570581091`;
+  (commit `0864043`; active version ID `940fd57d-6836-4875-97f5-cbb14f586356`; latest observed Workers CI run `28629950561`;
   cron 18:00 UTC session cleanup).
-  Includes manual sync request writer, admin sync UI, status schema 2, user display-name editing, permission assignment dropdowns, D1-only album creation, browser-owned sync-target routes, the `/admin/albums` catalog picker, `/admin/r2-cleanup` dry-run plus deletion-preview routes (actual deletion disabled), preview JPEG download, manifest schema 2 viewing support, unique preview download filenames, the authenticated viewer photo preview page, viewer UI cleanup Phase 1, admin hard-delete confirmation-preview Phase 2, and user hard delete Phase 3 (users only; album hard delete remains preview-only).
+  Includes manual sync request writer, admin sync UI, status schema 2, user display-name editing, permission assignment dropdowns, D1-only album creation, browser-owned sync-target routes, the `/admin/albums` catalog picker, `/admin/r2-cleanup` dry-run plus deletion-preview routes (actual deletion disabled), preview JPEG download, manifest schema 2 viewing support, unique preview download filenames, the authenticated viewer photo preview page, viewer UI cleanup Phase 1, admin hard-delete confirmation-preview Phase 2, user hard delete Phase 3, and album hard delete Phase 4.
   The former `photo-gate.iniwaiwana.workers.dev` route is disabled and returns 404.
 - D1 `photo-gate` (APAC, id `de77cb73-497a-4a41-bd1c-151fd907be3f`),
   2 migrations applied. One user, one album, one permission row (real
@@ -113,11 +113,11 @@ documented for incident use.
   publication and picker smoke passed after the `0.4.1` type-filter hotfix.
   Album deletion and final hardening remain; dry-run R2 cleanup report is
   deployed (CI run `28415678789`, commit `b3c434c`, 2026-06-30); reupload
-  suppression is live-smoke verified. Viewer preview download is deployed (`c9409c1`), schema 2 manifests are accepted by Workers (`84bcbcf`), preview download filenames include photo IDs (`8ef26a4`), and the viewer photo preview page with previous/next navigation is deployed (`797682e`, CI run `28428506984`). Viewer UI cleanup Phase 1 is deployed (`2b0941f`, CI run `28558926039`) and changes presentation only. Admin hard-delete confirmation-preview Phase 2 is deployed (`ea39fc4`, CI run `28560281394`); user hard delete Phase 3 is deployed (`2260c2e`, CI run `28570581091`), `HARD_DELETE_HMAC_KEY` is registered, active version is `1f567a03-33e3-47ac-8fbe-20c6e525010d`, authenticated disposable-user delete is confirmed, and album hard delete remains preview-only. RAW/original download is explicitly deferred pending a separate ADR because it would change current privacy boundaries.
+  suppression is live-smoke verified. Viewer preview download is deployed (`c9409c1`), schema 2 manifests are accepted by Workers (`84bcbcf`), preview download filenames include photo IDs (`8ef26a4`), and the viewer photo preview page with previous/next navigation is deployed (`797682e`, CI run `28428506984`). Viewer UI cleanup Phase 1 is deployed (`2b0941f`, CI run `28558926039`) and changes presentation only. Admin hard-delete confirmation-preview Phase 2 is deployed (`ea39fc4`, CI run `28560281394`); user hard delete Phase 3 is deployed (`2260c2e`, CI run `28570581091`), `HARD_DELETE_HMAC_KEY` is registered, authenticated disposable-user delete is confirmed, and album hard delete Phase 4 is deployed (`0864043`, CI run `28629950561`, version `940fd57d-6836-4875-97f5-cbb14f586356`); album hard delete removes the matching sync target before D1 album deletion and leaves R2 album objects for R2 cleanup. RAW/original download is explicitly deferred pending a separate ADR because it would change current privacy boundaries.
 
 ## Verification Baseline
 
-- Workers: 2416 tests / 40 files, lint, typecheck, build, audit green
+- Workers: 2430 tests / 40 files, lint, typecheck, build, audit green
   in the last production baseline (2026-06-12). The reviewed `/admin`
   authentication foundation, read-only inventories, permission mutations,
   album and user enable/disable controls, user create/password-reset controls,

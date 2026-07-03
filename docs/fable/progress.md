@@ -590,3 +590,12 @@ Commit `2260c2e` adds `AdminUserRepository.deleteUser`, wires `POST /admin/users
 Verification: Workers lint/typecheck/test/build/audit passed locally; test count is 2416 tests across 40 files. GitHub workers-ci run `28570581091` completed success and deployed Worker version `6c017227-9d7d-47f8-b40b-e6392684269a`; `HARD_DELETE_HMAC_KEY` was then registered, producing active version `1f567a03-33e3-47ac-8fbe-20c6e525010d`. Production unauthenticated smoke passed for `/`, `/admin`, `/admin/users`, and `/api/probe`; operator also confirmed an authenticated disposable user hard delete completed successfully.
 
 Important: This enables real D1 user-row deletion in production. Sessions and album permissions are removed by existing D1 cascade. No R2 deletion, album deletion, sync-target mutation, Docker/PhotoPrism/NAS/Portainer path, or migration was added.
+
+## 2026-07-03 — Admin album hard delete Phase 4 deployed
+
+Implemented, verified, committed, pushed, and deployed Admin Hard Delete Controls Phase 4 for albums.
+Commit `0864043` adds `AdminAlbumRepository.deleteAlbum`, wires `POST /admin/albums/delete` to remove the matching browser-owned sync target first, then execute `DELETE FROM albums WHERE id = ?` after admin Access, same-origin, strict form parsing, valid HMAC token, exact `DELETE ALBUM` phrase, and D1 target re-read.
+
+Verification: Workers lint/typecheck/test/build/audit passed locally; test count is 2430 tests across 40 files. GitHub workers-ci run `28629950561` completed success and deployed Worker version `940fd57d-6836-4875-97f5-cbb14f586356`. Production unauthenticated smoke passed for `/`, `/admin`, `/admin/albums`, and `/api/probe`.
+
+Important: This enables real D1 album-row deletion in production. Matching sync-target removal happens before D1 delete. Album permissions are removed by existing D1 cascade. R2 album objects are not deleted and may appear as orphaned prefixes in `/admin/r2-cleanup`.

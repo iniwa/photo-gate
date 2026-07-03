@@ -152,7 +152,7 @@ This is a priority-ordered plan. Update status as implementation progresses.
       Worker on 2026-06-29 (version `b1874993`, commit `de74227`). Docker
       `0.4.1` is released from tag `sync-v0.4.1` and deployed in Portainer;
       catalog publication and picker smoke passed after the type-filter hotfix.
-      User hard delete Phase 3 is deployed (`2260c2e`, version `6c017227-9d7d-47f8-b40b-e6392684269a`) and deletes only `users` after the two-step guard; album deletion hard-delete controls have an ADR and Phase 2 confirmation-preview routes deployed, but actual album hard delete remains disabled; reupload suppression is complete.)
+      User hard delete Phase 3 is deployed (`2260c2e`) and album hard delete Phase 4 is deployed (`0864043`, version `940fd57d-6836-4875-97f5-cbb14f586356`); album hard delete removes the matching sync target before D1 album deletion and leaves R2 album objects for the separate cleanup flow; reupload suppression is complete.)
 - [x] Implement sync request/status administration.
       (Read-only `/admin/sync` status page, Docker best-effort R2 status
       publication, fixed private request object at `ops/sync-request.json`,
