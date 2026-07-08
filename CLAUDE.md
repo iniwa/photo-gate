@@ -55,15 +55,15 @@ Stop and report to Codex when:
 
 ## Model / Subagent Policy
 
-- Use Opus as the primary Claude Code coordinator by default: it reads the handoff,
-  `AGENTS.md`, `CLAUDE.md`, and security invariants, plans, and does final review.
-- Delegate scoped implementation, mechanical edits, and verification to Sonnet
-  subagents only when goal, files, constraints, and non-goals are already explicit.
-- Subagents must not change design intent, expand scope, touch secrets, alter
+- Run Claude Code in auto mode (automatic model selection) by default. Handoffs
+  are written so a Sonnet-class model can complete them without design
+  decisions; no coordinator/subagent split is required.
+- Subagents remain optional for scoped mechanical or parallel work. Subagents
+  must not change design intent, expand scope, touch secrets, alter
   security/authorization boundaries, or make architectural decisions — those
-  return to Opus.
-- For small edits, Opus may implement directly. If the model split is unavailable,
-  continue with the available model and report that limitation.
+  return to Codex.
+- If a handoff turns out to require design judgment beyond its written scope,
+  stop and report to Codex instead of deciding in-session.
 
 ## Safety Summary
 

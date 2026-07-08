@@ -2,21 +2,26 @@
 
 Cloudflare Workers application for photo-gate. It serves the shared photo viewing UI.
 
-> **WARNING: Not yet provisioned for production. Do not deploy without real resources.**
-> The viewer UI (`/`, `/albums`, `/albums/:albumId`), auth routes (`/api/auth/*`), and
-> private image routes (`/img/*`) are all ACTIVE and fully real — no fixture data remains.
-> They require a real `DB` (D1) database and a real `PHOTO_BUCKET` (R2) bucket. The
-> bindings are declared in `wrangler.toml` with a placeholder D1 ID; no real resources
-> exist yet, so against the current configuration every authenticated path fails closed
-> (login 503, pages 303-to-login/503, images 401/403/503/500) and no real data is served.
-> Migrations are not applied; no users, albums, sessions, or images exist.
+> **Production status**: deployed at `https://share-photo.iniwach.com` with a real
+> `DB` (D1) database, a real private `PHOTO_BUCKET` (R2) bucket, applied migrations,
+> and a Cloudflare Access-gated `/admin` surface. The repository's `wrangler.toml`
+> keeps a placeholder D1 ID; real identifiers live only in Cloudflare/Portainer.
+> Without real bindings (e.g. plain local checkout), every authenticated path fails
+> closed (login 503, pages 303-to-login/503, images 401/403/503/500).
+> Deployment state and history: `docs/fable/current-state.md` and
+> `docs/operations/deploy-log.md`.
 
 ## Architecture
 
 - **Runtime**: Cloudflare Workers (TypeScript, Hono + JSX SSR)
-- **Static assets**: `public/` served via Workers Assets (`/styles.css`)
-- **UI**: Server-side rendered HTML via Hono + JSX, with no client-side JavaScript
-- **Status**: the full viewer surface (login UI, album pages, auth API, image delivery) is implemented and wired. Real D1/R2 provisioning, migrations, and operator bootstrap are the remaining steps before deployment.
+- **Static assets**: `public/` served via Workers Assets (`/styles-v2.css`, `/app.js`;
+  legacy `/styles.css` remains published until UI redesign Phase 4 removes it — see
+  `docs/decisions/2026-07-03-ui-redesign.md` §2.5)
+- **UI**: Server-side rendered HTML via Hono + JSX, with minimal self-hosted
+  progressive-enhancement JavaScript (`public/app.js`). Every feature works with
+  JavaScript disabled (see `docs/decisions/2026-07-03-ui-redesign.md` §2.2).
+- **Status**: full viewer and admin surface deployed to production; see
+  `docs/fable/current-state.md` for the audited state.
 
 ### Active surface
 
@@ -89,15 +94,16 @@ npx wrangler dev
 
 ## Viewer Pages (SSR)
 
-Real D1/R2-backed pages defined in `src/routes/pages.tsx` (no client-side JavaScript,
-no fixture data). Mounted after the reserved-401 catch-alls so `/api`, `/img`, and
-`/admin` are never shadowed.
+Real D1/R2-backed pages defined in `src/routes/pages.tsx` (progressive-enhancement
+JavaScript only; fully functional with JavaScript disabled). Mounted after the
+reserved-401 catch-alls so `/api`, `/img`, and `/admin` are never shadowed.
 
 | Route | Authenticated | Unauthenticated |
 |---|---|---|
 | `GET /` | `303` to `/albums` | `200` login form (POST to `/api/auth/login`) |
 | `GET /albums` | `200` authorized album list | `303` to `/` |
 | `GET /albums/:albumId` | `200` photo grid / `403` no permission | `303` to `/` |
+| `GET /albums/:albumId/photos/:photoId` | `200` photo preview page / `403` no permission / `404` unlisted photo or absent manifest | `303` to `/` |
 
 - **Login form.** `/` shows the generic error 「ユーザーIDまたはパスワードが正しくありません」
   only when the query is exactly `error=1` (set by the login redirect). No other query
@@ -391,9 +397,10 @@ and deployed, `/admin` fails closed with `403` for everyone. The production Acce
 application, secrets, and deployment at `https://share-photo.iniwach.com` are complete
 as of 2026-06-23. See `docs/operations/admin-access.md` for operator setup instructions.
 
-## D1 Schema (Phase 3, created but not applied)
+## D1 Schema
 
-Two migrations are defined under `migrations/`. They are **not applied** in this handoff.
+Two migrations are defined under `migrations/` and are applied to the production
+D1 database.
 
 ### 0001_users_sessions.sql
 
@@ -409,9 +416,9 @@ Two migrations are defined under `migrations/`. They are **not applied** in this
 
 Foreign keys are enabled with `PRAGMA foreign_keys = ON`. Deleting a user deletes their sessions and permissions. Deleting an album deletes its permissions.
 
-## Authentication and Authorization Middleware (Phase 3, not wired)
+## Authentication and Authorization Middleware
 
-Two reusable middleware factories and generic failure-response helpers are defined under `src/middleware/`. They are **not attached to any active route** and require no D1 binding, secrets, or deployment to test.
+Two reusable middleware factories and generic failure-response helpers are defined under `src/middleware/`. They are wired into the active routes (`/api/auth/*`, `/img/*`, `/download/*`, viewer pages) and require no D1 binding, secrets, or deployment to test.
 
 ### `requireSession(fetcher, clock)`
 
@@ -520,11 +527,12 @@ Cache headers:
 
 - Successful HTML pages: `Cache-Control: private, no-cache`
 - 401 and error responses: `Cache-Control: no-store`
-- `public/styles.css` (via `_headers`): `Cache-Control: public, max-age=31536000, immutable`
+- Static assets `public/styles-v2.css`, `public/app.js`, and legacy `public/styles.css`
+  (via `_headers`): `Cache-Control: public, max-age=31536000, immutable`
 
-## R2 Object Key Builders (Phase 3, not wired)
+## R2 Object Key Builders
 
-Four explicit builder functions are defined in `src/services/r2-object-key.ts`. They produce the standard R2 paths used by the Docker sync service and are not connected to any active route or R2 binding.
+Four explicit builder functions are defined in `src/services/r2-object-key.ts`. They produce the standard R2 paths used by the Docker sync service and are used by the private-object loaders behind the active `/img/*` and `/download/*` routes.
 
 | Builder | Path produced |
 |---|---|
@@ -537,9 +545,9 @@ Each builder validates the supplied ID against the safe-ID contract (`^[a-zA-Z0-
 
 Arbitrary caller-supplied paths, relative segments, path traversal, backslashes, URL encoding, extensions, or prefixes are intentionally unsupported. There is no generic `buildKey(parts)` or `getObject(key)` helper.
 
-## Manifest Runtime Validator (Phase 3, not wired)
+## Manifest Runtime Validator
 
-`parseManifest(json, expectedAlbumId)` in `src/services/manifest-validator.ts` accepts a raw JSON string read from R2 and validates it against the `schemaVersion: 1` contract produced by `docker/src/photo_gate/manifest.py`. It is not connected to any active route or R2 binding.
+`parseManifest(json, expectedAlbumId)` in `src/services/manifest-validator.ts` accepts a raw JSON string read from R2 and validates it against the `schemaVersion: 1` / `schemaVersion: 2` contract produced by `docker/src/photo_gate/manifest.py` (schema 2 adds a required per-photo 40-hex `sourceHash`). It runs on every manifest read behind the active album, image, and download routes.
 
 ### Validation behavior
 
@@ -587,9 +595,9 @@ All identifier validation — repositories, authorization middleware, R2 key bui
 - May contain alphanumerics, underscores, and hyphens after the first character
 - Minimum length: 1; maximum length: 128
 
-## Private Object Reader Contract (Phase 3, not wired)
+## Private Object Reader Contract
 
-The injected `PrivateObjectReader` interface in `src/types/private-object.ts` defines the minimum required operation for reading private R2 objects. It is not connected to a real R2 binding.
+The injected `PrivateObjectReader` interface in `src/types/private-object.ts` defines the minimum required operation for reading private R2 objects. In production it is implemented by `PrivateR2Reader` over the `PHOTO_BUCKET` binding.
 
 ```typescript
 interface PrivateObjectReader {
@@ -606,11 +614,11 @@ interface PrivateObjectReader {
 
 All other stored object properties — `Content-Type`, `ETag`, checksums, `size`, upload timestamp, HTTP metadata, custom metadata, and bucket name — are **intentionally excluded** from the contract. Route-independent services must not trust or forward stored metadata.
 
-The R2 binding name is not yet decided. The reader stays injected and decoupled from `wrangler.toml`.
+The reader stays injected and decoupled from `wrangler.toml`; routes receive it via dependency factories in `src/index.tsx`.
 
-## Private Album Object Loaders (Phase 3, not wired)
+## Private Album Object Loaders
 
-Four explicit loaders are defined in `src/services/private-album-object-service.ts`. They are not connected to any active route or R2 binding.
+Four explicit loaders are defined in `src/services/private-album-object-service.ts`. They back the active `/img/*`, `/download/*`, and viewer page routes.
 
 | Loader | Object fetched | Key used |
 |---|---|---|
@@ -632,7 +640,7 @@ Each loader:
 `loadAlbumManifest` performs mandatory validation after a successful read:
 
 1. Calls `obj.text()` to read the raw JSON string
-2. Passes it to `parseManifest(text, expectedAlbumId)` for strict schemaVersion 1 validation
+2. Passes it to `parseManifest(text, expectedAlbumId)` for strict schemaVersion 1/2 validation
 3. Returns only the validated `Manifest` object; the raw JSON string is never returned
 
 `text()` is never called if the reader returns `null` (object absent).
@@ -659,9 +667,9 @@ These loaders are intended to run only after `requireSession` and `requireAlbumP
 3. explicit object loader
 4. safe response helper
 
-## Private Object Response Helpers (Phase 3, not wired)
+## Private Object Response Helpers
 
-Three helpers are defined in `src/middleware/private-object-response.ts`. They are not connected to any active route.
+Three helpers are defined in `src/middleware/private-object-response.ts`. They produce every image success/failure response on the active `/img/*` routes.
 
 ### Successful image responses
 
@@ -690,7 +698,7 @@ The following headers are **never** set or forwarded: `ETag`, `Last-Modified`, `
 
 Both failure helpers set `X-Content-Type-Options: nosniff`. Cache-Control is `no-store` (not `private, no-store`), matching the existing auth failure policy.
 
-## Private R2 Reader Adapter (Phase 3, not wired)
+## Private R2 Reader Adapter
 
 `PrivateR2Reader` adapts an injected `R2Bucket` to the minimal `PrivateObjectReader` contract. It permits only the four standard private album object layouts:
 
@@ -705,11 +713,11 @@ Keys are validated before R2 access. Arbitrary prefixes, unsafe IDs, traversal f
 
 Found R2 objects are reconstructed as the existing minimal `{ body, text }` contract. R2 metadata, HTTP metadata, custom metadata, ETag, checksums, size, upload time, bucket identity, and all write/list/delete operations are intentionally unavailable.
 
-Authentication and album authorization remain required before an explicit object loader calls this adapter. No R2 binding name, active route, or real R2 read is connected.
+Authentication and album authorization remain required before an explicit object loader calls this adapter. In production the adapter wraps the `PHOTO_BUCKET` binding.
 
-## Authorized Album Catalog Repository (Phase 3, not wired)
+## Authorized Album Catalog Repository
 
-`AuthorizedAlbumRepository` in `src/services/authorized-album-repository.ts` provides two operations for discovering only the albums an authenticated shared user is currently authorized to view. It is not connected to any active route or D1 binding.
+`AuthorizedAlbumRepository` in `src/services/authorized-album-repository.ts` provides two operations for discovering only the albums an authenticated shared user is currently authorized to view. It backs the active `/albums` viewer pages and the download routes.
 
 ### Viewer-facing album shape
 
@@ -756,9 +764,9 @@ These conditions are redundant with middleware authorization by design — the r
 
 All D1 failures and malformed rows throw the existing sanitized `'database operation failed'` error — no user IDs, album IDs, cursor values, titles, SQL, or internal exception details are included in thrown errors.
 
-## Manifest-Authorized Photo Loading (Phase 3, not wired)
+## Manifest-Authorized Photo Loading
 
-`loadManifestAuthorizedThumb(reader, albumId, photoId)` and `loadManifestAuthorizedPreview(reader, albumId, photoId)` in `src/services/manifest-authorized-photo-service.ts` serve photo objects only when the requested photo is present in the album's currently validated manifest. They are not connected to any active route, binding, or real R2 read.
+`loadManifestAuthorizedThumb(reader, albumId, photoId)` and `loadManifestAuthorizedPreview(reader, albumId, photoId)` in `src/services/manifest-authorized-photo-service.ts` serve photo objects only when the requested photo is present in the album's currently validated manifest. They back the active `/img/:albumId/{thumb,preview}/:photoId` and `/download/*` routes.
 
 ### Why album authorization alone is insufficient
 
@@ -769,7 +777,7 @@ Album authorization proves the caller may view an album, but not that a specific
 Each operation, in fixed order:
 
 1. validates `albumId` and `photoId` against the safe-ID contract (fail closed before any read)
-2. loads and validates the album manifest via `loadAlbumManifest` (strict schemaVersion 1 validation, album-ID match)
+2. loads and validates the album manifest via `loadAlbumManifest` (strict schemaVersion 1/2 validation, album-ID match)
 3. returns `{ status: 'not_found' }` if the manifest is absent
 4. searches the validated manifest for an **exact** `photo.id` match
 5. returns `{ status: 'not_found' }` **without reading any image object** if the photo is not listed
@@ -807,11 +815,11 @@ npm test
 npm run build
 ```
 
-## Login And Session Policy (Phase 3, not wired)
+## Login And Session Policy
 
 Route-independent policy helpers are defined in `src/services/login-policy.ts`. They
-are pure functions and constants with no Hono, D1, or R2 dependency, and no login
-route uses them yet.
+are pure functions and constants with no Hono, D1, or R2 dependency, used by the
+active `/api/auth/*` routes.
 
 - **Fixed 7-day sessions.** `SESSION_LIFETIME_SECONDS = 604_800`. `sessionExpiresAtFrom(createdAt)`
   returns the expiry as a canonical UTC string. There is no sliding refresh in the
@@ -829,29 +837,18 @@ route uses them yet.
   `docs/decisions/2026-06-11-login-session-policy-and-pbkdf2-iterations.md` for the
   decision and its compensating controls.
 
-## What is not connected
+## Production wiring status
 
-- D1 database: declared with a placeholder ID in `wrangler.toml`; no real database is provisioned and migrations are not applied, so the active `/api/auth/*` and `/img/*` routes return 503 on session/permission lookups
-- R2 bucket: declared in `wrangler.toml` but no real bucket is provisioned; the active `/img/*` routes have no manifests, thumbs, previews, or covers to read
-- R2 key builders: wired through the active `/img/*` routes via the private-object loaders; still no real R2 data
-- Manifest validator: wired through the active thumb/preview routes (manifest-first membership); no real manifests parsed
-- Private-object loaders: wired through the active `/img/*` routes; no real R2 reads against a provisioned bucket
-- Image response helpers: wired through the active `/img/*` routes; no real object bytes served
-- Private R2 reader adapter: wired through the active `/img/*` routes via the injected reader; no real bucket connected
-- Login/session policy helpers: implemented in `src/services/login-policy.ts` and now used by the active `/api/auth/*` routes (a real `DB` binding is still required for them to function)
-- Authentication middleware and login/logout/me routes: wired and active under `/api/auth/*`, but require a real `DB` binding; against the current placeholder config they return 503
-- Authorization middleware (album-level): wired and active under the `/img/*` image routes; requires a real `DB` binding (without one, permission lookups return 503)
-- Manifest-authorized photo loading: wired and active under the `/img/:albumId/{thumb,preview}/:photoId` routes; requires real `DB` + `PHOTO_BUCKET` bindings
-- Authorized-album catalog repository: wired and active under the `/albums` viewer pages; requires a real `DB` binding
-- Viewer pages: wired and active (`/`, `/albums`, `/albums/:albumId`); no fixture data remains, but without real D1/R2 they render only the login form / fail-closed responses
-- Expired-session cleanup: a daily cron trigger (`0 18 * * *` UTC = 03:00 JST) runs `deleteExpiredSessions` via the worker `scheduled` handler; it needs a real `DB` binding to have effect (failures are swallowed — expired sessions are already rejected at read time)
-- PhotoPrism: no API calls
-- Admin authentication boundary: implemented (`/admin` is now Cloudflare Access-gated with Worker-side JWT validation and email allowlist). The Cloudflare Access application, all three Worker config values (`CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, `ADMIN_EMAILS`), and deployment are complete — the production admin surface at `https://share-photo.iniwach.com/admin` is operator-verified as of 2026-06-23 (see `docs/operations/admin-access.md`).
-- Admin user inventory: implemented (`GET /admin/users`). Reads the D1 `users` table with 7 explicit columns; `password_hash` is never selected, returned, rendered, logged, or exposed. Keyset-paginated (50 per page). Requires a real `DB` binding to function; without one, D1 calls fail closed with `500`.
-- Admin album inventory: implemented (`GET /admin/albums`). Reads 7 explicit columns from the D1 `albums` table; `photoprism_album_uid`, all transform settings, and `strip_exif` are never selected, returned, rendered, logged, or exposed. Keyset-paginated (50 per page). Requires a real `DB` binding; without one, D1 calls fail closed with `500`.
-- Admin permission inventory + assignment UI: implemented (`GET /admin/permissions`). Issues 3 D1 queries: (1) `users` — `id, display_name, enabled` only (`password_hash`, `fail_count`, `locked_until`, `sessions`, `photoprism_album_uid` never selected); (2) `albums` — `id, title, enabled` only (`photoprism_album_uid`, transform settings never selected); (3) `album_permissions` — `album_id, user_id, created_at`. Lists capped at `ASSIGNMENT_OPTIONS_MAX = 100`; exceeding fails closed with `500`. Renders `<select>` dropdowns for grant form (disabled users/albums shown with `(無効)` badge). Permissions composite keyset-paginated (50 per page, `?after_album=<a>&after_user=<u>`). Requires a real `DB` binding; without one, D1 calls fail closed with `500`.
-- Admin album create: implemented (`POST /admin/albums/create`). Strict same-origin, exact form Content-Type, five-field validated body (`albumId`, `title`, `photoprismAlbumUid`, `expiresAt`, `downloadEnabled`). Inserts a D1 row with `enabled = 0` explicitly (schema default is `1`). `photoprism_album_uid` is accepted write-only on create and is never selected back, rendered, logged, or returned in error responses. Transform/EXIF columns (`thumb_*`, `preview_*`, `strip_exif`) are omitted so schema defaults apply. No PhotoPrism, NAS, Docker, Portainer, or R2 access. Duplicate `albumId` (D1 constraint failure) is sanitized → `500`. Requires a real `DB` binding; without one, D1 calls fail closed with `500`.
-- Admin user display name update: implemented (`POST /admin/users/update-display-name`). Strict same-origin, exact form Content-Type, two-field validated body (`userId`, `displayName`). Updates `display_name` and `updated_at` only; `password_hash`, `enabled`, `fail_count`, `locked_until`, sessions, and permissions are never touched. Unknown `userId` (D1 `meta.changes === 0`) is treated as a DB failure → `500`. Requires a real `DB` binding; without one, D1 calls fail closed with `500`.
-- Admin permission mutations: implemented (`POST /admin/permissions/grant`, `POST /admin/permissions/revoke`). Strict same-origin, exact form Content-Type, two-field validated body. Idempotent: re-granting is a no-op (ON CONFLICT DO NOTHING); revoking an absent pair is a no-op (zero rows deleted). Both require a real `DB` binding; without one, D1 calls fail closed with `500`.
-- Admin album state controls: implemented (`POST /admin/albums/enable`, `POST /admin/albums/disable`). Strict same-origin, exact form Content-Type, single-field validated body (`albumId`). Idempotent: enabling an already-enabled album or disabling an already-disabled album affects zero rows and leaves `updated_at` unchanged. Disabling removes the album from the viewer album list, album detail, and image authorization (which require `enabled = 1`) without deleting permissions or R2 data. Both require a real `DB` binding; without one, D1 calls fail closed with `500`.
-- Admin user state controls: implemented (`POST /admin/users/enable`, `POST /admin/users/disable`). Strict same-origin, exact form Content-Type, single-field validated body (`userId`). Idempotent: re-enabling an already-enabled user or disabling an already-disabled user affects zero rows and leaves `updated_at` unchanged. Disabling a user blocks login (auth requires `enabled = 1`) and makes existing sessions unusable on their next request (session lookup requires `u.enabled = 1`), without deleting session rows or permission rows. Re-enabling may restore an unexpired retained session without creating a new one; lockout counters and `locked_until` are not reset. Only `enabled` and `updated_at` are written; `password_hash`, `display_name`, `fail_count`, `locked_until`, `created_at`, and all album/permission/R2 data are never touched. Both require a real `DB` binding; without one, D1 calls fail closed with `500`.
+Every component described above is wired and deployed: the viewer surface
+(`/`, `/albums`, album detail, photo preview), auth (`/api/auth/*`), image
+delivery (`/img/*`), downloads (`/download/*`), the Cloudflare Access-gated
+`/admin` surface, and the daily expired-session cleanup cron
+(`0 18 * * *` UTC = 03:00 JST, via the worker `scheduled` handler; failures
+are swallowed because expired sessions are already rejected at read time).
+
+The Worker never calls PhotoPrism or NAS; R2 content is produced solely by
+the Docker sync service. Real resource identifiers (D1 ID, Access values,
+HMAC keys) are registered at deploy time and never committed.
+
+For the audited production state, version IDs, and verification history, see
+`docs/fable/current-state.md` and `docs/operations/deploy-log.md`.

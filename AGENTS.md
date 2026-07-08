@@ -69,15 +69,13 @@ explicitly authorizes that action.
 Codex must not invoke Claude Code through `claude -p`. Codex writes the active
 handoff file, and the operator passes it to Claude Code manually.
 
-Claude Code should normally run with Opus as the primary coordinator. Opus reads
-`AGENTS.md`, `CLAUDE.md`, the active handoff, and the security invariants; plans;
-and reviews subagent output before reporting. Sonnet subagents may take scoped
-implementation, mechanical edits, and verification when the handoff's goal,
-files, constraints, and non-goals are already clear. Subagents must not change
-design intent, expand scope, touch secrets, weaken authentication/authorization
-or any Non-Negotiable Invariant, or make architectural decisions — those return
-to Opus/Codex. If the model split is unavailable, continue with the available
-model and report that limitation.
+Claude Code normally runs in auto mode (automatic model selection). Handoffs
+must therefore be scoped so a Sonnet-class model can complete them without
+design decisions: explicit goal, files, constraints, non-goals, and
+verification. Subagents remain optional for scoped mechanical or parallel
+work. Subagents must not change design intent, expand scope, touch secrets,
+weaken authentication/authorization or any Non-Negotiable Invariant, or make
+architectural decisions — those return to Codex.
 
 ## Non-Negotiable Invariants
 

@@ -245,7 +245,7 @@ async def _publish_sync_status(
         )
         await store.put(SYNC_STATUS_KEY, data, "application/json")
     except Exception:
-        pass
+        logging.getLogger(__name__).warning("sync status publish failed")
 
 
 # Third-party loggers that emit request URLs or other untrusted text at

@@ -641,10 +641,12 @@ def test_publish_sync_status_store_none_is_noop():
     asyncio.run(_publish_sync_status(_HEALTH, None, _FIXED_CLOCK))
 
 
-def test_publish_sync_status_store_failure_is_noop():
+def test_publish_sync_status_store_failure_is_noop(caplog):
     store = _FakeStore(fail=True)
     # Must not propagate the store failure
     asyncio.run(_publish_sync_status(_HEALTH, store, _FIXED_CLOCK))
+    assert "sync status publish failed" in caplog.text
+    assert "simulated put failure" not in caplog.text
 
 
 def test_daemon_publishes_status_on_lifecycle():
