@@ -484,7 +484,9 @@ summary:focus-visible,
 
 .selection-form {
   display: block;
-  padding-bottom: 5.5rem;
+  /* Room for the fixed .selection-bar, including its JS-enhanced second row
+     (live count wraps onto its own line — see .selection-count-live). */
+  padding-bottom: 7.5rem;
 }
 
 .selection-bar {
@@ -604,32 +606,218 @@ summary:focus-visible,
   white-space: nowrap;
 }
 
+/* JS-inserted selection-bar controls (app.js initSelectionBar). The bar
+   itself stays :has()-driven (see .selection-bar above); these elements are
+   only ever present when JS ran, so the no-JS page never shows a dead
+   control. .selection-count-live forces a wrap onto its own row so the bar
+   stays usable at narrow widths with the extra controls. */
+
+.selection-count-live {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
+  flex-basis: 100%;
+}
+
+.selection-select-all,
+.selection-clear {
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.selection-select-all:hover,
+.selection-clear:hover {
+  background: var(--surface-raised);
+}
+
+/* ==========================================================================
+   Photo preview (Phase 3)
+   Immersive full-viewport stage: no header, no frame around the photo.
+   See docs/decisions/2026-07-03-ui-redesign.md section 2.3 "Photo preview".
+   Top/bottom bars are fixed overlays on --scrim so text stays readable over
+   any photo (accessibility floor, section 2.6); the stage is padded so the
+   photo never sits under either bar.
+   ========================================================================== */
+
+main.immersive {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.preview-topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: var(--scrim);
+  padding: calc(0.75rem + env(safe-area-inset-top)) 1rem 0.5rem;
+}
+
+.preview-topbar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 44px;
+}
+
+.preview-back {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.preview-back:hover {
+  color: var(--amber);
+}
+
+.preview-position {
+  white-space: nowrap;
+  font-size: 0.875rem;
+}
+
+.preview-title {
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  margin-top: 0.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4.5rem 0.5rem 5.5rem;
+}
+
+.preview-stage-image {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+.preview-bottombar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  align-items: stretch;
+  background: var(--scrim);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.preview-nav {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0.875rem 1rem;
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.preview-nav:hover {
+  color: var(--amber);
+}
+
+.preview-nav-disabled {
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+
+.preview-download {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.preview-download-summary {
+  height: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.875rem 1.25rem;
+  color: var(--amber);
+  font-weight: 650;
+  font-size: 0.95rem;
+  cursor: pointer;
+  list-style: none;
+  white-space: nowrap;
+}
+
+.preview-download-summary::-webkit-details-marker {
+  display: none;
+}
+
+.preview-download-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 180px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 0.5rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.preview-download-link {
+  display: block;
+  min-height: 44px;
+  line-height: 44px;
+  padding: 0 0.75rem;
+  border-radius: var(--radius);
+  color: var(--text);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.preview-download-link:hover {
+  background: var(--surface-raised);
+  color: var(--amber);
+}
+
 /* ==========================================================================
    LEGACY COMPAT (removed in Phase 4)
    Dark-token-adapted rules for classes still emitted by pages not yet
-   migrated to the v2 design (photo preview, admin tables/notices, and
-   back-link/next-link/empty-note shared with admin). Kept intentionally
-   plain — these components are redesigned in their own phase, not here.
+   migrated to the v2 design (admin tables/notices, and back-link/next-link/
+   empty-note shared with admin). Kept intentionally plain — these
+   components are redesigned in their own phase, not here.
    ========================================================================== */
-
-.viewer-action {
-  display: inline-block;
-  min-height: 44px;
-  line-height: 1;
-  padding: 0.6rem 1rem;
-  border: 1px solid var(--hairline);
-  border-radius: 999px;
-  color: var(--amber);
-  text-decoration: none;
-  font-size: 0.9rem;
-  font-weight: 600;
-  background: var(--surface);
-}
-
-.viewer-action:hover {
-  background: var(--surface-raised);
-  border-color: var(--amber);
-}
 
 .back-link {
   display: inline-block;
@@ -662,57 +850,6 @@ summary:focus-visible,
 
 .next-link:hover {
   background: var(--surface);
-}
-
-.photo-preview {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  background: var(--surface);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-lg);
-  min-height: min(70vh, 720px);
-  padding: 1rem;
-}
-
-.preview-image {
-  display: block;
-  max-width: 100%;
-  max-height: calc(100vh - 13rem);
-  width: auto;
-  height: auto;
-  object-fit: contain;
-  border-radius: var(--radius);
-}
-
-.photo-preview-header {
-  display: flex;
-  align-items: baseline;
-  gap: 1rem;
-  flex-wrap: wrap;
-  margin-bottom: 1rem;
-}
-
-.photo-preview-header h1 {
-  margin-bottom: 0;
-  font-size: 1.375rem;
-  overflow-wrap: anywhere;
-}
-
-.photo-position {
-  font-size: 0.875rem;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  margin-left: auto;
-}
-
-.photo-actions {
-  display: flex;
-  justify-content: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  margin-top: 1rem;
 }
 
 .empty-note {
@@ -750,35 +887,4 @@ summary:focus-visible,
   border-radius: var(--radius);
   font-size: 0.8125rem;
   font-weight: 500;
-}
-
-@media (max-width: 640px) {
-  .photo-preview {
-    border-radius: var(--radius);
-    min-height: auto;
-    padding: 0.5rem;
-  }
-
-  .preview-image {
-    max-height: calc(100vh - 12rem);
-  }
-
-  .photo-actions {
-    display: grid;
-    grid-template-columns: 1fr;
-  }
-
-  .photo-preview-header {
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .photo-position {
-    margin-left: 0;
-  }
-
-  .viewer-action {
-    width: 100%;
-    text-align: center;
-  }
 }

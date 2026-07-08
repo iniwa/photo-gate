@@ -672,24 +672,26 @@ describe('GET /albums/:albumId/photos/:photoId', () => {
     expect(text).not.toContain('<b>sunset</b>')
   })
 
-  it('first photo: no prev link, next link present', async () => {
+  it('first photo: no prev link, next link present, disabled prev placeholder', async () => {
     const { deps } = makeDeps({ reader: threePhotoManifest() })
     const app = makeApp(deps)
     const res = await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_1}`, await validCookie())
     const text = await res.text()
-    expect(text).not.toContain('前の写真')
+    expect(text).not.toContain('data-nav="prev"')
     expect(text).toContain(`href="/albums/${ALBUM_ID}/photos/${PHOTO_2}"`)
-    expect(text).toContain('次の写真')
+    expect(text).toContain('data-nav="next"')
+    expect(text).toContain('preview-nav-disabled')
   })
 
-  it('last photo: prev link present, no next link', async () => {
+  it('last photo: prev link present, no next link, disabled next placeholder', async () => {
     const { deps } = makeDeps({ reader: threePhotoManifest() })
     const app = makeApp(deps)
     const res = await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_3}`, await validCookie())
     const text = await res.text()
     expect(text).toContain(`href="/albums/${ALBUM_ID}/photos/${PHOTO_2}"`)
-    expect(text).toContain('前の写真')
-    expect(text).not.toContain('次の写真')
+    expect(text).toContain('data-nav="prev"')
+    expect(text).not.toContain('data-nav="next"')
+    expect(text).toContain('preview-nav-disabled')
   })
 
   it('middle photo: both prev and next links present', async () => {
@@ -698,12 +700,13 @@ describe('GET /albums/:albumId/photos/:photoId', () => {
     const res = await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_2}`, await validCookie())
     const text = await res.text()
     expect(text).toContain(`href="/albums/${ALBUM_ID}/photos/${PHOTO_1}"`)
-    expect(text).toContain('前の写真')
+    expect(text).toContain('data-nav="prev"')
     expect(text).toContain(`href="/albums/${ALBUM_ID}/photos/${PHOTO_3}"`)
-    expect(text).toContain('次の写真')
+    expect(text).toContain('data-nav="next"')
+    expect(text).not.toContain('preview-nav-disabled')
   })
 
-  it('single photo: no prev or next link', async () => {
+  it('single photo: no prev or next link, both placeholders disabled', async () => {
     const objects = new Map<string, PrivateObjectBody>()
     objects.set(
       albumManifestKey(ALBUM_ID),
@@ -713,11 +716,49 @@ describe('GET /albums/:albumId/photos/:photoId', () => {
     const app = makeApp(deps)
     const res = await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_1}`, await validCookie())
     const text = await res.text()
-    expect(text).not.toContain('前の写真')
-    expect(text).not.toContain('次の写真')
+    expect(text).not.toContain('data-nav="prev"')
+    expect(text).not.toContain('data-nav="next"')
+    expect(text).not.toContain('rel="prefetch"')
   })
 
-  it('download_enabled=1 renders download link', async () => {
+  it('next photo exists -> prefetch link for its preview image', async () => {
+    const { deps } = makeDeps({ reader: threePhotoManifest() })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_1}`, await validCookie())
+    const text = await res.text()
+    expect(text).toContain(`<link rel="prefetch" href="/img/${ALBUM_ID}/preview/${PHOTO_2}"/>`)
+  })
+
+  it('last photo (no next) -> no prefetch link', async () => {
+    const { deps } = makeDeps({ reader: threePhotoManifest() })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_3}`, await validCookie())
+    const text = await res.text()
+    expect(text).not.toContain('rel="prefetch"')
+  })
+
+  it('no <header> chrome on the immersive preview page', async () => {
+    const { deps } = makeDeps({ reader: threePhotoManifest() })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_1}`, await validCookie())
+    const text = await res.text()
+    expect(text).not.toContain('<header>')
+    expect(text).toContain('class="immersive"')
+  })
+
+  it('back link shows the album title', async () => {
+    const { deps } = makeDeps({
+      summary: { id: ALBUM_ID, title: 'My Album', download_enabled: 0 },
+      reader: threePhotoManifest(),
+    })
+    const app = makeApp(deps)
+    const res = await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_1}`, await validCookie())
+    const text = await res.text()
+    expect(text).toContain('My Album')
+    expect(text).toContain(`href="/albums/${ALBUM_ID}"`)
+  })
+
+  it('download_enabled=1 renders the 保存 download menu', async () => {
     const { deps } = makeDeps({
       summary: { id: ALBUM_ID, title: 'D1 Album Title', download_enabled: 1 },
       reader: threePhotoManifest(),
@@ -726,7 +767,8 @@ describe('GET /albums/:albumId/photos/:photoId', () => {
     const res = await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_1}`, await validCookie())
     const text = await res.text()
     expect(text).toContain(`href="/download/${ALBUM_ID}/preview/${PHOTO_1}"`)
-    expect(text).toContain('ダウンロード')
+    expect(text).toContain('保存')
+    expect(text).toContain('<details')
   })
 
   it('download_enabled=1 renders thumb download link on photo preview page', async () => {
@@ -761,7 +803,8 @@ describe('GET /albums/:albumId/photos/:photoId', () => {
     const res = await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_1}`, await validCookie())
     const text = await res.text()
     expect(text).not.toContain('/download/')
-    expect(text).not.toContain('ダウンロード')
+    expect(text).not.toContain('保存')
+    expect(text).not.toContain('<details')
   })
 
   it('renders photo title as visible page content, JSX-escaped', async () => {

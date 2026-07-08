@@ -5,15 +5,20 @@ import type { FC } from 'hono/jsx'
  * Page shell. `authenticated` pages link the site title to `/albums` and show a
  * logout form button (POST `/api/auth/logout`); the public login page omits both
  * and links the title to `/`. `chrome: 'immersive'` renders no header (used by the
- * full-viewport photo preview page); the default chrome renders it as above. No
- * client-side JavaScript is used anywhere.
+ * full-viewport photo preview page) and marks `<main>` with the `immersive` class;
+ * the default chrome renders it as above. `head` renders extra markup inside
+ * `<head>` (e.g. a `<link rel="prefetch">`). JavaScript is progressive
+ * enhancement only (see docs/decisions/2026-07-03-ui-redesign.md section 2.2):
+ * `/app.js` loads with `defer` on every page, and every page remains fully
+ * functional with it disabled.
  */
 export const Layout: FC<{
   title: string
   authenticated?: boolean
   chrome?: 'default' | 'immersive'
+  head?: unknown
   children?: unknown
-}> = ({ title, authenticated, chrome = 'default', children }) => {
+}> = ({ title, authenticated, chrome = 'default', head, children }) => {
   return (
     <>
       {raw('<!DOCTYPE html>')}
@@ -24,6 +29,8 @@ export const Layout: FC<{
           <meta name="theme-color" content="#131316" />
           <title>{title} - photo-gate</title>
           <link rel="stylesheet" href="/styles-v2.css" />
+          <script src="/app.js" defer></script>
+          {head}
         </head>
         <body>
           {chrome === 'default' ? (
@@ -40,7 +47,7 @@ export const Layout: FC<{
               ) : null}
             </header>
           ) : null}
-          <main>{children}</main>
+          <main class={chrome === 'immersive' ? 'immersive' : undefined}>{children}</main>
         </body>
       </html>
     </>

@@ -210,6 +210,7 @@ export function createPages(depsFromEnv: (env: Env) => PageDeps): Hono<PageEnv> 
     return c.html(
       <PhotoPreviewPage
         albumId={albumId}
+        albumTitle={summary.title}
         photo={photo}
         position={photoIndex + 1}
         total={photos.length}
@@ -404,6 +405,7 @@ function AlbumDetailPage({
 
 function PhotoPreviewPage({
   albumId,
+  albumTitle,
   photo,
   position,
   total,
@@ -412,6 +414,7 @@ function PhotoPreviewPage({
   downloadEnabled,
 }: {
   albumId: string
+  albumTitle: string
   photo: { id: string; title: string }
   position: number
   total: number
@@ -419,43 +422,76 @@ function PhotoPreviewPage({
   nextPhotoId: string | undefined
   downloadEnabled: boolean
 }) {
+  const prevHref =
+    prevPhotoId !== undefined ? `/albums/${albumId}/photos/${prevPhotoId}` : undefined
+  const nextHref =
+    nextPhotoId !== undefined ? `/albums/${albumId}/photos/${nextPhotoId}` : undefined
+  const prefetchHref =
+    nextPhotoId !== undefined ? `/img/${albumId}/preview/${nextPhotoId}` : undefined
+
   return (
-    <Layout title={photo.title} authenticated>
-      <div class="photo-preview-header">
-        <h1 class="photo-title">{photo.title}</h1>
-        <span class="photo-position">{position} / {total}</span>
+    <Layout
+      title={photo.title}
+      authenticated
+      chrome="immersive"
+      head={prefetchHref !== undefined ? <link rel="prefetch" href={prefetchHref} /> : null}
+    >
+      <div class="preview-topbar">
+        <div class="preview-topbar-row">
+          <a class="preview-back" href={`/albums/${albumId}`}>
+            ← {albumTitle}
+          </a>
+          <span class="preview-position tabular">
+            {position} / {total}
+          </span>
+        </div>
+        <p class="preview-title">{photo.title}</p>
       </div>
-      <div class="photo-preview">
+      <div class="preview-stage">
         <img
-          class="preview-image"
+          class="preview-stage-image"
           src={`/img/${albumId}/preview/${photo.id}`}
           alt={photo.title}
         />
       </div>
-      <div class="photo-actions">
-        <a class="viewer-action" href={`/albums/${albumId}`}>
-          アルバムへ戻る
-        </a>
-        {prevPhotoId !== undefined ? (
-          <a class="viewer-action" href={`/albums/${albumId}/photos/${prevPhotoId}`}>
-            前の写真
+      <div class="preview-bottombar">
+        {prevHref !== undefined ? (
+          <a class="preview-nav" data-nav="prev" href={prevHref}>
+            前へ
           </a>
-        ) : null}
-        {nextPhotoId !== undefined ? (
-          <a class="viewer-action" href={`/albums/${albumId}/photos/${nextPhotoId}`}>
-            次の写真
-          </a>
-        ) : null}
+        ) : (
+          <span class="preview-nav preview-nav-disabled" aria-hidden="true">
+            前へ
+          </span>
+        )}
         {downloadEnabled ? (
-          <>
-            <a class="viewer-action" href={`/download/${albumId}/thumb/${photo.id}`} download>
-              低画質ダウンロード
-            </a>
-            <a class="viewer-action" href={`/download/${albumId}/preview/${photo.id}`} download>
-              高画質ダウンロード
-            </a>
-          </>
+          <details class="preview-download">
+            <summary class="preview-download-summary">
+              保存 <span aria-hidden="true">▴</span>
+            </summary>
+            <div class="preview-download-menu">
+              <a class="preview-download-link" href={`/download/${albumId}/thumb/${photo.id}`} download>
+                低画質 (WebP)
+              </a>
+              <a
+                class="preview-download-link"
+                href={`/download/${albumId}/preview/${photo.id}`}
+                download
+              >
+                高画質 (JPEG)
+              </a>
+            </div>
+          </details>
         ) : null}
+        {nextHref !== undefined ? (
+          <a class="preview-nav" data-nav="next" href={nextHref}>
+            次へ
+          </a>
+        ) : (
+          <span class="preview-nav preview-nav-disabled" aria-hidden="true">
+            次へ
+          </span>
+        )}
       </div>
     </Layout>
   )
