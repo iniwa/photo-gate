@@ -2,98 +2,91 @@
 
 ## Purpose
 
-This file defines Claude Code execution rules for `photo-gate`.
-
-The normal workflow is that Codex creates a scoped handoff under
-`docs/handoffs/`, then Claude Code implements and verifies that handoff. Treat
-`AGENTS.md` as the Codex-side source of design intent, handoff rules, and review
-criteria.
+This file defines Claude Code execution rules for `photo-gate`. `AGENTS.md`
+owns current design intent, security boundaries, model selection, handoff
+policy, and Codex review.
 
 ## Required Reading
 
-Before editing:
+Before editing, read:
 
-1. `AGENTS.md`
-2. `CLAUDE.md`
-3. The active handoff directly under `docs/handoffs/`
-4. The files and decisions named by that handoff
+1. `AGENTS.md` and this file.
+2. The supplied active handoff or direct scoped task.
+3. The files, accepted decisions, current project-state records, and operations
+   documents explicitly listed for inspection.
 
-Read `FABLE.md`, relevant `docs/fable/` state, and
-`docs/operations/operator-actions.md` when the handoff requires broader project
-or operational context. Archived handoffs and `photo-gate-design.md` are
-historical references only.
-
-If no active handoff exists, or multiple active handoffs make the task
-ambiguous, stop and ask Codex before editing.
+`FABLE.md` and `docs/fable/autonomy-contract.md` are historical references and
+do not grant authority. Archived handoffs and `photo-gate-design.md` are also
+historical context.
 
 ## Execution Rules
 
-- Implement only the active handoff's goal and acceptance criteria.
-- Stay within `Files To Edit`. If another file must change, stop and explain why
-  before editing it.
-- Preserve the handoff's constraints and non-goals.
-- Prefer existing patterns and the smallest coherent change.
-- Run the requested verification and any narrowly necessary checks discovered
-  during implementation.
-- Self-review for security regressions, missing failure paths, unrelated
-  changes, and documentation drift.
-- Do not independently select roadmap work or continue into a follow-up task.
+- If the user writes in Japanese, respond in Japanese.
+- Keep delegated Windows command lines ASCII-only. Put non-ASCII instructions
+  in a UTF-8 handoff file instead of embedding them in the command line.
+- Implement and report only the current independently verifiable slice. Stay
+  inside its approved files, constraints, acceptance criteria, and non-goals.
+- If instructions conflict, listed files are insufficient for the first scoped
+  edit, or a design, dependency, binding, migration, deployment, security, or
+  external-exposure change is required, stop and return the question to Codex.
+- If the slice is too broad to reach its intended edit, return a proposed
+  narrower split instead of expanding discovery or redesigning the task.
+- Prefer existing patterns and the smallest coherent change. Preserve
+  unrelated changes and treat unexpected diffs as having unknown authorship.
+- Do not independently select roadmap or follow-up work.
 - Do not commit, push, deploy, mutate production, rotate credentials, or
-  archive the handoff unless the active handoff explicitly authorizes it.
-- Respond in Japanese when communicating with the user. Use clear English and
-  ASCII for code and durable agent documentation by default.
+  archive a handoff unless the user explicitly requests that narrowly scoped
+  action in the current task. Historical Fable permissions do not authorize it.
 
-Stop and report to Codex when:
+## Architecture and Safety
 
-- the handoff is ambiguous or conflicts with `AGENTS.md` or a security invariant;
-- implementation requires files or behavior outside the handoff;
-- a documented architecture or responsibility boundary must change;
-- secrets, credentials, local configuration, or a human-approved operation are
-  required;
-- a possible production, security, privacy, or data-integrity incident is found;
-- the same blocking problem remains after three repair attempts.
+- Workers own the authenticated viewer/admin surface, D1 authorization, and
+  reads from private R2. Docker sync owns PhotoPrism preview input,
+  re-encoding, metadata removal, R2 publication, and manifest generation.
+- Never expose PhotoPrism, NAS originals, private R2, RAW/RW2/original files,
+  secrets, credentials, or metadata-bearing source images.
+- Never bypass session authentication, album authorization, or exact manifest
+  membership. Fail closed when authentication, authorization, membership, or
+  data integrity is uncertain.
+- Keep actual R2 deletion disabled. Do not perform destructive migrations,
+  persistent-data deletion, resource deletion, or public-access changes.
+- Do not read, edit, print, or commit real local configuration, production D1
+  or R2 data, persistent volumes, or runtime state unless explicitly approved.
+- Do not add dependencies or change build tooling, CI/CD, bindings, image
+  publication, deployment, Portainer, domains, authentication, or external
+  exposure outside the approved scope.
 
-## Model / Subagent Policy
+## Verification
 
-- Run Claude Code in auto mode (automatic model selection) by default. Handoffs
-  are written so a Sonnet-class model can complete them without design
-  decisions; no coordinator/subagent split is required.
-- Subagents remain optional for scoped mechanical or parallel work. Subagents
-  must not change design intent, expand scope, touch secrets, alter
-  security/authorization boundaries, or make architectural decisions — those
-  return to Codex.
-- If a handoff turns out to require design judgment beyond its written scope,
-  stop and report to Codex instead of deciding in-session.
+Run the smallest relevant checks and then the full affected component suite
+when warranted.
 
-## Safety Summary
+Workers:
 
-- Never expose PhotoPrism, NAS originals, private R2, secrets, or metadata.
-- Never bypass session authentication, album authorization, or manifest photo
-  membership.
-- Never perform destructive migration, persistent-data deletion, R2 deletion,
-  resource deletion, or public-access changes without human approval.
-- Never print, generate into tracked files, or commit secret values.
-- When authentication, authorization, object membership, or data integrity is
-  uncertain, fail closed.
+```powershell
+Set-Location workers
+npm ci
+npm run lint
+npm run typecheck
+npm test
+npm run build
+npm audit
+```
 
-## Environment
+Docker sync:
 
-- Working repository: `D:/Git/photo-gate` on Windows 11 Home Sub PC.
-- Workers: Node.js 22, TypeScript, Hono, D1, and private R2.
-- Docker sync: Python 3.12; runtime target Raspberry Pi 4 (`linux/arm64`).
-- Gitea is canonical; GitHub is the mirror and CI/CD platform.
-- Portainer manages the existing Docker stack.
+```powershell
+Set-Location docker
+python -m pip install -e ".[dev]"
+python -m pytest
+python -m compileall src
+```
 
-Do not assume that permission to edit code also grants permission to operate
-Cloudflare, Portainer, Gitea, GitHub, PhotoPrism, NAS, or production data.
+For Docker runtime changes, build and smoke-test the image when Docker is
+available. Report every skipped or blocked check with the exact reason.
 
 ## Expected Report
 
-At completion or when blocked, report:
-
-- changed files;
-- concise implementation summary;
-- verification commands and results;
-- skipped or blocked checks with exact reasons;
-- unexpected findings or out-of-scope changes;
-- design or follow-up questions for Codex.
+Report changed files, a concise summary, verification commands and results,
+blocked checks, subagent usage, unexpected findings or out-of-scope changes,
+and design or follow-up questions for Codex.

@@ -2,160 +2,111 @@
 
 ## Purpose
 
-This file is the Codex-side source of design intent, handoff rules, and review
-criteria for `photo-gate`. `CLAUDE.md` defines Claude Code execution rules.
-
-The normal workflow is:
-
-1. Codex investigates, decides scope, and writes a concrete handoff.
-2. Claude Code implements and verifies only that handoff.
-3. Codex reviews the diff and results, resolves design questions, and decides
-   whether the work is complete.
-
-Codex may directly make small, documentation-only, or design-sensitive changes
-when a separate implementation handoff would add no value.
+This is the Codex-side working agreement for `photo-gate`. It owns current
+design intent, security and responsibility boundaries, model and handoff
+policy, Codex review, and documentation lifecycle. `CLAUDE.md` owns Claude
+Code execution rules.
 
 ## Project
 
 `photo-gate` is a private photo-sharing gateway. It publishes generated,
-metadata-stripped share images without exposing PhotoPrism, NAS originals, or a
-public R2 bucket.
+metadata-stripped share images through an authenticated Cloudflare Workers
+viewer without exposing PhotoPrism, NAS originals, or a public R2 bucket.
 
-- Repository: `D:/Git/photo-gate`
-- Development host: Windows 11 Home Sub PC
-- Runtime targets: Cloudflare Workers and Raspberry Pi 4 Docker (`linux/arm64`)
-- Canonical repository: Gitea
-- Mirror and CI/CD: GitHub
-- Docker runtime management: existing Portainer stack
-
-Before substantial work, Codex reads:
-
-1. This file and `FABLE.md`.
-2. `docs/fable/project-context.md` and `docs/fable/current-state.md`.
-3. `docs/fable/roadmap.md` and `docs/fable/progress.md`.
-4. `docs/operations/operator-actions.md`.
-5. The active file directly under `docs/handoffs/`, when one exists.
-
-`photo-gate-design.md` and archived handoffs are historical context. Some older
-Japanese text is mojibake; do not infer a new requirement from corrupted text
-when current Fable documents provide a clear rule.
-
-## Role Split
-
-Codex owns:
-
-- requirement clarification, architecture, risk assessment, and success criteria;
-- selection and scoping of the next implementation task;
-- creation of concrete Claude Code handoffs;
-- review of Claude Code reports and diffs against security invariants;
-- decisions about follow-up work, commits, delivery, and handoff archival;
-- durable documentation updates when decisions or project state change.
-
-Claude Code owns:
-
-- implementation and verification of an active Codex handoff;
-- staying within the handoff's files, constraints, and non-goals;
-- stopping on ambiguity, design conflict, unsafe operations, or required
-  out-of-scope edits;
-- reporting changed files, summary, verification, blocked checks, and design
-  questions to Codex.
-
-Claude Code must not independently select roadmap work. It must not commit,
-push, deploy, mutate production, or archive a handoff unless the active handoff
-explicitly authorizes that action.
-
-## Claude Code Model Orchestration
-
-Codex must not invoke Claude Code through `claude -p`. Codex writes the active
-handoff file, and the operator passes it to Claude Code manually.
-
-Claude Code normally runs in auto mode (automatic model selection). Handoffs
-must therefore be scoped so a Sonnet-class model can complete them without
-design decisions: explicit goal, files, constraints, non-goals, and
-verification. Subagents remain optional for scoped mechanical or parallel
-work. Subagents must not change design intent, expand scope, touch secrets,
-weaken authentication/authorization or any Non-Negotiable Invariant, or make
-architectural decisions — those return to Codex.
-
-## Non-Negotiable Invariants
-
-- Normal viewing must use Cloudflare Workers, D1, and private R2 only.
-- Shared users must never access PhotoPrism or NAS directly.
-- R2 must remain private and images must be returned through Workers only.
-- Never place RAW, RW2, originals, PhotoPrism data, or location-bearing
-  originals in R2.
-- Only re-encoded, metadata-stripped share thumbnails, previews, covers, and
-  validated manifests may be published.
-- Workers must not resize images, strip metadata, develop RAW files, or access
-  NAS originals.
-- Docker sync must not implement viewer authentication, viewer pages, or D1
-  authorization.
-- Every real data route must authenticate the session and authorize the album.
-- A photo object may be read only after exact membership in the current
-  validated manifest is confirmed.
-- R2 deletion stays dry-run only until a separately reviewed safe deletion
-  design is accepted.
-- Secrets and real local configuration must never be committed or printed.
-
-## Repository Boundaries
-
-- `workers/`: TypeScript, Hono, Cloudflare Workers, D1, private R2, viewer/admin
-  UI and APIs.
+- `workers/`: TypeScript, Hono, Cloudflare Workers, D1, private R2, viewer and
+  admin UI/APIs.
 - `docker/`: Python 3.12 sync CLI/service, PhotoPrism preview input, pyvips
-  re-encoding, metadata removal, R2 upload, manifest generation.
-- `docs/`: decisions, handoffs, operations, and Fable state.
+  re-encoding and metadata removal, R2 upload, and manifest generation.
+- Runtime targets: Cloudflare Workers and Raspberry Pi Docker on
+  `linux/arm64`; preserve the existing Gitea, GitHub mirror/CI, GHCR, and
+  Portainer boundaries.
 
-Do not add Workers-to-NAS access or Docker-to-D1/viewer dependencies.
+Before substantial work, read this file, `CLAUDE.md`, relevant accepted
+decisions, current project state under `docs/fable/`, applicable operations
+documents, and the active handoff when one exists. `FABLE.md`,
+`docs/fable/autonomy-contract.md`, `photo-gate-design.md`, and archived
+handoffs are historical references, not current authority.
+
+Shared generation sources are under `D:/Git/CLAUDEmdStrage/_base/`; this
+project uses the common sources plus the Windows, Docker, and Web profiles.
+
+## Model and Role Policy
+
+- Use GPT-5.3-Codex-Spark (`gpt-5.3-codex-spark`) proactively, when available,
+  for low-risk, well-scoped, independently verifiable supporting work that
+  requires no material design judgment or source-code implementation.
+- GPT-5.6 Terra (`gpt-5.6-terra`) or Sol (`gpt-5.6-sol`) owns requirements and
+  design. Whenever Terra is used, set its reasoning level to `high`. Prefer Sol
+  for substantial ambiguity, risk, or cross-boundary reasoning.
+- After design is fixed, delegate source-code implementation first to Claude
+  Code Sonnet 5 at effort medium from the repository root.
+- Only when Sonnet 5 is unavailable because of usage limits or service
+  availability, use GPT-5.6 Luna (`gpt-5.6-luna`) with reasoning level `max`
+  for the same implementation slice.
+- Implementation failure, failed verification, or a design question is not
+  model unavailability; return it to Codex.
+- Apply this policy to every coordinating Codex model and its subagents. Do not
+  create coordinator-specific exceptions.
+- Codex may keep requirements, design, review, read-only investigation,
+  synthesis, and small documentation-consistency changes in one context.
+- Claude Code subagents are optional and limited to clearly parallel
+  mechanical work inside the current handoff. They inherit its scope and all
+  security constraints.
+
+## Non-Negotiable Security Invariants
+
+- Normal viewing uses Cloudflare Workers, D1, and private R2 only. Shared users
+  must never access PhotoPrism or NAS directly, and R2 must not become public.
+- Never publish RAW, RW2, originals, PhotoPrism data, or location-bearing
+  originals to R2. Publish only generated, re-encoded, metadata-stripped share
+  thumbnails, previews, covers, and validated manifests.
+- Workers must not resize images, strip metadata, develop RAW files, or access
+  NAS originals. Docker sync must not implement viewer authentication, viewer
+  pages, or D1 authorization.
+- Every real data route authenticates the session and authorizes the album. A
+  photo object may be read only after exact membership in the current validated
+  manifest is confirmed. Authentication, authorization, membership, and data
+  integrity uncertainty must fail closed.
+- R2 cleanup remains dry-run only. Actual R2 deletion requires a separately
+  reviewed design and explicit human approval.
+- Keep errors sanitized, parameterize D1 queries, and strictly validate IDs and
+  object keys.
+
+## Protected State and Delivery
+
+- Do not read, edit, print, or commit secrets, credentials, real local
+  configuration, PhotoPrism/NAS originals, production D1 or R2 data,
+  persistent volumes, or runtime state unless an explicitly approved task
+  requires a narrowly defined operation.
+- Preserve unrelated working-tree changes. Treat unexpected diffs as having
+  unknown authorship and exclude them from the current task.
+- Do not add dependencies or change build tooling, CI/CD, bindings, migrations,
+  image publication, deployment, Portainer, domains, authentication, or
+  external exposure outside explicit scope.
+- Do not edit, commit, push, deploy, mutate production, rotate credentials, or
+  archive a handoff merely because a historical Fable document permits it.
+  These actions require a current, explicit, narrowly scoped user request.
+- Destructive or data-rewriting migrations, persistent-data deletion, R2
+  deletion, resource deletion, and public-access changes always require human
+  approval.
 
 ## Handoff Workflow
 
-Codex creates active handoffs as `docs/handoffs/YYYY-MM-DD-<short-task>.md`.
-There should normally be one active implementation handoff at a time.
-
-Every handoff must contain:
-
-```md
-Read AGENTS.md, CLAUDE.md, and this handoff file before implementation.
-If implementation would violate constraints or require files outside this
-handoff, stop and ask before editing.
-
-## Goal
-## Background
-## Acceptance Criteria
-## Files To Inspect
-## Files To Edit
-## Constraints
-## Non Goals
-## Verification
-## Expected Report
-```
-
-Handoffs must make the goal, allowed edit scope, security constraints,
-non-goals, and verification concrete. Do not hand off vague roadmap items.
-Production actions, commits, pushes, deployments, and handoff archival are
-excluded unless explicitly listed.
-
-After Claude Code reports completion, Codex reviews:
-
-- whether the diff stayed within the handoff and preserved all invariants;
-- whether unexpected files, dependencies, delivery behavior, or secrets changed;
-- whether failure paths and security-sensitive behavior remain fail-closed;
-- whether tests and verification match the blast radius;
-- whether discoveries require a follow-up handoff, ADR, or Fable state update.
-
-Codex archives a completed, reviewed handoff under `docs/handoffs/archive/`.
-Do not archive blocked, incomplete, or unreviewed handoffs.
-
-## Engineering Rules
-
-- Prefer existing patterns and narrowly scoped changes.
-- Keep security boundaries fail-closed and errors sanitized.
-- Parameterize all D1 queries and strictly validate IDs and object keys.
-- Update documentation when code changes a documented contract.
-- Add tests for authorization, manifest integrity, metadata removal, sync
-  ordering, and destructive-operation protection.
-- Preserve user changes and do not rewrite unrelated code.
-- Do not use destructive Git operations or rewrite published history.
+- Delegate only after the goal, files, constraints, non-goals, concrete data
+  sources, acceptance criteria, and verification are clear.
+- One handoff covers one cohesive, independently verifiable route, component
+  boundary, or lifecycle path plus its direct regression coverage.
+- Put substantive handoffs in
+  `docs/handoffs/YYYY-MM-DD-<short-task>.md`. Run unresolved discovery as a
+  separate read-only slice.
+- If a broad handoff times out or returns before its intended edit, do not
+  rerun it unchanged. Narrow the behavior, files, and verification first.
+- The implementer changes only the current slice and returns design questions
+  to Codex. Codex reviews scope, security, failure paths, tests, and the diff
+  before preparing another slice.
+- Keep active or blocked handoffs in `docs/handoffs/`. Move a handoff to
+  `docs/handoffs/archive/` only after implementation, verification, review,
+  required runtime work, and follow-up are complete.
 
 ## Verification
 
@@ -171,7 +122,7 @@ npm run build
 npm audit
 ```
 
-Docker:
+Docker sync:
 
 ```powershell
 Set-Location docker
@@ -180,20 +131,15 @@ python -m pytest
 python -m compileall src
 ```
 
-For Docker runtime changes, also build and smoke-test the image when Docker is
-available. Report every skipped or blocked check with the exact reason.
+Use the smallest relevant subset first, then the full affected component suite
+when the blast radius requires it. Build and smoke-test the Docker image for
+runtime changes when Docker is available. Report all blocked checks exactly.
 
-## Deployment Safety
+## Review and Documentation
 
-Authority and human-approval boundaries are defined in
-`docs/fable/autonomy-contract.md`. Those permissions do not authorize Claude
-Code to perform delivery implicitly; an active handoff must explicitly request
-delivery actions.
-
-- Existing Docker delivery pipelines and an existing Portainer stack may be
-  updated after successful verification when explicitly authorized.
-- Workers, additive D1 migrations, and approved bindings may be deployed after
-  successful verification and required initial human login when explicitly
-  authorized.
-- Destructive migrations, persistent-data deletion, R2 deletion, public-access
-  changes, resource deletion, and secret disclosure require human approval.
+Review approved scope, non-negotiable invariants, protected state,
+dependencies, delivery and exposure boundaries, tests, failure behavior, and
+unrelated diffs. Keep `AGENTS.md` short and current. Put decision context in
+`docs/decisions/`, current project state in the applicable `docs/fable/`
+records, operational procedures in `docs/operations/`, active work in
+`docs/handoffs/`, and completed handoffs in `docs/handoffs/archive/`.
