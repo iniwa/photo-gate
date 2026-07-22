@@ -1,5 +1,19 @@
 # FABLE.md
 
+## Historical Status
+
+This document is retained as historical project context. It is not a current
+source of authority. `AGENTS.md` and `CLAUDE.md` take precedence over every
+permission, workflow, default, or delegation rule below.
+
+Nothing in this document authorizes autonomous editing, committing, pushing,
+deployment, production mutation, or handoff archival. The historical workflow
+may be consulted only when the user explicitly requests a narrow task, and any
+such work remains subject to the current constraints in `AGENTS.md` and
+`CLAUDE.md`.
+
+The remainder of this file is intentionally preserved as historical text.
+
 ## Mission
 
 Complete `photo-gate` as a secure, deployable, and operable private
@@ -62,10 +76,12 @@ directly by Codex when a separate implementation handoff would add no value.
 
 ## Model And Subagent Delegation
 
-Claude Code normally runs in auto mode (automatic model selection). Codex
-handoffs must therefore be scoped so a Sonnet-class model can complete them
-without making design decisions: explicit goal, files, constraints, non-goals,
-and verification.
+Codex delegates implementation by running
+`claude -p --model sonnet --permission-mode auto "<handoff/task prompt>"` from
+the repo root (Sonnet 5 / current Sonnet alias, non-interactive print mode).
+Codex handoffs must therefore be scoped so a Sonnet-class model can complete
+them without making design decisions: explicit goal, files, constraints,
+non-goals, and verification.
 
 Subagents remain optional for scoped mechanical or parallel work. Subagents
 must not change design intent, expand scope, touch secrets, weaken

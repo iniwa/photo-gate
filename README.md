@@ -52,8 +52,10 @@ and CI/CD platform. Portainer manages the Docker stack on the Pi.
 
 1. Codex investigates, decides scope, and writes a concrete handoff under
    `docs/handoffs/` (rules in `AGENTS.md`).
-2. Claude Code (auto mode) implements and verifies exactly that handoff
-   (rules in `CLAUDE.md`).
+2. Codex delegates it with
+   `claude -p --model sonnet --effort medium --permission-mode auto "<handoff/task prompt>"`;
+   Claude Code implements and verifies exactly that handoff (rules in
+   `CLAUDE.md`).
 3. Codex reviews the diff and report, then archives the handoff.
 
 Improvement candidates live in `docs/improvements.md`; feature ideas in

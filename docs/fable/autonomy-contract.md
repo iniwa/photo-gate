@@ -1,5 +1,20 @@
 # Autonomy Contract
 
+## Historical Status
+
+This document is retained as historical project context. It is not a current
+authority or permission grant. `AGENTS.md` and `CLAUDE.md` take precedence over
+every autonomous action, approved default, delivery permission, and stop
+condition below.
+
+Nothing in this document authorizes autonomous editing, committing, pushing,
+deployment, production mutation, or handoff archival. The historical contract
+may be consulted only when the user explicitly requests a narrow task, and any
+such work remains subject to the current constraints in `AGENTS.md` and
+`CLAUDE.md`.
+
+The remainder of this file is intentionally preserved as historical text.
+
 ## Workflow Scope
 
 This document defines available project authority and human-approval

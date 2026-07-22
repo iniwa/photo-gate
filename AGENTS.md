@@ -30,6 +30,21 @@ handoffs are historical references, not current authority.
 Shared generation sources are under `D:/Git/CLAUDEmdStrage/_base/`; this
 project uses the common sources plus the Windows, Docker, and Web profiles.
 
+## Instruction Precedence
+
+When instructions conflict, apply them in this order:
+
+1. Runtime, tool, organization, and safety policy.
+2. Explicit user instructions that change project policy.
+3. Durable project instructions.
+4. Other instructions for the current user task and the approved task scope.
+
+The active handoff or equivalent inline prompt is the approved task scope.
+Verified project facts override base defaults. Only an explicit user
+instruction to change project policy may revise a durable project rule;
+other task instructions and approved scopes may narrow durable rules but may
+not weaken them. Report unresolved conflicts instead of guessing.
+
 ## Model and Role Policy
 
 - Use GPT-5.3-Codex-Spark (`gpt-5.3-codex-spark`) proactively, when available,
@@ -38,9 +53,11 @@ project uses the common sources plus the Windows, Docker, and Web profiles.
 - GPT-5.6 Terra (`gpt-5.6-terra`) or Sol (`gpt-5.6-sol`) owns requirements and
   design. Whenever Terra is used, set its reasoning level to `high`. Prefer Sol
   for substantial ambiguity, risk, or cross-boundary reasoning.
+- Run every Claude Code task with `--permission-mode auto`.
 - After design is fixed, delegate source-code implementation first to Claude
-  Code Sonnet 5 at effort medium from the repository root.
-- Only when Sonnet 5 is unavailable because of usage limits or service
+  Code Sonnet at effort medium from the repository root:
+  `claude -p --model sonnet --effort medium --permission-mode auto "<handoff/task prompt>"`.
+- Only when Sonnet is unavailable because of usage limits or service
   availability, use GPT-5.6 Luna (`gpt-5.6-luna`) with reasoning level `max`
   for the same implementation slice.
 - Implementation failure, failed verification, or a design question is not
@@ -50,8 +67,8 @@ project uses the common sources plus the Windows, Docker, and Web profiles.
 - Codex may keep requirements, design, review, read-only investigation,
   synthesis, and small documentation-consistency changes in one context.
 - Claude Code subagents are optional and limited to clearly parallel
-  mechanical work inside the current handoff. They inherit its scope and all
-  security constraints.
+  mechanical work inside the current task scope. They may work only within
+  the same files, scope, and constraints, and inherit all security rules.
 
 ## Non-Negotiable Security Invariants
 
@@ -74,18 +91,24 @@ project uses the common sources plus the Windows, Docker, and Web profiles.
 
 ## Protected State and Delivery
 
-- Do not read, edit, print, or commit secrets, credentials, real local
-  configuration, PhotoPrism/NAS originals, production D1 or R2 data,
-  persistent volumes, or runtime state unless an explicitly approved task
-  requires a narrowly defined operation.
+- Do not inspect secrets, credentials, or personal data unless their contents
+  are strictly necessary for the approved task.
+- Do not edit secrets, credentials, `.env`, real local configuration,
+  PhotoPrism/NAS originals, production D1 or R2 data, persistent volumes,
+  runtime state, or generated heavy artifacts unless the approved task
+  explicitly requires the change.
+- Never reproduce secrets, credentials, personal data, or private
+  infrastructure values in prompts, handoffs, reports, or external tools.
 - Preserve unrelated working-tree changes. Treat unexpected diffs as having
   unknown authorship and exclude them from the current task.
 - Do not add dependencies or change build tooling, CI/CD, bindings, migrations,
   image publication, deployment, Portainer, domains, authentication, or
   external exposure outside explicit scope.
-- Do not edit, commit, push, deploy, mutate production, rotate credentials, or
-  archive a handoff merely because a historical Fable document permits it.
-  These actions require a current, explicit, narrowly scoped user request.
+- Treat Fable documents as design and history, not authority. Unless the user
+  explicitly invokes a narrow autonomous workflow in the current task, they
+  grant no authority to edit, commit, push, deploy, mutate production, rotate
+  credentials, or archive a handoff. Even then, only actions expressly
+  included in the current approved scope are authorized.
 - Destructive or data-rewriting migrations, persistent-data deletion, R2
   deletion, resource deletion, and public-access changes always require human
   approval.
@@ -99,8 +122,10 @@ project uses the common sources plus the Windows, Docker, and Web profiles.
 - Put substantive handoffs in
   `docs/handoffs/YYYY-MM-DD-<short-task>.md`. Run unresolved discovery as a
   separate read-only slice.
-- If a broad handoff times out or returns before its intended edit, do not
-  rerun it unchanged. Narrow the behavior, files, and verification first.
+- Treat a delegation that stops before meeting its acceptance criteria as
+  interrupted even when its process exits normally. Record usable partial
+  results, verification, remaining scope, and the resume condition; narrow a
+  broad handoff before rerunning it.
 - The implementer changes only the current slice and returns design questions
   to Codex. Codex reviews scope, security, failure paths, tests, and the diff
   before preparing another slice.

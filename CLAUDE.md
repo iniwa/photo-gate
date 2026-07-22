@@ -15,15 +15,23 @@ Before editing, read:
 3. The files, accepted decisions, current project-state records, and operations
    documents explicitly listed for inspection.
 
-`FABLE.md` and `docs/fable/autonomy-contract.md` are historical references and
-do not grant authority. Archived handoffs and `photo-gate-design.md` are also
-historical context.
+`FABLE.md` and `docs/fable/autonomy-contract.md` are design and history, not
+authority. Unless the user explicitly invokes a narrow autonomous workflow in
+the current task, they grant no editing, commit, push, deploy, production
+mutation, or handoff-archival authority. Even then, only actions expressly in
+the current approved scope are authorized. Archived handoffs and
+`photo-gate-design.md` are also historical context.
 
 ## Execution Rules
 
 - If the user writes in Japanese, respond in Japanese.
 - Keep delegated Windows command lines ASCII-only. Put non-ASCII instructions
   in a UTF-8 handoff file instead of embedding them in the command line.
+- The handoff or equivalent inline prompt is the approved task scope. It may
+  narrow durable project constraints but may not weaken them.
+- Before editing, capture `git status --short` when Git is available. After
+  editing, compare the final status and diff with that baseline. Do not reset,
+  clean, stage, or rewrite pre-existing changes.
 - Implement and report only the current independently verifiable slice. Stay
   inside its approved files, constraints, acceptance criteria, and non-goals.
 - If instructions conflict, listed files are insufficient for the first scoped
@@ -33,10 +41,13 @@ historical context.
   narrower split instead of expanding discovery or redesigning the task.
 - Prefer existing patterns and the smallest coherent change. Preserve
   unrelated changes and treat unexpected diffs as having unknown authorship.
+- Claude Code subagents are optional and limited to clearly parallel
+  mechanical work inside the current task scope. They may work only within
+  the same files, scope, and constraints.
 - Do not independently select roadmap or follow-up work.
 - Do not commit, push, deploy, mutate production, rotate credentials, or
-  archive a handoff unless the user explicitly requests that narrowly scoped
-  action in the current task. Historical Fable permissions do not authorize it.
+  archive a handoff unless the current approved scope explicitly authorizes
+  that action. Historical Fable permissions do not authorize it.
 
 ## Architecture and Safety
 
@@ -50,8 +61,14 @@ historical context.
   data integrity is uncertain.
 - Keep actual R2 deletion disabled. Do not perform destructive migrations,
   persistent-data deletion, resource deletion, or public-access changes.
-- Do not read, edit, print, or commit real local configuration, production D1
-  or R2 data, persistent volumes, or runtime state unless explicitly approved.
+- Do not inspect secrets, credentials, or personal data unless their contents
+  are strictly necessary for the approved task.
+- Do not edit secrets, credentials, `.env`, real local configuration,
+  PhotoPrism/NAS originals, production D1 or R2 data, persistent volumes,
+  runtime state, or generated heavy artifacts unless the approved task
+  explicitly requires the change.
+- Never reproduce secrets, credentials, personal data, or private
+  infrastructure values in prompts, handoffs, reports, or external tools.
 - Do not add dependencies or change build tooling, CI/CD, bindings, image
   publication, deployment, Portainer, domains, authentication, or external
   exposure outside the approved scope.
@@ -60,6 +77,7 @@ historical context.
 
 Run the smallest relevant checks and then the full affected component suite
 when warranted.
+Always run `git diff --check` for changed text.
 
 Workers:
 
@@ -87,6 +105,9 @@ available. Report every skipped or blocked check with the exact reason.
 
 ## Expected Report
 
-Report changed files, a concise summary, verification commands and results,
-blocked checks, subagent usage, unexpected findings or out-of-scope changes,
-and design or follow-up questions for Codex.
+Report changed files, a concise summary, each verification command and result,
+blocked checks, partial edits, subagent usage, unexpected findings or
+out-of-scope changes, and design or follow-up questions for Codex. Report
+`status=complete` only after meeting the acceptance criteria. Otherwise report
+`status=interrupted`, usable partial results, verification, remaining scope,
+and the resume condition.
