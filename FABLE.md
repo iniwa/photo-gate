@@ -12,7 +12,9 @@ may be consulted only when the user explicitly requests a narrow task, and any
 such work remains subject to the current constraints in `AGENTS.md` and
 `CLAUDE.md`.
 
-The remainder of this file is intentionally preserved as historical text.
+The remainder of this file is historical text. In particular, its model names,
+delegation command, handoff cadence, and autonomy language may be obsolete and
+must not be used instead of the current `AGENTS.md` and `CLAUDE.md`.
 
 ## Mission
 
@@ -76,17 +78,9 @@ directly by Codex when a separate implementation handoff would add no value.
 
 ## Model And Subagent Delegation
 
-Codex delegates implementation by running
-`claude -p --model sonnet --permission-mode auto "<handoff/task prompt>"` from
-the repo root (Sonnet 5 / current Sonnet alias, non-interactive print mode).
-Codex handoffs must therefore be scoped so a Sonnet-class model can complete
-them without making design decisions: explicit goal, files, constraints,
-non-goals, and verification.
-
-Subagents remain optional for scoped mechanical or parallel work. Subagents
-must not change design intent, expand scope, touch secrets, weaken
-authentication/authorization or any Non-Negotiable Invariant, or make
-architectural decisions. Those questions return to Codex.
+This historical section no longer defines model selection, delegation
+commands, handoff sizing, or subagent policy. Use `AGENTS.md` section
+`Model and Role Policy` and the current task scope.
 
 ## Completion Target
 

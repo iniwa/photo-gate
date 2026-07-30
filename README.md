@@ -41,7 +41,7 @@ PhotoPrism (NAS) --> Docker sync (Raspberry Pi 4, Portainer)
 | `docs/decisions/` | Accepted ADRs. |
 | `docs/handoffs/` | Active Codex→Claude Code handoffs (archive under `archive/`). |
 | `docs/operations/` | Operator runbooks (bootstrap, deploy, rollback, backup, admin access). |
-| `docs/fable/` | Project state, roadmap, and autonomy contract (operational source of truth). |
+| `docs/fable/` | Project state and historical roadmap records; these do not grant authority. |
 | `docs/improvements.md` | Code-improvement checklist (investigated, evidence-backed items). |
 | `docs/iniwa-issues.md` | Feature ideas and operator wishlist. |
 
@@ -50,17 +50,20 @@ and CI/CD platform. Portainer manages the Docker stack on the Pi.
 
 ## Development workflow
 
-1. Codex investigates, decides scope, and writes a concrete handoff under
-   `docs/handoffs/` (rules in `AGENTS.md`).
-2. Codex delegates it with
-   `claude -p --model sonnet --effort medium --permission-mode auto "<handoff/task prompt>"`;
-   Claude Code implements and verifies exactly that handoff (rules in
-   `CLAUDE.md`).
-3. Codex reviews the diff and report, then archives the handoff.
+1. Codex resolves requirements and material design choices. Ordinary work may
+   use an inline task; substantial, cross-session, risky, or
+   interruption-sensitive work uses a handoff under `docs/handoffs/`.
+2. Once the outcome and protected boundaries are clear, the implementation
+   writer completes the cohesive change, directly related tests and
+   documentation, and focused verification (rules in `CLAUDE.md`).
+3. Codex reviews the stable diff. Completed handoffs are archived only after
+   implementation, verification, review, required runtime work, and follow-up
+   are complete.
 
 Improvement candidates live in `docs/improvements.md`; feature ideas in
-`docs/iniwa-issues.md`. Security invariants are listed in `AGENTS.md`
-(“Non-Negotiable Invariants”) and must survive every change.
+`docs/iniwa-issues.md`. Current authority and security invariants are defined
+by `AGENTS.md` and `CLAUDE.md`; `FABLE.md` and
+`docs/fable/autonomy-contract.md` are historical references.
 
 ## Verification
 
