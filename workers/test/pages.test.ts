@@ -26,7 +26,16 @@ function validSession(): SessionWithUser {
   }
 }
 
-function manifestJson(photos: { id: string; title: string }[], albumId = ALBUM_ID): string {
+function manifestJson(
+  photos: Array<{
+    id: string
+    title: string
+    takenAt?: string
+    width?: number
+    height?: number
+  }>,
+  albumId = ALBUM_ID,
+): string {
   return JSON.stringify({
     schemaVersion: 1,
     albumId,
@@ -43,9 +52,9 @@ function manifestJson(photos: { id: string; title: string }[], albumId = ALBUM_I
       title: p.title,
       thumb: `thumbs/${p.id}.webp`,
       preview: `previews/${p.id}.jpg`,
-      takenAt: '2026-05-01T12:00:00+09:00',
-      width: 3000,
-      height: 2000,
+      takenAt: p.takenAt ?? '2026-05-01T12:00:00+09:00',
+      width: p.width ?? 3000,
+      height: p.height ?? 2000,
     })),
   })
 }
@@ -257,6 +266,35 @@ describe('GET /albums', () => {
 })
 
 describe('GET /albums/:albumId', () => {
+  it('renders ordered timeline sections, repeated dates, ratio classes, and dimensions', async () => {
+    const objects = new Map<string, PrivateObjectBody>()
+    objects.set(albumManifestKey(ALBUM_ID), manifestBody(manifestJson([
+      { id: 'photo-a', title: 'A', takenAt: '2026-05-01T12:00:00+09:00', width: 1000, height: 1000 },
+      { id: 'photo-b', title: 'B', takenAt: '2026-05-02T12:00:00+09:00', width: 2000, height: 1000 },
+      { id: 'photo-c', title: 'C', takenAt: '2026-05-01T13:00:00+09:00', width: 1000, height: 2000 },
+    ])))
+    const { deps } = makeDeps({ reader: mapReader(objects) })
+    const text = await (await get(makeApp(deps), `/albums/${ALBUM_ID}`, await validCookie())).text()
+    expect(text.indexOf('5月1日')).toBeLessThan(text.indexOf('5月2日'))
+    expect(text.lastIndexOf('5月1日')).toBeGreaterThan(text.indexOf('5月2日'))
+    expect(text).toContain('class="timeline-cell ar-100"')
+    expect(text).toContain('class="timeline-cell ar-200"')
+    expect(text).toContain('class="timeline-cell ar-050"')
+    expect(text).toContain('width="2000" height="1000"')
+    expect(text).not.toContain('class="contact-sheet"')
+    expect(text).not.toContain('style=')
+  })
+
+  it('renders an empty album state without a grid', async () => {
+    const objects = new Map<string, PrivateObjectBody>()
+    objects.set(albumManifestKey(ALBUM_ID), manifestBody(manifestJson([])))
+    const { deps } = makeDeps({ reader: mapReader(objects) })
+    const text = await (await get(makeApp(deps), `/albums/${ALBUM_ID}`, await validCookie())).text()
+    expect(text).toContain('写真がまだありません')
+    expect(text).toContain('href="/albums"')
+    expect(text).not.toContain('justified-grid')
+    expect(text).not.toContain('contact-sheet')
+  })
   it('no session -> 303 to /', async () => {
     const { deps } = makeDeps({ validSession: null })
     const app = makeApp(deps)
@@ -302,8 +340,9 @@ describe('GET /albums/:albumId', () => {
     // Photo title used as alt text, escaped.
     expect(text).toContain('First &lt;i&gt;photo&lt;/i&gt;')
     expect(text).not.toContain('First <i>photo</i>')
-    // No EXIF / dimension metadata.
-    expect(text).not.toContain('3000')
+    // Manifest dimensions are emitted as responsive image attributes.
+    expect(text).toContain('width="3000"')
+    expect(text).toContain('height="2000"')
     expect(text).not.toContain('2026-05-01')
     // Logout + back link.
     expect(text).toContain('action="/api/auth/logout"')

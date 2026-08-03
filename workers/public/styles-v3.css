@@ -1,0 +1,905 @@
+/* ==========================================================================
+   photo-gate — dark gallery design system
+   See docs/decisions/2026-07-03-ui-redesign.md for the full ADR.
+   ========================================================================== */
+
+/* -- Tokens --------------------------------------------------------------- */
+
+:root {
+  color-scheme: dark;
+  /* room */
+  --bg: #131316;            /* neutral dark, no color cast on photos */
+  --surface: #1C1C21;       /* cards, bars, inputs */
+  --surface-raised: #232329;/* hover rows, menus */
+  --hairline: #2A2A31;      /* borders, dividers */
+  --scrim: rgba(19, 19, 22, 0.72);  /* overlay bars on photos */
+  /* ink */
+  --text: #ECECEE;          /* ~15:1 on --bg */
+  --text-muted: #9C9CA6;    /* ~6.9:1 on --bg */
+  /* gallery light */
+  --amber: #E0A458;         /* ~8.6:1 on --bg; buttons, links, selection */
+  --amber-strong: #EDB878;  /* hover */
+  --amber-glow: rgba(224, 164, 88, 0.35);  /* focus ring, selection glow */
+  --on-amber: #1A1408;      /* text on amber fills */
+  /* status */
+  --danger: #E06858;
+  --danger-surface: #2A1B18;
+  --warning-surface: #2A2418;
+  --warning-text: #E0C58A;
+  /* shape */
+  --radius: 10px;
+  --radius-lg: 16px;
+}
+
+/* -- Reset ------------------------------------------------------------------ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+/* -- Body / typography ----------------------------------------------------- */
+
+body {
+  font-family:
+    system-ui, -apple-system, "Segoe UI", "Hiragino Sans",
+    "Hiragino Kaku Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+h1 {
+  font-size: 1.375rem;
+  font-weight: 650;
+}
+
+@media (min-width: 1025px) {
+  h1 {
+    font-size: 1.625rem;
+  }
+}
+
+a {
+  color: var(--amber);
+}
+
+/* Counts and positions: muted, tabular figures. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+/* -- Header shell ------------------------------------------------------------ */
+
+header {
+  background: var(--bg);
+  border-bottom: 1px solid var(--hairline);
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-height: 44px;
+  padding: 0.875rem 1rem;
+}
+
+@media (min-width: 641px) {
+  header {
+    padding: 0.875rem 1.5rem;
+  }
+}
+
+.site-title {
+  font-weight: 600;
+  font-size: 1rem;
+  letter-spacing: 0.06em;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.logout-form {
+  margin-left: auto;
+}
+
+.logout-button {
+  background: transparent;
+  border: 1px solid var(--hairline);
+  color: var(--text);
+  min-height: 44px;
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius);
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.logout-button:hover {
+  background: var(--surface-raised);
+}
+
+/* -- Main content ------------------------------------------------------------ */
+
+main {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1.25rem 1rem;
+}
+
+@media (min-width: 641px) {
+  main {
+    padding: 1.5rem;
+  }
+}
+
+@media (min-width: 1025px) {
+  main {
+    padding: 2rem;
+  }
+}
+
+/* -- Focus ------------------------------------------------------------------- */
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--amber-glow);
+  border-radius: var(--radius);
+}
+
+/* -- Login page --------------------------------------------------------------
+   Centered column, no card box, single amber dot after the wordmark. */
+
+.login-page {
+  min-height: calc(100vh - 44px);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: stretch;
+  gap: 1.5rem;
+  max-width: 360px;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem;
+}
+
+.login-wordmark {
+  text-align: center;
+  font-weight: 600;
+  font-size: 1.75rem;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+
+.login-wordmark-dot {
+  color: var(--amber);
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.field-label {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.field input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0.625rem 0.875rem;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.field input:focus-visible {
+  border-color: var(--amber);
+}
+
+.login-submit {
+  width: 100%;
+  min-height: 44px;
+  padding: 0.75rem;
+  background: var(--amber);
+  color: var(--on-amber);
+  border: none;
+  border-radius: var(--radius);
+  font-size: 1rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.login-submit:hover {
+  background: var(--amber-strong);
+}
+
+.form-error {
+  background: var(--danger-surface);
+  color: var(--danger);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+}
+
+/* -- Status pages (準備中 / 403 / 404 / 500) ----------------------------------
+   Shared pattern: muted oversized glyph, one-line explanation, one amber link. */
+
+.status-page {
+  text-align: center;
+  max-width: 420px;
+  margin: 4rem auto 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.status-glyph {
+  font-size: 3.5rem;
+  font-weight: 650;
+  color: var(--text-muted);
+  line-height: 1;
+}
+
+.status-title {
+  font-size: 1.25rem;
+}
+
+.status-message {
+  color: var(--text-muted);
+}
+
+.status-link {
+  display: inline-block;
+  margin-top: 1rem;
+  min-height: 44px;
+  line-height: 44px;
+  color: var(--amber);
+  text-decoration: none;
+}
+
+.status-link:hover {
+  text-decoration: underline;
+}
+
+/* ==========================================================================
+   Album list / Album detail / Selection result (Phase 2)
+   See docs/decisions/2026-07-03-ui-redesign.md §2.3. Selection = the grid
+   itself: the corner checkbox and fixed bottom bar are :has()-driven, no JS.
+   ========================================================================== */
+
+.album-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+@media (min-width: 641px) {
+  .album-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1025px) {
+  .album-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+  }
+}
+
+.album-card {
+  position: relative;
+  display: block;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--surface-raised);
+  text-decoration: none;
+}
+
+.album-card-cover {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+}
+
+.album-card-title {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 2.5rem 1rem 0.75rem;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.62), transparent);
+  color: #fff;
+  font-weight: 600;
+  font-size: 1rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (min-width: 1025px) and (prefers-reduced-motion: no-preference) {
+  .album-card-cover {
+    transition: box-shadow 150ms ease;
+  }
+
+  .album-card:hover .album-card-cover {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  }
+}
+
+.albums-empty {
+  text-align: center;
+  color: var(--text-muted);
+  margin-top: 3rem;
+}
+
+.pagination-next {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  line-height: 44px;
+  text-align: center;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.pagination-next:hover {
+  background: var(--surface);
+}
+
+.detail-back-link {
+  display: inline-block;
+  min-height: 44px;
+  line-height: 44px;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.detail-back-link:hover {
+  color: var(--text);
+}
+
+.contact-sheet {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  margin-top: 1rem;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+@media (min-width: 641px) {
+  .contact-sheet {
+    grid-template-columns: repeat(5, 1fr);
+  }
+}
+
+@media (min-width: 1025px) {
+  .contact-sheet {
+    grid-template-columns: repeat(6, 1fr);
+  }
+}
+
+.contact-cell {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  background: var(--surface-raised);
+}
+
+.contact-link {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.contact-link img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+@media (min-width: 1025px) and (prefers-reduced-motion: no-preference) {
+  .contact-link img {
+    transition: filter 150ms ease;
+  }
+}
+
+.contact-checkbox {
+  appearance: none;
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  border-radius: 50%;
+  background: var(--scrim);
+  border: 1.5px solid rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  z-index: 1;
+}
+
+.contact-checkbox::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
+.contact-checkbox:checked {
+  background: var(--amber);
+  border-color: var(--amber);
+}
+
+.contact-checkbox:checked::before {
+  content: '\2713';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--on-amber);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.contact-cell:has(.contact-checkbox:checked) {
+  box-shadow: inset 0 0 0 3px var(--amber);
+}
+
+.contact-cell:has(.contact-checkbox:checked) img {
+  filter: brightness(0.75);
+}
+
+.selection-form {
+  display: block;
+  /* Room for the fixed .selection-bar, including its JS-enhanced second row
+     (live count wraps onto its own line — see .selection-count-live). */
+  padding-bottom: 7.5rem;
+}
+
+.selection-bar {
+  display: flex;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
+  background: var(--surface);
+  border-top: 1px solid var(--hairline);
+}
+
+@supports selector(:has(*)) {
+  .selection-bar {
+    display: none;
+  }
+
+  .selection-form:has(input[name='photoId']:checked) .selection-bar {
+    display: flex;
+  }
+}
+
+.selection-variant {
+  flex: 1;
+  min-height: 44px;
+  background: var(--bg);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 0.5rem 0.75rem;
+}
+
+.selection-submit {
+  min-height: 44px;
+  padding: 0.6rem 1.25rem;
+  background: var(--amber);
+  color: var(--on-amber);
+  border: none;
+  border-radius: var(--radius);
+  font-weight: 650;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.selection-submit:hover {
+  background: var(--amber-strong);
+}
+
+.selection-count {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin-top: 0.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.selection-result {
+  list-style: none;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.selection-result li + li {
+  border-top: 1px solid var(--hairline);
+}
+
+.result-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 56px;
+  padding: 0.875rem 1.25rem;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.result-row:hover {
+  background: var(--surface-raised);
+}
+
+.result-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.result-save {
+  color: var(--amber);
+  font-weight: 650;
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.album-detail-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.album-detail-header h1 {
+  margin-bottom: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.photo-count {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* JS-inserted selection-bar controls (app.js initSelectionBar). The bar
+   itself stays :has()-driven (see .selection-bar above); these elements are
+   only ever present when JS ran, so the no-JS page never shows a dead
+   control. .selection-count-live forces a wrap onto its own row so the bar
+   stays usable at narrow widths with the extra controls. */
+
+.selection-count-live {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
+  flex-basis: 100%;
+}
+
+.selection-select-all,
+.selection-clear {
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.selection-select-all:hover,
+.selection-clear:hover {
+  background: var(--surface-raised);
+}
+
+/* ==========================================================================
+   Photo preview (Phase 3)
+   Immersive full-viewport stage: no header, no frame around the photo.
+   See docs/decisions/2026-07-03-ui-redesign.md section 2.3 "Photo preview".
+   Top/bottom bars are fixed overlays on --scrim so text stays readable over
+   any photo (accessibility floor, section 2.6); the stage is padded so the
+   photo never sits under either bar.
+   ========================================================================== */
+
+main.immersive {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.preview-topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: var(--scrim);
+  padding: calc(0.75rem + env(safe-area-inset-top)) 1rem 0.5rem;
+}
+
+.preview-topbar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 44px;
+}
+
+.preview-back {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.preview-back:hover {
+  color: var(--amber);
+}
+
+.preview-position {
+  white-space: nowrap;
+  font-size: 0.875rem;
+}
+
+.preview-title {
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  margin-top: 0.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4.5rem 0.5rem 5.5rem;
+}
+
+.preview-stage-image {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+.preview-bottombar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  align-items: stretch;
+  background: var(--scrim);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.preview-nav {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0.875rem 1rem;
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.preview-nav:hover {
+  color: var(--amber);
+}
+
+.preview-nav-disabled {
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+
+.preview-download {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.preview-download-summary {
+  height: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.875rem 1.25rem;
+  color: var(--amber);
+  font-weight: 650;
+  font-size: 0.95rem;
+  cursor: pointer;
+  list-style: none;
+  white-space: nowrap;
+}
+
+.preview-download-summary::-webkit-details-marker {
+  display: none;
+}
+
+.preview-download-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 180px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 0.5rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.preview-download-link {
+  display: block;
+  min-height: 44px;
+  line-height: 44px;
+  padding: 0 0.75rem;
+  border-radius: var(--radius);
+  color: var(--text);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.preview-download-link:hover {
+  background: var(--surface-raised);
+  color: var(--amber);
+}
+
+/* ==========================================================================
+   LEGACY COMPAT (removed in Phase 4)
+   Dark-token-adapted rules for classes still emitted by pages not yet
+   migrated to the v2 design (admin tables/notices, and back-link/next-link/
+   empty-note shared with admin). Kept intentionally plain — these
+   components are redesigned in their own phase, not here.
+   ========================================================================== */
+
+.back-link {
+  display: inline-block;
+  margin-bottom: 1.25rem;
+  min-height: 44px;
+  line-height: 44px;
+  color: var(--amber);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.back-link:hover {
+  text-decoration: underline;
+}
+
+.pagination {
+  margin-top: 1.5rem;
+  text-align: center;
+}
+
+.next-link {
+  display: inline-block;
+  padding: 0.6rem 1.25rem;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  color: var(--amber);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.next-link:hover {
+  background: var(--surface);
+}
+
+.empty-note {
+  color: var(--text-muted);
+  margin-top: 1.5rem;
+}
+
+.user-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1.25rem;
+  font-size: 0.875rem;
+}
+
+.user-table th,
+.user-table td {
+  border-bottom: 1px solid var(--hairline);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.user-table th {
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.75rem;
+}
+
+.notice {
+  background: var(--warning-surface);
+  color: var(--warning-text);
+  padding: 0.25rem 0.75rem;
+  border-radius: var(--radius);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+/* V3-1 album timeline */
+.timeline { margin-top: 1rem; }
+.timeline-section + .timeline-section { margin-top: 2rem; }
+.timeline-heading { font-size: 1rem; color: var(--text-muted); margin-bottom: .625rem; }
+.justified-grid { display: flex; flex-wrap: wrap; gap: 3px; }
+.justified-grid::after { content: ''; flex-grow: 999999; flex-basis: 0; }
+.timeline-cell { position: relative; min-width: 0; flex-grow: var(--ar, 100); flex-shrink: 1; flex-basis: calc(var(--ar, 100) * 1.4px); aspect-ratio: var(--ar, 100) / 100; background: var(--surface-raised); }
+.timeline-link { display: block; width: 100%; height: 100%; }
+.timeline-link img { width: 100%; height: 100%; object-fit: contain; }
+.timeline-cell:has(.contact-checkbox:checked) { box-shadow: inset 0 0 0 3px var(--amber); }
+.timeline-cell:has(.contact-checkbox:checked) img { filter: brightness(0.75); }
+.album-empty-state { text-align: center; color: var(--text-muted); margin: 4rem auto; display: grid; gap: 1rem; }
+.album-empty-state a { color: var(--amber); }
+.ar-050 { --ar: 50; } .ar-060 { --ar: 60; } .ar-070 { --ar: 70; } .ar-080 { --ar: 80; } .ar-090 { --ar: 90; } .ar-100 { --ar: 100; } .ar-110 { --ar: 110; } .ar-120 { --ar: 120; } .ar-130 { --ar: 130; } .ar-140 { --ar: 140; } .ar-150 { --ar: 150; } .ar-160 { --ar: 160; } .ar-170 { --ar: 170; } .ar-180 { --ar: 180; } .ar-190 { --ar: 190; } .ar-200 { --ar: 200; } .ar-210 { --ar: 210; } .ar-220 { --ar: 220; } .ar-230 { --ar: 230; } .ar-240 { --ar: 240; }

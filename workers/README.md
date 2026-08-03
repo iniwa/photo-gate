@@ -14,9 +14,10 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 ## Architecture
 
 - **Runtime**: Cloudflare Workers (TypeScript, Hono + JSX SSR)
-- **Static assets**: `public/` served via Workers Assets (`/styles-v2.css`, `/app.js`;
-  legacy `/styles.css` remains published until UI redesign Phase 4 removes it — see
-  `docs/decisions/2026-07-03-ui-redesign.md` §2.5)
+- **Static assets**: `public/` served via Workers Assets (`/styles-v3.css`, `/app.js`;
+  `/styles-v2.css` and `/styles.css` remain published intentionally for rollback
+  and the separate admin-restyle phase — see
+  `docs/decisions/2026-07-08-ui-v3-album-experience.md`)
 - **UI**: Server-side rendered HTML via Hono + JSX, with minimal self-hosted
   progressive-enhancement JavaScript (`public/app.js`). Every feature works with
   JavaScript disabled (see `docs/decisions/2026-07-03-ui-redesign.md` §2.2).
@@ -527,8 +528,9 @@ Cache headers:
 
 - Successful HTML pages: `Cache-Control: private, no-cache`
 - 401 and error responses: `Cache-Control: no-store`
-- Static assets `public/styles-v2.css`, `public/app.js`, and legacy `public/styles.css`
-  (via `_headers`): `Cache-Control: public, max-age=31536000, immutable`
+- Static assets `public/styles-v3.css`, `public/app.js`, and legacy
+  `public/styles-v2.css`/`public/styles.css` (via `_headers`):
+  `Cache-Control: public, max-age=31536000, immutable`
 
 ## R2 Object Key Builders
 
@@ -849,6 +851,11 @@ are swallowed because expired sessions are already rejected at read time).
 The Worker never calls PhotoPrism or NAS; R2 content is produced solely by
 the Docker sync service. Real resource identifiers (D1 ID, Access values,
 HMAC keys) are registered at deploy time and never committed.
+
+Viewer SSR pages use the immutable `/styles-v3.css` shell. Album detail pages
+render manifest photos in contiguous local-date timeline sections with
+non-cropped aspect-ratio classes; legacy stylesheets remain available for
+rollback and separate admin restyle work.
 
 For the audited production state, version IDs, and verification history, see
 `docs/fable/current-state.md` and `docs/operations/deploy-log.md`.

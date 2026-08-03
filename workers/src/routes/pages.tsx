@@ -12,6 +12,8 @@ import { digestSessionToken } from '../services/auth-crypto.js'
 import { loadAlbumManifest } from '../services/private-album-object-service.js'
 import { requireSessionPage } from '../middleware/require-session-page.js'
 import { requireAlbumPermission } from '../middleware/require-album-permission.js'
+import type { ManifestPhoto } from '../types/manifest.js'
+import { aspectRatioClass, groupPhotosByDate, validDimension } from '../services/viewer-photo-presentation.js'
 
 const ALBUMS_PER_PAGE = 50
 
@@ -350,26 +352,52 @@ function AlbumDetailPage({
 }: {
   albumId: string
   title: string
-  photos: { id: string; title: string }[]
+  photos: ManifestPhoto[]
   downloadEnabled: boolean
 }) {
-  const grid = (
-    <div class="contact-sheet">
-      {photos.map((photo) => (
-        <div class="contact-cell" key={photo.id}>
-          <a class="contact-link" href={`/albums/${albumId}/photos/${photo.id}`}>
-            <img src={`/img/${albumId}/thumb/${photo.id}`} alt={photo.title} loading="lazy" />
-          </a>
-          {downloadEnabled ? (
-            <input
-              type="checkbox"
-              class="contact-checkbox"
-              name="photoId"
-              value={photo.id}
-              aria-label={`「${photo.title}」を選択`}
-            />
-          ) : null}
-        </div>
+  const timeline = photos.length === 0 ? (
+    <div class="album-empty-state">
+      <p>写真がまだありません</p>
+      <a href="/albums">アルバム一覧へ戻る</a>
+    </div>
+  ) : (
+    <div class="timeline">
+      {groupPhotosByDate(photos).map((group) => (
+        <section
+          class="timeline-section"
+          key={`${group.dateKey ?? 'unknown'}-${group.photos[0]?.id}`}
+        >
+          <h2 class="timeline-heading">{group.heading}</h2>
+          <div class="justified-grid">
+            {group.photos.map((photo) => {
+              const dimensionsValid = validDimension(photo.width) && validDimension(photo.height)
+              return (
+                <div
+                  class={`timeline-cell ${aspectRatioClass(photo.width, photo.height)}`}
+                  key={photo.id}
+                >
+                  <a class="timeline-link" href={`/albums/${albumId}/photos/${photo.id}`}>
+                    <img
+                      src={`/img/${albumId}/thumb/${photo.id}`}
+                      alt={photo.title}
+                      loading="lazy"
+                      {...(dimensionsValid ? { width: photo.width, height: photo.height } : {})}
+                    />
+                  </a>
+                  {downloadEnabled ? (
+                    <input
+                      type="checkbox"
+                      class="contact-checkbox"
+                      name="photoId"
+                      value={photo.id}
+                      aria-label={`「${photo.title}」を選択`}
+                    />
+                  ) : null}
+                </div>
+              )
+            })}
+          </div>
+        </section>
       ))}
     </div>
   )
@@ -385,7 +413,7 @@ function AlbumDetailPage({
       </div>
       {downloadEnabled ? (
         <form method="post" action={`/download/${albumId}/selection`} class="selection-form">
-          {grid}
+          {timeline}
           <div class="selection-bar">
             <select name="variant" class="selection-variant">
               <option value="thumb">低画質 (WebP)</option>
@@ -397,7 +425,7 @@ function AlbumDetailPage({
           </div>
         </form>
       ) : (
-        grid
+        timeline
       )}
     </Layout>
   )

@@ -49,6 +49,15 @@ describe('GET / (login form, fail-safe probe)', () => {
     hasSecurityHeaders(res)
   })
 
+  it('uses the exact security header policy', async () => {
+    const res = await app.request('/', {}, fakeEnv)
+    expect(res.headers.get('content-security-policy')).toBe("default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff')
+    expect(res.headers.get('x-frame-options')).toBe('DENY')
+    expect(res.headers.get('referrer-policy')).toBe('same-origin')
+    expect(res.headers.get('permissions-policy')).toBe('camera=(), microphone=(), geolocation=()')
+  })
+
   // Regression: with 'no-referrer', browsers serialize the Origin header of
   // navigation POSTs (the login form) as "Origin: null" per the Fetch spec,
   // so the login origin check fails closed with 403 for every real browser.

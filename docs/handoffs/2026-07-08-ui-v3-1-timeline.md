@@ -1,6 +1,29 @@
-Read AGENTS.md, CLAUDE.md, and this handoff file before implementation.
-If implementation would violate constraints or require files outside this
-handoff, stop and ask before editing.
+# UI V3-1 Timeline Implementation
+
+Role: one native `bounded_implementer` acting as the sole writer for this
+cohesive outcome.
+
+## Pilot status (2026-08-03)
+
+Implementation and automated verification are complete in the working tree;
+independent review returned Go with no material findings. The change is not
+committed, pushed, deployed, or production-verified. Browser visual QA at
+375/1280px with JavaScript enabled and disabled remains a separate pending
+task. Resume at standalone browser QA and later explicitly authorized delivery,
+not reimplementation. The acceptance criteria below preserve the original
+baseline and scope.
+
+Read `AGENTS.md`, the two accepted UI decisions named below, and this handoff
+before implementation. Start the configured role without inherited
+conversation history and without an explicit model or effort override. Named
+files are starting points, not a strict allowlist. Return control before an
+approval gate, an unresolved material decision, or a required change that
+would violate the explicit scope below.
+
+The primary session owns integration and does not make routine edits on the
+delegated source surface. Send minor in-scope corrections back to the same
+implementer. Record the actual role, model, effort, retries, corrections, and
+token fields when exposed; use `unknown` rather than estimates.
 
 ## Goal
 
@@ -22,6 +45,11 @@ production-secret behavior.
 
 Accepted ADR: `docs/decisions/2026-07-08-ui-v3-album-experience.md`.
 
+At handoff authoring, V3-1 was not implemented in the current baseline: `Layout` still links
+`/styles-v2.css`, album detail still uses the square `.contact-sheet`,
+`_headers` has no `/styles-v3.css` entry, and there is no timeline, aspect
+class, or empty-album implementation.
+
 UI v3 keeps the existing Dark Gallery token system and progressive enhancement
 policy, but changes the album-detail information architecture from a square
 file-list grid into a family photo timeline. Manifest entries already contain
@@ -36,9 +64,12 @@ dependency that should be handled by the separate admin-restyle handoff.
 
 ## Acceptance Criteria
 
-1. `Layout` links authenticated and public pages to `/styles-v3.css`.
-   `/styles-v2.css` may remain in the repository for rollback during this phase,
-   but new viewer pages must use `styles-v3.css`.
+1. `Layout` links all SSR pages to `/styles-v3.css`. Because the shell is shared,
+   admin pages also receive the new stylesheet URL, but V3-1 must not change
+   admin markup, behavior, or information design. Create `styles-v3.css` from
+   the complete `styles-v2.css` baseline and preserve every class needed by
+   existing viewer and admin pages. Keep both `styles-v2.css` and `styles.css`
+   unchanged for rollback and the separate admin-restyle phase.
 2. `_headers` contains an immutable static-asset entry for `/styles-v3.css`.
    Existing security headers for dynamic pages must remain byte-identical.
 3. Album detail pages group photos by the local date encoded in each
@@ -56,13 +87,16 @@ dependency that should be handled by the separate admin-restyle handoff.
    sections and a non-cropped justified grid. Use CSS only for layout; do not
    add JavaScript.
 7. Do not use inline `style=` attributes. `style-src 'self'` must keep working.
-   Quantize aspect ratios into static CSS classes, e.g. `ar-050` ...
-   `ar-240`, derived server-side from `width / height`, with clamping for
-   out-of-range or invalid dimensions.
-8. Each album-detail thumbnail `<img>` includes numeric `width` and `height`
-   attributes from the manifest when valid. Invalid dimensions must not throw;
-   use a safe fallback ratio/class and omit or safely default invalid attributes
-   according to the tests you add.
+   For valid positive dimensions, calculate `width / height`, clamp to
+   `0.5..2.4`, round to the nearest `0.1`, and map to the 20 static classes
+   `ar-050`, `ar-060`, ... `ar-240`. Use `ar-100` for invalid dimensions.
+   Define all 20 classes in CSS. Thumbnail content must use a non-cropping
+   rule such as `object-fit: contain`.
+8. Each album-detail thumbnail `<img>` includes the exact numeric `width` and
+   `height` attributes from the manifest when valid. Invalid dimensions must
+   not throw; use `ar-100` and omit invalid attributes. The manifest validator
+   normally rejects invalid dimensions before rendering, so cover this
+   fallback directly in pure-helper tests as defensive behavior.
 9. `download_enabled=1` keeps the existing selection POST flow: selected
    checkboxes still submit `photoId` values to `/download/:albumId/selection`,
    variant selection remains `thumb|preview`, and no RAW/original option appears.
@@ -76,6 +110,15 @@ dependency that should be handled by the separate admin-restyle handoff.
     preview) except where strictly needed for CSS compatibility.
 13. CSP, session cookie attributes, auth redirects, no-store/no-cache behavior,
     and security headers must not be weakened.
+14. Put date grouping/formatting and aspect-class calculation in the pure,
+    directly testable module
+    `workers/src/services/viewer-photo-presentation.ts`. It must not read R2,
+    D1, request state, environment bindings, or wall-clock state. Use the local
+    date and time text encoded in `takenAt`; do not perform host-time-zone
+    conversion.
+15. Add a focused static-asset test that reads `public/_headers` and proves the
+    `/styles-v3.css` immutable entry exists while the dynamic security-header
+    block remains unchanged.
 
 ## Files To Inspect
 
@@ -88,7 +131,7 @@ dependency that should be handled by the separate admin-restyle handoff.
 - `workers/public/styles-v2.css`
 - `workers/public/_headers`
 - `workers/test/pages.test.ts`
-- `workers/test/security-headers.test.ts` or current header/layout tests
+- `workers/test/app.test.ts` for current dynamic security-header assertions
 
 ## Files To Edit
 
@@ -99,12 +142,10 @@ Expected edit set:
 - `workers/public/styles-v3.css` (new, based on `styles-v2.css`)
 - `workers/public/_headers`
 - `workers/test/pages.test.ts`
+- `workers/src/services/viewer-photo-presentation.ts` (new pure helpers)
+- `workers/test/viewer-photo-presentation.test.ts` (new focused tests)
+- `workers/test/static-assets.test.ts` (new `_headers` assertion)
 - `workers/README.md`
-
-Optional only if needed for clean typing or focused helper tests:
-
-- `workers/src/services/*` for pure formatting/aspect-ratio helper extraction
-- `workers/test/*` for the matching helper tests
 
 Do not edit admin route behavior, D1 repositories, image/download routes,
 Docker code, migrations, CI workflows, secrets, or deployment docs in this
@@ -123,8 +164,11 @@ handoff.
   inline script, or inline style.
 - Do not modify CSP or dynamic security-header policy.
 - JavaScript is out of scope for V3-1.
-- Keep the implementation understandable for a Sonnet-class Claude Code run:
-  small helpers, explicit tests, no broad refactor.
+- Keep helpers small, explicit, pure, and directly tested; do not perform a
+  broad route, template, or stylesheet refactor.
+- Do not delete or modify `styles-v2.css` or `styles.css`. The new
+  `styles-v3.css` must retain the existing shared class rules before adding the
+  V3-1 timeline rules.
 
 ## Non Goals
 
@@ -168,8 +212,11 @@ Expected focused tests include:
 - invalid/missing `takenAt` uses the fallback heading without throwing;
 - mixed-year album includes years in headings, single-year album omits years;
 - aspect-ratio classes are quantized/clamped and no `style=` appears;
+- all 20 aspect classes and the `ar-100` invalid fallback are covered;
 - thumbnail `width`/`height` attributes are emitted for valid dimensions;
 - empty album renders the empty state and back link;
+- `_headers` contains the immutable `/styles-v3.css` entry without changing
+  the dynamic security-header block;
 - download-enabled selection form still posts the same fields and contains no
   RAW/original option;
 - security-sensitive existing assertions for auth, manifest membership,

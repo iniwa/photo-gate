@@ -1,6 +1,7 @@
 # Current State
 
-Last audited: 2026-07-03.
+Production last audited: 2026-07-03. Active-development plan reviewed:
+2026-08-03.
 
 ## Level
 
@@ -10,6 +11,22 @@ album is served end-to-end in production: PhotoPrism -> Docker sync on the Pi
 sync, cleanup dry-run, hard-delete controls, viewer download/preview, operator
 documentation, and final E2E authorization/privacy review are complete. Actual
 R2 deletion and RAW/original download remain intentionally disabled/deferred; derived thumb/preview download variants and no-JS multi-select download links are implemented and deployed.
+
+## Active Development
+
+UI V3-1 implementation and automated verification are complete in the working
+tree; independent review returned Go with no material findings. It is not
+committed, pushed, deployed, or production-verified. Browser visual checks at
+375/1280px and JavaScript-off are a separate pending task and are not part of
+this task. The active handoff remains
+`docs/handoffs/2026-07-08-ui-v3-1-timeline.md`. The accepted scope is a
+presentation-only migration to `styles-v3.css`, date-grouped album timelines,
+a non-cropped justified grid, manifest-derived image dimensions, and an empty
+album state. It does not change routes, authentication, authorization, D1, R2,
+manifest reads, image/download behavior, CSP, deployment, or production state.
+The implementation task used one native `bounded_implementer` as the sole
+writer; the primary session owns integration and approval boundaries.
+Production facts remain unchanged.
 
 ## Production Topology
 
@@ -176,6 +193,6 @@ R2 deletion and RAW/original download remain intentionally disabled/deferred; de
 ## Documentation Condition
 
 Some older Japanese documents (e.g. `photo-gate-design.md`, old ADRs) are
-mojibake in the working tree; preserve as historical evidence. Use
-`FABLE.md`, `AGENTS.md`, and `docs/fable/` as the operational source of
-truth.
+mojibake in the working tree; preserve as historical evidence. Use `AGENTS.md`
+and the current records under `docs/fable/` as operational guidance.
+`FABLE.md` remains historical context and grants no execution authority.

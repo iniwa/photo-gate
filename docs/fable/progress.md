@@ -1,6 +1,7 @@
 # Progress
 
-Last updated: 2026-07-03.
+Last updated: 2026-08-03 (active-development status only; production facts
+remain last audited on 2026-07-03).
 
 ## Current Completion Level
 
@@ -13,7 +14,15 @@ remains deferred pending a separate ADR.
 
 ## Current Task
 
-There is no active implementation handoff.
+The active implementation handoff is
+`docs/handoffs/2026-07-08-ui-v3-1-timeline.md`. V3-1 implementation and
+automated verification are complete in the working tree; independent review
+returned Go with no material findings. It is not committed, pushed, deployed,
+or production-verified. Browser visual checks (375/1280px, JavaScript-off) are
+a separate pending task and must not be performed in this task. Resume at
+standalone browser QA and later explicitly authorized delivery, not
+reimplementation. This status update does not authorize push, deploy,
+production change, or handoff archival.
 
 Viewer photo download, preview-page, and first UI cleanup work is deployed:
 

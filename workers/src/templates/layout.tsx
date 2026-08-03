@@ -28,7 +28,7 @@ export const Layout: FC<{
           <meta name="viewport" content="width=device-width, initial-scale=1.0" />
           <meta name="theme-color" content="#131316" />
           <title>{title} - photo-gate</title>
-          <link rel="stylesheet" href="/styles-v2.css" />
+          <link rel="stylesheet" href="/styles-v3.css" />
           <script src="/app.js" defer></script>
           {head}
         </head>
