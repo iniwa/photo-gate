@@ -1,6 +1,7 @@
 # Current State
 
-Production last audited: 2026-07-03. Active-development plan reviewed:
+Production deployment smoke last audited: 2026-08-03. Authenticated browser
+audit remains last completed on 2026-07-03. Active-development plan reviewed:
 2026-08-03.
 
 ## Level
@@ -14,26 +15,33 @@ R2 deletion and RAW/original download remain intentionally disabled/deferred; de
 
 ## Active Development
 
-UI V3-1 implementation and automated verification are complete in the working
-tree; independent review returned Go with no material findings. It is not
-committed, pushed, deployed, or production-verified. Browser visual checks at
-375/1280px and JavaScript-off are a separate pending task and are not part of
-this task. The active handoff remains
-`docs/handoffs/2026-07-08-ui-v3-1-timeline.md`. The accepted scope is a
-presentation-only migration to `styles-v3.css`, date-grouped album timelines,
-a non-cropped justified grid, manifest-derived image dimensions, and an empty
-album state. It does not change routes, authentication, authorization, D1, R2,
-manifest reads, image/download behavior, CSP, deployment, or production state.
-The implementation task used one native `bounded_implementer` as the sole
-writer; the primary session owns integration and approval boundaries.
-Production facts remain unchanged.
+UI V3-1 is implemented, committed as `e9b61ac`, pushed, and deployed through
+Workers CI run `30796102277`; independent review returned Go with no material
+findings. Production version `db0ac0e5-7e5d-4c72-aac8-bfc8b3974c18` serves the
+immutable `/styles-v3.css` shell. Unauthenticated production smoke confirmed
+the login page CSS switch, static-asset caching, viewer/auth redirects,
+image/download fail-closed responses, and Cloudflare Access interception.
+Browser visual checks at 375/1280px with JavaScript enabled and disabled remain
+a separate pending task because no browser backend was available. The active
+handoff remains `docs/handoffs/2026-07-08-ui-v3-1-timeline.md` until that QA is
+recorded.
+
+The accepted V3-1 scope remains presentation-only: date-grouped album
+timelines, a non-cropped justified grid, manifest-derived image dimensions,
+and an empty album state. It did not change routes, authentication,
+authorization, D1, R2, manifest reads, image/download behavior, or CSP. The
+Worker source and tests still require `X-Frame-Options: DENY`; the custom-domain
+response was observed as `SAMEORIGIN` while CSP retained
+`frame-ancestors 'none'`. Because the header middleware was unchanged, this is
+tracked as a separate edge-response override investigation rather than a V3-1
+regression.
 
 ## Production Topology
 
 - Workers viewer: https://share-photo.iniwach.com
-  (commit `50bf499`; active version ID `d469d24d-b52f-49cd-92f0-50bdd77c55cf`; latest observed Workers CI run `28642332470`;
+  (commit `e9b61ac`; active version ID `db0ac0e5-7e5d-4c72-aac8-bfc8b3974c18`; latest observed Workers CI run `30796102277`;
   cron 18:00 UTC session cleanup).
-  Includes manual sync request writer, admin sync UI, status schema 2, user display-name editing, permission assignment dropdowns, D1-only album creation, browser-owned sync-target routes, the `/admin/albums` catalog picker, `/admin/r2-cleanup` dry-run plus deletion-preview routes (actual deletion disabled), preview JPEG download, manifest schema 2 viewing support, unique preview download filenames, the authenticated viewer photo preview page, viewer UI cleanup Phase 1 and Phase 2, generated thumb/preview download variants, no-JS multi-select derived download links, admin hard-delete confirmation-preview Phase 2, user hard delete Phase 3, and album hard delete Phase 4.
+  Includes manual sync request writer, admin sync UI, status schema 2, user display-name editing, permission assignment dropdowns, D1-only album creation, browser-owned sync-target routes, the `/admin/albums` catalog picker, `/admin/r2-cleanup` dry-run plus deletion-preview routes (actual deletion disabled), preview JPEG download, manifest schema 2 viewing support, unique preview download filenames, the authenticated viewer photo preview page, viewer UI cleanup Phase 1 and Phase 2, generated thumb/preview download variants, no-JS multi-select derived download links, UI V3-1 date timelines and non-cropped justified rows, admin hard-delete confirmation-preview Phase 2, user hard delete Phase 3, and album hard delete Phase 4.
   The former `photo-gate.iniwaiwana.workers.dev` route is disabled and returns 404.
 - D1 `photo-gate` (APAC, id `de77cb73-497a-4a41-bd1c-151fd907be3f`),
   2 migrations applied. One user, one album, one permission row (real

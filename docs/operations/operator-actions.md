@@ -1,4 +1,4 @@
-# オペレーター対応事項 (2026-07-03 更新)
+# オペレーター対応事項 (2026-08-03 更新)
 
 このドキュメントは「人間(オペレーター)が手を動かす必要がある作業」を
 まとめたものです。現在の本番状態を反映しています。
@@ -235,11 +235,11 @@ npx wrangler secret put <SECRETNAME>
 
 ---
 
-## F. 現在の本番トポロジー (2026-07-03)
+## F. 現在の本番トポロジー (2026-08-03)
 
 | コンポーネント | 現状 |
 |---|---|
-| Workers | `https://share-photo.iniwach.com` (commit `0864043`, version `940fd57d`) |
+| Workers | `https://share-photo.iniwach.com` (commit `e9b61ac`, version `db0ac0e5`) |
 | D1 `photo-gate` | APAC (`de77cb73-497a-4a41-bd1c-151fd907be3f`), 2 migrations applied |
 | R2 `photo-gate` | 非公開, 2 album targets |
 | Docker sync | `ghcr.io/iniwa/photo-gate-sync:0.4.2` (Portainer スタック `iniwa-photo-gate`) |

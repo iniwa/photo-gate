@@ -1,7 +1,7 @@
 # Progress
 
-Last updated: 2026-08-03 (active-development status only; production facts
-remain last audited on 2026-07-03).
+Last updated: 2026-08-03 (V3-1 deployment smoke complete; authenticated browser
+audit remains last completed on 2026-07-03).
 
 ## Current Completion Level
 
@@ -16,13 +16,15 @@ remains deferred pending a separate ADR.
 
 The active implementation handoff is
 `docs/handoffs/2026-07-08-ui-v3-1-timeline.md`. V3-1 implementation and
-automated verification are complete in the working tree; independent review
-returned Go with no material findings. It is not committed, pushed, deployed,
-or production-verified. Browser visual checks (375/1280px, JavaScript-off) are
-a separate pending task and must not be performed in this task. Resume at
-standalone browser QA and later explicitly authorized delivery, not
-reimplementation. This status update does not authorize push, deploy,
-production change, or handoff archival.
+automated verification are complete; independent review returned Go with no
+material findings. Commit `e9b61ac` was deployed as Worker version
+`db0ac0e5-7e5d-4c72-aac8-bfc8b3974c18` by successful Workers CI run
+`30796102277`. Unauthenticated production smoke passed for the V3 stylesheet,
+immutable caching, viewer/auth/download boundaries, and Cloudflare Access.
+Browser visual checks (375/1280px, JavaScript enabled and disabled) remain a
+separate pending task because no browser backend was available. Resume at
+standalone browser QA, not reimplementation; keep the handoff active until
+that evidence is recorded.
 
 Viewer photo download, preview-page, and first UI cleanup work is deployed:
 

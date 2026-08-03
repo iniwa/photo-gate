@@ -5,13 +5,16 @@ cohesive outcome.
 
 ## Pilot status (2026-08-03)
 
-Implementation and automated verification are complete in the working tree;
-independent review returned Go with no material findings. The change is not
-committed, pushed, deployed, or production-verified. Browser visual QA at
-375/1280px with JavaScript enabled and disabled remains a separate pending
-task. Resume at standalone browser QA and later explicitly authorized delivery,
-not reimplementation. The acceptance criteria below preserve the original
-baseline and scope.
+Implementation and automated verification are complete; independent review
+returned Go with no material findings. Commit `e9b61ac` was pushed and deployed
+by Workers CI run `30796102277` as production version
+`db0ac0e5-7e5d-4c72-aac8-bfc8b3974c18`. Unauthenticated production smoke
+confirmed the V3 stylesheet switch and cache policy plus existing viewer,
+image, download, API, and Cloudflare Access boundaries. Browser visual QA at
+375/1280px with JavaScript enabled and disabled remains a separate pending task
+because no browser backend was available. Resume at standalone browser QA, not
+reimplementation, and keep this handoff active until that evidence is recorded.
+The acceptance criteria below preserve the original baseline and scope.
 
 Read `AGENTS.md`, the two accepted UI decisions named below, and this handoff
 before implementation. Start the configured role without inherited
