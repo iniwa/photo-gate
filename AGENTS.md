@@ -1,13 +1,10 @@
 # AGENTS.md
 
-## Purpose
+## Purpose and Project
 
-This is the Codex-side working agreement for `photo-gate`. It owns current
-design intent, security and responsibility boundaries, model and handoff
-policy, Codex review, and documentation lifecycle. `CLAUDE.md` owns Claude
-Code execution rules.
-
-## Project
+This is the active Codex working agreement for `photo-gate`. `CLAUDE.md` is a
+historical compatibility pointer and does not define a separate execution
+policy.
 
 `photo-gate` is a private photo-sharing gateway. It publishes generated,
 metadata-stripped share images through an authenticated Cloudflare Workers
@@ -21,9 +18,9 @@ viewer without exposing PhotoPrism, NAS originals, or a public R2 bucket.
   `linux/arm64`; preserve the existing Gitea, GitHub mirror/CI, GHCR, and
   Portainer boundaries.
 
-Before meaningful work, read this file, `CLAUDE.md`, relevant accepted
-decisions, current project state under `docs/fable/`, applicable operations
-documents, and the active handoff when one exists. `FABLE.md`,
+Before meaningful work, read this file, relevant accepted decisions, the
+current project state under `docs/fable/`, applicable operations documents,
+and the active handoff when one exists. `FABLE.md`,
 `docs/fable/autonomy-contract.md`, `photo-gate-design.md`, and archived
 handoffs are historical references, not current authority.
 
@@ -32,76 +29,74 @@ project uses the common sources plus the Windows, Docker, and Web profiles.
 
 ## Instruction Precedence
 
-When instructions conflict, apply them in this order:
+Apply conflicting instructions in this order:
 
 1. Runtime, tool, organization, and safety policy.
-2. Explicit user instructions that change project policy.
+2. Explicit user instructions that establish or change project policy.
 3. Durable project instructions.
-4. Other instructions for the current user task and the approved task scope.
+4. The current task's approved outcome and explicit prohibitions.
 
-The active handoff or equivalent inline prompt is the approved task scope. The
-task defines the outcome and explicit prohibitions. Named files are starting
-points unless the task explicitly marks them as an edit boundary. Verified
-project facts override base defaults. Only an explicit user instruction to
-change project policy may revise a durable project rule; other task
-instructions and approved scopes may narrow durable rules but may not weaken
-them. Report unresolved conflicts instead of guessing.
+The task defines the outcome. Named files are starting points unless the task
+explicitly establishes an edit boundary. Verified repository facts override
+base defaults. Report only conflicts that cannot be resolved from this order
+and repository evidence.
 
-## Model and Role Policy
+## Primary Session, Delegation, and Ownership
 
-- Use GPT-5.3-Codex-Spark (`gpt-5.3-codex-spark`) proactively, when available,
-  for low-risk, well-scoped, independently verifiable supporting work that
-  requires no material design judgment or source-code implementation.
-- GPT-5.6 Terra (`gpt-5.6-terra`) or Sol (`gpt-5.6-sol`) owns requirements and
-  design. Whenever Terra is used, set its reasoning level to `high`. Prefer Sol
-  for substantial ambiguity, risk, or cross-boundary reasoning.
-- Run every Claude Code task with `--permission-mode auto`.
-- After design is fixed, delegate source-code implementation first to Claude
-  Code Sonnet at effort medium from the repository root. On Windows, keep the
-  command line ASCII-only and put non-ASCII instructions in a UTF-8 handoff:
-  `claude -p --model sonnet --effort medium --permission-mode auto "ROLE=IMPLEMENTER. Read AGENTS.md, CLAUDE.md, and <handoff>. Complete the task and report."`.
-- Only when Sonnet is unavailable because of usage limits or service
-  availability, use GPT-5.6 Luna (`gpt-5.6-luna`) with reasoning level `max`
-  for the same cohesive outcome. Implementation failure, failed verification,
-  or a design question is not model unavailability; return it to Codex.
-- Apply this policy to every coordinating Codex model and its subagents. Do not
-  create coordinator-specific exceptions unless the user explicitly changes
-  the policy.
-- Identify implementation prompts with `ROLE=IMPLEMENTER`. Implementers
-  execute the approved task directly and do not re-delegate merely because
-  another primary model is named. Identify review-only prompts with
-  `ROLE=REVIEWER`; reviewers do not edit unless asked to fix findings.
-- Claude Code subagents are optional and limited to clearly parallel work
-  inside the same cohesive task. They inherit its constraints and must not
-  overlap writers.
-- Record a delegated writer's root PID when observable. After exit,
-  cancellation, or timeout, confirm that exact process tree is absent before
-  starting a replacement writer.
+- The user selects the primary model at runtime. The primary session owns task
+  interpretation, material design, approval boundaries, delegation, final
+  integration, and user communication.
+- For settled, independently verifiable implementation with multiple steps,
+  use one `bounded_implementer` as the default cohesive writer. Keep routine
+  discovery, source edits, focused verification, and minor corrections with
+  that writer rather than duplicating them in the primary session.
+- Use `bounded_explorer` for behaviorally read-only repository exploration,
+  extraction, log analysis, and test triage. Use `adaptive_implementer` when a
+  bounded outcome clearly needs broader cross-file or cross-subsystem
+  reasoning. Use `bounded_reviewer` only when independent read-only review is
+  justified by risk, ambiguity, or breadth.
+- When the active surface can select configured named roles, start them
+  without inherited conversation history and without an explicit model or
+  effort override; transfer only the compact task-specific goal, acceptance
+  criteria, context, constraints, and verification. If role selection is
+  unavailable or unobservable, use the primary session or an observable agent
+  with equivalent inline constraints and record the actual route.
+- Only the primary session delegates. Delegated agents do not create nested
+  agents. Keep one active writer for overlapping files or behavior; read-only
+  investigation may run in parallel.
+- Parent permissions are chosen before delegation and live overrides remain
+  authoritative. Explorers and reviewers stay behaviorally read-only even if
+  write-capable tools are exposed.
+- Claude Code is not an approved delegation route. Do not invoke `claude`
+  unless an explicit user instruction changes project policy.
 
-## Task Ownership
+Keep small, conversation-dependent, design-heavy, approval-sensitive, or
+transfer-negative work in the primary session. A delegated implementer owns
+the approved outcome through directly related code, tests, fixtures,
+documentation, configuration, dependencies, build or packaging files, CI,
+local migrations, focused verification, and minor in-scope corrections when
+reasonably necessary.
 
-Keep work in Codex when its main value is requirements, design, read-only
-investigation, review, synthesis, or a small documentation-consistency change.
-Delegate implementation when the goal, observable acceptance criteria,
-protected boundaries, and useful verification are clear enough to execute.
-Resolve material design choices first.
+Before editing, capture `git status --short`; after editing, compare the final
+status and diff with that baseline. Preserve unrelated work. Decide routine
+naming, helper boundaries, internal types, fixtures, logging, error handling,
+test layout, and small refactors autonomously. Return control only at an
+approval gate, an unresolved material product/security/architecture choice,
+an unresolvable overlap, a permission or environment blocker, or an unmet
+acceptance criterion outside the delegated scope.
 
-For reversible repository-local work, complete the approved outcome end to
-end:
+For each initial delegation, record the exact mechanics, edge/fallback matrix,
+protected regressions, focused checks, any required stable-diff full-suite
+check, stale-reference/static-asset sweep, and the required per-item
+passed/blocked/unmet return-evidence shape. The
+writer self-reviews the stable diff, fixes minor failures, and completes that
+gate before any independent reviewer starts. Reviewer findings are sent back
+as one packet to the same writer. Append only safe telemetry envelope fields;
+never include prompts, messages, tool data, secrets, or private values.
 
-- Include directly related tests, documentation, callers, fixtures,
-  configuration, examples, build or packaging files, CI, and local migrations
-  when reasonably required by the outcome.
-- Decide routine naming, helper boundaries, internal types, test layout,
-  logging, error handling, and small refactors without intermediate approval.
-- Do not wait for review between internal implementation steps unless the task
-  requires a checkpoint, reaches an approval boundary, or encounters a
-  material unresolved choice.
-- A dirty worktree is not itself a blocker. Preserve unrelated work and stop
-  only when overlapping intent cannot be resolved without guessing or
-  discarding another intent.
-- One implementation writer owns the cohesive outcome through focused
-  verification and minor in-scope corrections.
+If the user writes in Japanese, respond in Japanese. Preserve the repository's
+established language for documentation, comments, identifiers, logs, and
+user-facing text unless the task changes it.
 
 ## Non-Negotiable Security Invariants
 
@@ -114,83 +109,69 @@ end:
   NAS originals. Docker sync must not implement viewer authentication, viewer
   pages, or D1 authorization.
 - Every real data route authenticates the session and authorizes the album. A
-  photo object may be read only after exact membership in the current validated
-  manifest is confirmed. Authentication, authorization, membership, and data
-  integrity uncertainty must fail closed.
+  photo object may be read only after exact membership in the current
+  validated manifest is confirmed. Authentication, authorization, membership,
+  and data-integrity uncertainty must fail closed.
 - R2 cleanup remains dry-run only. Actual R2 deletion requires a separately
   reviewed design and explicit human approval.
-- Keep errors sanitized, parameterize D1 queries, and strictly validate IDs and
-  object keys.
+- Keep errors sanitized, parameterize D1 queries, and strictly validate IDs
+  and object keys.
 
-## Protected State and Delivery
+## Protected State and Approval Gates
 
-- Preserve unrelated user and other-agent changes. Treat unexpected diffs as
-  having unknown authorship and keep them outside the current task unless
-  confirmed.
+- Treat unexpected diffs as unknown work and exclude them unless confirmed.
+  Do not use reset, clean, broad destructive commands, or unrelated staging to
+  make the tree look clean.
 - Do not inspect secrets, credentials, or personal data unless their contents
-  are strictly necessary for the approved task.
+  are strictly necessary. Never reproduce protected values in prompts,
+  handoffs, reports, tests, commits, logs, or external tools.
 - Do not edit secrets, credentials, `.env`, real local configuration,
   PhotoPrism/NAS originals, production D1 or R2 data, persistent volumes,
-  runtime state, or generated heavy artifacts unless the approved task
-  explicitly requires the change.
-- Never reproduce secrets, credentials, personal data, or private
-  infrastructure values in prompts, handoffs, reports, or external tools.
-- Repository-local dependency, build, packaging, CI, migration, and
-  example-configuration changes may proceed when reasonably required by the
-  approved outcome and consistent with the established strategy. Report
+  runtime state, or generated heavy artifacts unless explicitly required.
+- Reversible repository-local dependency, build, packaging, CI, migration,
+  and example-configuration changes may proceed when reasonably required by
+  the approved outcome and consistent with the established strategy. Report
   material changes.
-- Approval is required before inspecting or changing protected data; mutating
-  production, runtime, infrastructure, or remote services; pushing, merging,
-  publishing a pull request, deploying, or restarting; changing
-  authentication or external exposure; performing destructive or live-data
-  operations; or resolving a material product, compatibility, persistent-data,
-  security, deployment, or architecture choice not settled by current design.
+- Approval is required before protected-data access beyond task need; push,
+  merge, pull-request publication, deploy, restart, registry or hosted
+  configuration changes; production, runtime, infrastructure, or remote
+  mutation; authentication or external-exposure changes; destructive or
+  live-data operations; or an unsettled material product, compatibility,
+  persistent-data, security, deployment, or architecture decision.
 - Local commits are allowed only on a dedicated task branch or worktree. Stage
-  only task-owned changes, and create the normal task commit only after the
-  cohesive diff is stable, required verification passes, and required reviews
-  return Go. An interim checkpoint commit requires an explicit recovery need
-  and is not completion.
+  only task-owned changes and commit only after the cohesive diff is stable,
+  required verification passes, and required reviews return Go.
 - Preserve the established Wrangler configuration, container image,
   deployment, storage, network, and update flow. Do not introduce a second
   Workers configuration format or mutate bindings, registries, Portainer,
   ports, domains, tunnels, or external exposure without explicit approval.
-- Treat Fable documents as design and history, not authority. Unless the user
-  explicitly invokes a narrow autonomous workflow in the current task, they
-  grant no authority to edit, commit, push, deploy, mutate production, rotate
-  credentials, or archive a handoff. Even then, only actions expressly
-  included in the current approved scope are authorized.
-- Preserve established historical or retired data unless the approved task
-  explicitly authorizes deletion or migration.
-- Destructive or data-rewriting migrations, persistent-data deletion, R2
-  deletion, resource deletion, and public-access changes always require human
-  approval.
+- Preserve established historical or retired data unless deletion or migration
+  is explicitly approved. Destructive or data-rewriting migrations,
+  persistent-data deletion, R2 deletion, resource deletion, and public-access
+  changes always require human approval.
+- Fable documents grant no authority to edit, commit, push, deploy, mutate
+  production, rotate credentials, or archive a handoff. Only the current user
+  request and approved scope authorize operations.
 
-## Handoff Workflow
+## Handoffs and Recovery
 
-- Use an inline task for ordinary work. Put substantial, cross-session,
-  operationally risky, or interruption-sensitive work in
-  `docs/handoffs/YYYY-MM-DD-<short-task>.md`.
-- One handoff covers one cohesive outcome, directly related regression
-  coverage, and a useful verification path. Split at a real architecture,
-  live-data, external-service, deployment, rollback, or independent product
-  boundary, not solely by file or test count.
-- Name concrete data sources, current state, observable acceptance criteria,
-  approval gates, and protected behavior. Starting points are not edit
-  allowlists unless a strict boundary is stated with its reason.
-- Treat a delegation that stops before meeting its acceptance criteria as
-  interrupted even when its process exits normally. Record usable partial
-  results, verification, remaining scope, and exact resume conditions. Review
-  that evidence before replacing or rerunning the writer.
-- The same implementer owns directly related edits, focused verification, and
-  minor corrections. Freeze a stable diff, then run independent source, test,
-  and material-design reviews in parallel when useful. Consolidate duplicate
-  findings into one correction packet; require another correction round only
-  for a new material finding, failed verification, or unresolved boundary.
-- Keep active or blocked handoffs in `docs/handoffs/`. Move a handoff to
-  `docs/handoffs/archive/` only after implementation, verification, review,
-  required runtime work, and follow-up are complete.
+Use a compact inline native-subagent task for ordinary work. Put substantial
+cross-session, operationally risky, separately executed, or
+interruption-sensitive work in `docs/handoffs/YYYY-MM-DD-<short-task>.md`.
+One handoff covers one cohesive outcome, related regression coverage, and a
+useful verification path; split only at a real architecture, live-data,
+external-service, deployment, rollback, or independent product boundary.
 
-## Verification
+Name observable acceptance, protected behavior, approval gates, and focused
+verification. Starting points are not edit allowlists unless a strict boundary
+and its reason are explicit. If work stops early, preserve usable partial work
+and report completed and unmet criteria, verification, the blocker, and exact
+resume conditions. Keep routine corrections with the same writer and
+consolidate review findings into one packet. Archive a handoff only after
+implementation, verification, review, required runtime work, and follow-up are
+complete.
+
+## Verification and Completion
 
 Workers:
 
@@ -213,23 +194,30 @@ python -m pytest
 python -m compileall src
 ```
 
-Use the smallest relevant subset first, then the full affected component suite
-when the blast radius requires it. Run a required full suite once after the
-cohesive diff is stable and rerun it only after a later edit that could
+Start with the smallest relevant check, then run the full affected component
+suite when the blast radius requires it. Run a required full suite once after
+the cohesive diff is stable and rerun it only after a later edit could
 invalidate it. Build and smoke-test the Docker image for runtime changes when
 Docker is available. For rendering, routing, accessibility, or interactive
-behavior changes, use an available browser-level verification method. Report
-all blocked checks exactly.
+behavior changes, use an available browser-level verification method. Always
+run `git diff --check` for changed text and report blocked checks exactly.
 
-## Review and Documentation
+The primary session reviews the stable diff, acceptance evidence, protected
+boundaries, high-risk areas, unrelated diffs, and material dependency,
+configuration, migration, build, CI, or cross-subsystem effects. Do not repeat
+the implementer's full investigation by default. Add an independent review
+only when its expected risk reduction justifies the tokens.
 
-Review the stable diff for approved scope, non-negotiable invariants,
-protected state, dependencies, delivery and exposure boundaries, tests,
-failure behavior, unrelated diffs, and material cross-subsystem effects.
+Report the concise result, changed files, material decisions, verification
+commands and outcomes, and any material cross-subsystem effects. For incomplete
+work, also report unmet criteria, partial edits, blocked checks, the blocker,
+and exact resume conditions.
 
-Keep `AGENTS.md` short and current. Put decision context and rejected options
-in `docs/decisions/`, current project state in the applicable `docs/fable/`
-records, operational procedures in `docs/operations/`, active work in
-`docs/handoffs/`, and completed handoffs in `docs/handoffs/archive/`. Archive
-an accepted decision only after it is fully implemented and no longer needed
-for current guidance.
+## Documentation Lifecycle
+
+Keep `AGENTS.md` limited to current durable rules and links. Put decision
+context and rejected alternatives in `docs/decisions/`, current project state
+in `docs/fable/`, operational procedures in `docs/operations/`, active work in
+`docs/handoffs/`, and completed handoffs in `docs/handoffs/archive/`. Do not
+rewrite accepted decisions, archived handoffs, or historical progress merely
+to replace old model terminology.

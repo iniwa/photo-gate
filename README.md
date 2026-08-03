@@ -39,7 +39,7 @@ PhotoPrism (NAS) --> Docker sync (Raspberry Pi 4, Portainer)
 | `workers/` | Cloudflare Workers viewer/admin (TypeScript, Hono, D1, private R2). See `workers/README.md`. |
 | `docker/` | Python 3.12 sync CLI/daemon (PhotoPrism previews → pyvips re-encode → R2). Runtime target: Raspberry Pi 4 (`linux/arm64`). |
 | `docs/decisions/` | Accepted ADRs. |
-| `docs/handoffs/` | Active Codex→Claude Code handoffs (archive under `archive/`). |
+| `docs/handoffs/` | Active Codex implementation handoffs (archive under `archive/`). |
 | `docs/operations/` | Operator runbooks (bootstrap, deploy, rollback, backup, admin access). |
 | `docs/fable/` | Project state and historical roadmap records; these do not grant authority. |
 | `docs/improvements.md` | Code-improvement checklist (investigated, evidence-backed items). |
@@ -53,16 +53,18 @@ and CI/CD platform. Portainer manages the Docker stack on the Pi.
 1. Codex resolves requirements and material design choices. Ordinary work may
    use an inline task; substantial, cross-session, risky, or
    interruption-sensitive work uses a handoff under `docs/handoffs/`.
-2. Once the outcome and protected boundaries are clear, the implementation
-   writer completes the cohesive change, directly related tests and
-   documentation, and focused verification (rules in `CLAUDE.md`).
-3. Codex reviews the stable diff. Completed handoffs are archived only after
-   implementation, verification, review, required runtime work, and follow-up
-   are complete.
+2. Once the outcome and protected boundaries are clear, settled multi-step
+   implementation defaults to one native `bounded_implementer` as the cohesive
+   writer for related code, tests, documentation, focused verification, and
+   minor corrections. Routing and fallback rules are in `AGENTS.md`.
+3. The primary Codex session reviews the stable diff and acceptance evidence
+   without repeating the full implementation investigation. Completed handoffs
+   are archived only after implementation, verification, review, required
+   runtime work, and follow-up are complete.
 
 Improvement candidates live in `docs/improvements.md`; feature ideas in
 `docs/iniwa-issues.md`. Current authority and security invariants are defined
-by `AGENTS.md` and `CLAUDE.md`; `FABLE.md` and
+by `AGENTS.md`; `CLAUDE.md` is a historical compatibility pointer. `FABLE.md` and
 `docs/fable/autonomy-contract.md` are historical references.
 
 ## Verification
