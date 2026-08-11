@@ -263,61 +263,67 @@ function AdminR2CleanupConfirmPage({
   token: string
 }) {
   return (
-    <Layout title="R2 孤立オブジェクト削除確認プレビュー">
-      <a class="back-link" href="/admin/r2-cleanup">
+    <Layout title="R2 孤立オブジェクト削除確認プレビュー" area="admin">
+      <a class="admin-back-link" href="/admin/r2-cleanup">
         ← R2 クリーンアップレポートへ
       </a>
-      <h1>R2 孤立オブジェクト削除確認プレビュー</h1>
-      <p>
-        <strong>注意:</strong> これは Phase 2 の確認プレビューです。このフォームを送信しても R2
-        オブジェクトは削除されません。
-      </p>
-      <h2>孤立プレフィックス集計（再スキャン結果）</h2>
-      <table class="user-table">
-        <tbody>
-          <tr>
-            <th>孤立アルバムプレフィックス数</th>
-            <td>{orphanPrefixCount}</td>
-          </tr>
-          <tr>
-            <th>孤立オブジェクト総数</th>
-            <td>{orphanObjectCount}</td>
-          </tr>
-          <tr>
-            <th>孤立オブジェクト総バイト数（概算）</th>
-            <td>{orphanTotalBytes}</td>
-          </tr>
-        </tbody>
-      </table>
-      <p class="empty-note">この確認トークンは 15 分間有効です。期限切れ後はレポートページから再度開始してください。</p>
-      <h2>削除フレーズ確認（Phase 2 プレビュー）</h2>
-      <p>
-        確認するには、以下のフォームに正確に <code>DELETE ORPHANS</code> と入力して送信してください。
-      </p>
-      <form method="post" action="/admin/r2-cleanup/delete">
-        <input type="hidden" name="token" value={token} />
-        <label>
-          確認フレーズ
-          <input type="text" name="phrase" required autocomplete="off" />
-        </label>
-        <button type="submit">確認送信（Phase 2: 削除は無効）</button>
-      </form>
+      <h1 class="admin-page-title">R2 孤立オブジェクト削除確認プレビュー</h1>
+      <section class="admin-panel admin-danger-panel">
+        <p>
+          <strong>注意:</strong> これは Phase 2 の確認プレビューです。このフォームを送信しても R2
+          オブジェクトは削除されません。
+        </p>
+        <h2 class="admin-section-heading">孤立プレフィックス集計（再スキャン結果）</h2>
+        <div class="admin-table-scroll">
+          <table class="admin-table">
+            <tbody>
+              <tr>
+                <th>孤立アルバムプレフィックス数</th>
+                <td>{orphanPrefixCount}</td>
+              </tr>
+              <tr>
+                <th>孤立オブジェクト総数</th>
+                <td>{orphanObjectCount}</td>
+              </tr>
+              <tr>
+                <th>孤立オブジェクト総バイト数（概算）</th>
+                <td>{orphanTotalBytes}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="admin-notice admin-notice-warning">この確認トークンは 15 分間有効です。期限切れ後はレポートページから再度開始してください。</p>
+        <h2 class="admin-section-heading">削除フレーズ確認（Phase 2 プレビュー）</h2>
+        <p>
+          確認するには、以下のフォームに正確に <code>DELETE ORPHANS</code> と入力して送信してください。
+        </p>
+        <form class="admin-form" method="post" action="/admin/r2-cleanup/delete">
+          <input type="hidden" name="token" value={token} />
+          <label class="admin-field">
+            確認フレーズ
+            <input type="text" name="phrase" required autocomplete="off" />
+          </label>
+          <button type="submit" class="admin-button admin-button-danger">確認送信（Phase 2: 削除は無効）</button>
+        </form>
+      </section>
     </Layout>
   )
 }
 
 function AdminR2CleanupDeletePreviewPage() {
   return (
-    <Layout title="R2 削除プレビュー結果">
-      <a class="back-link" href="/admin/r2-cleanup">
+    <Layout title="R2 削除プレビュー結果" area="admin">
+      <a class="admin-back-link" href="/admin/r2-cleanup">
         ← R2 クリーンアップレポートへ
       </a>
-      <h1>R2 削除プレビュー結果</h1>
-      <p>確認フレーズと候補セットの検証に成功しました。</p>
-      <p class="empty-note">
+      <h1 class="admin-page-title">R2 削除プレビュー結果</h1>
+      <section class="admin-panel admin-danger-panel">
+        <p>確認フレーズと候補セットの検証に成功しました。</p>
+        <p class="admin-notice admin-notice-warning">
         R2 オブジェクトの削除は現在このフェーズでは有効ではありません。Phase 3
         で個別の承認後に有効になります。
-      </p>
+        </p>
+      </section>
     </Layout>
   )
 }

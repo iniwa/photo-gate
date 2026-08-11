@@ -168,6 +168,15 @@ describe('GET /', () => {
     expect(await res.text()).toContain('action="/api/auth/login"')
   })
 
+  it('viewer shell keeps progressive JavaScript without admin markers', async () => {
+    const { deps } = makeDeps({ validSession: null })
+    const app = makeApp(deps)
+    const body = await (await get(app, '/')).text()
+    expect(body).toContain('src="/app.js"')
+    expect(body).not.toContain('admin-area-chip')
+    expect(body).not.toContain('admin-main')
+  })
+
   it('error=1 shows the generic message', async () => {
     const { deps } = makeDeps({ validSession: null })
     const app = makeApp(deps)

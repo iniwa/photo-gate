@@ -14,13 +14,13 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 ## Architecture
 
 - **Runtime**: Cloudflare Workers (TypeScript, Hono + JSX SSR)
-- **Static assets**: `public/` served via Workers Assets (`/styles-v3.css`, `/app.js`;
-  `/styles-v2.css` and `/styles.css` remain published intentionally for rollback
-  and the separate admin-restyle phase — see
-  `docs/decisions/2026-07-08-ui-v3-album-experience.md`)
-- **UI**: Server-side rendered HTML via Hono + JSX, with minimal self-hosted
-  progressive-enhancement JavaScript (`public/app.js`). Every feature works with
-  JavaScript disabled (see `docs/decisions/2026-07-03-ui-redesign.md` §2.2).
+- **Static assets**: `public/` served via Workers Assets (`/styles-v3.css`, `/app.js`,
+  and `/styles-v2.css`). `styles-v2.css` remains the V3 rollback asset until V3-4;
+  the retired `styles.css` asset has been removed.
+- **UI**: Server-side rendered HTML via Hono + JSX. Viewer pages use minimal
+  self-hosted progressive-enhancement JavaScript (`public/app.js`); the Access-gated
+  admin area is intentionally script-free. Every feature works with JavaScript
+  disabled (see `docs/decisions/2026-07-03-ui-redesign.md` §2.2).
 - **Status**: full viewer and admin surface deployed to production; see
   `docs/fable/current-state.md` for the audited state.
 
@@ -528,8 +528,8 @@ Cache headers:
 
 - Successful HTML pages: `Cache-Control: private, no-cache`
 - 401 and error responses: `Cache-Control: no-store`
-- Static assets `public/styles-v3.css`, `public/app.js`, and legacy
-  `public/styles-v2.css`/`public/styles.css` (via `_headers`):
+- Static assets `public/styles-v3.css`, `public/app.js`, and the V3 rollback
+  asset `public/styles-v2.css` (via `_headers`):
   `Cache-Control: public, max-age=31536000, immutable`
 
 ## R2 Object Key Builders
@@ -852,10 +852,12 @@ The Worker never calls PhotoPrism or NAS; R2 content is produced solely by
 the Docker sync service. Real resource identifiers (D1 ID, Access values,
 HMAC keys) are registered at deploy time and never committed.
 
-Viewer SSR pages use the immutable `/styles-v3.css` shell. Album detail pages
-render manifest photos in contiguous local-date timeline sections with
-non-cropped aspect-ratio classes; legacy stylesheets remain available for
-rollback and separate admin restyle work.
+Viewer SSR pages use the immutable `/styles-v3.css` shell and `/app.js` for
+optional enhancement. Admin SSR pages use the same dark tokens with a visible
+operator marker, responsive table wrappers, and no JavaScript asset. Album detail
+pages render manifest photos in contiguous local-date timeline sections with
+non-cropped aspect-ratio classes. `styles-v2.css` remains available only as the
+V3 rollback stylesheet; `styles.css` has been removed.
 
 For the audited production state, version IDs, and verification history, see
 `docs/fable/current-state.md` and `docs/operations/deploy-log.md`.

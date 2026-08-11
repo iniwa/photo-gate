@@ -9,16 +9,18 @@ import type { FC } from 'hono/jsx'
  * the default chrome renders it as above. `head` renders extra markup inside
  * `<head>` (e.g. a `<link rel="prefetch">`). JavaScript is progressive
  * enhancement only (see docs/decisions/2026-07-03-ui-redesign.md section 2.2):
- * `/app.js` loads with `defer` on every page, and every page remains fully
- * functional with it disabled.
+ * viewer pages load `/app.js` with `defer`, while the explicit admin area stays
+ * script-free and every page remains fully functional with JavaScript disabled.
  */
 export const Layout: FC<{
   title: string
   authenticated?: boolean
   chrome?: 'default' | 'immersive'
+  area?: 'viewer' | 'admin'
   head?: unknown
   children?: unknown
-}> = ({ title, authenticated, chrome = 'default', head, children }) => {
+}> = ({ title, authenticated, chrome = 'default', area = 'viewer', head, children }) => {
+  const isAdmin = area === 'admin'
   return (
     <>
       {raw('<!DOCTYPE html>')}
@@ -29,7 +31,7 @@ export const Layout: FC<{
           <meta name="theme-color" content="#131316" />
           <title>{title} - photo-gate</title>
           <link rel="stylesheet" href="/styles-v3.css" />
-          <script src="/app.js" defer></script>
+          {!isAdmin ? <script src="/app.js" defer></script> : null}
           {head}
         </head>
         <body>
@@ -38,6 +40,7 @@ export const Layout: FC<{
               <a class="site-title" href={authenticated ? '/albums' : '/'}>
                 photo-gate
               </a>
+              {isAdmin ? <span class="admin-area-chip">管理</span> : null}
               {authenticated ? (
                 <form class="logout-form" method="post" action="/api/auth/logout">
                   <button type="submit" class="logout-button">
@@ -47,7 +50,7 @@ export const Layout: FC<{
               ) : null}
             </header>
           ) : null}
-          <main class={chrome === 'immersive' ? 'immersive' : undefined}>{children}</main>
+          <main class={chrome === 'immersive' ? 'immersive' : isAdmin ? 'admin-main' : undefined}>{children}</main>
         </body>
       </html>
     </>

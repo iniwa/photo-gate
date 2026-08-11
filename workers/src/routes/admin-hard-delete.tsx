@@ -271,12 +271,12 @@ async function handleHardDeletePreview(
 
 function HardDeleteTargetMissingPage({ kind }: { kind: TargetKind }) {
   return (
-    <Layout title={`${targetLabel(kind)}削除確認`}>
-      <a class="back-link" href={targetBackHref(kind)}>
+    <Layout title={`${targetLabel(kind)}削除確認`} area="admin">
+      <a class="admin-back-link" href={targetBackHref(kind)}>
         ← {targetLabel(kind)}一覧へ
       </a>
-      <h1>{targetLabel(kind)}削除確認</h1>
-      <p class="empty-note">対象は見つかりませんでした。削除フォームは表示しません。</p>
+      <h1 class="admin-page-title">{targetLabel(kind)}削除確認</h1>
+      <p class="admin-notice admin-notice-empty">対象は見つかりませんでした。削除フォームは表示しません。</p>
     </Layout>
   )
 }
@@ -292,90 +292,96 @@ function HardDeleteConfirmPage({
 }) {
   const isUser = kind === 'user'
   return (
-    <Layout title={`${targetLabel(kind)}削除確認プレビュー`}>
-      <a class="back-link" href={targetBackHref(kind)}>
+    <Layout title={`${targetLabel(kind)}削除確認プレビュー`} area="admin">
+      <a class="admin-back-link" href={targetBackHref(kind)}>
         ← {targetLabel(kind)}一覧へ
       </a>
-      <h1>{targetLabel(kind)}削除確認プレビュー</h1>
-      {isUser ? (
-        <p>
-          <strong>注意:</strong> このフォームを送信すると、ユーザー行を D1 から削除します。
-        </p>
-      ) : (
-        <p>
-          <strong>注意:</strong> これはアルバム削除の確認プレビューです。このフォームを送信しても実際の削除は行われません。
-        </p>
-      )}
-      <table class="user-table">
-        <tbody>
-          <tr>
-            <th>{isUser ? 'ユーザーID' : 'アルバムID'}</th>
-            <td>{target.id}</td>
-          </tr>
-          <tr>
-            <th>{isUser ? '表示名' : 'タイトル'}</th>
-            <td>{isUser ? (target as UserForHardDelete).display_name : (target as AlbumForHardDelete).title}</td>
-          </tr>
-          <tr>
-            <th>状態</th>
-            <td>{target.enabled === 1 ? '有効' : '無効'}</td>
-          </tr>
-        </tbody>
-      </table>
-      {isUser ? (
-        <p class="empty-note">
-          このユーザー行の削除により、セッションとアルバム権限は D1 の cascade で削除されます。
-        </p>
-      ) : (
-        <div>
-          <p class="empty-note">
-            この Phase 2 では sync-target は検査しません。将来の実削除フェーズでは D1 削除前に同期ターゲット削除が必要です。
+      <h1 class="admin-page-title">{targetLabel(kind)}削除確認プレビュー</h1>
+      <section class="admin-panel admin-danger-panel">
+        {isUser ? (
+          <p>
+            <strong>注意:</strong> このフォームを送信すると、ユーザー行を D1 から削除します。
           </p>
-          <p class="empty-note">
-            将来のアルバム実削除でも R2 アルバムオブジェクトは削除しません。D1 行削除後に孤立プレフィックスとして扱います。
+        ) : (
+          <p>
+            <strong>注意:</strong> このフォームを送信すると、対象の同期ターゲットを先に削除してから、アルバム行を D1 から削除します。
           </p>
+        )}
+        <div class="admin-table-scroll">
+          <table class="admin-table">
+            <tbody>
+              <tr>
+                <th>{isUser ? 'ユーザーID' : 'アルバムID'}</th>
+                <td>{target.id}</td>
+              </tr>
+              <tr>
+                <th>{isUser ? '表示名' : 'タイトル'}</th>
+                <td>{isUser ? (target as UserForHardDelete).display_name : (target as AlbumForHardDelete).title}</td>
+              </tr>
+              <tr>
+                <th>状態</th>
+                <td>{target.enabled === 1 ? '有効' : '無効'}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
-      )}
-      <p>
-        続行するには <code>{PHRASES[kind]}</code> を正確に入力してください。トークンは 15 分間有効です。
-      </p>
-      <form method="post" action={deleteAction(kind)}>
-        <input type="hidden" name="token" value={token} />
-        <label>
-          確認フレーズ
-          <input type="text" name="phrase" required autocomplete="off" />
-        </label>
-        <button type="submit">{isUser ? 'ユーザーを完全削除' : 'アルバムを完全削除'}</button>
-      </form>
+        {isUser ? (
+          <p class="admin-notice admin-notice-warning">
+            このユーザー行の削除により、セッションとアルバム権限は D1 の cascade で削除されます。
+          </p>
+        ) : (
+          <div>
+            <p class="admin-notice admin-notice-warning">
+              このアルバムの権限は、D1 の既存 foreign-key cascade により削除されます。
+            </p>
+            <p class="admin-notice admin-notice-warning">
+              R2 アルバムオブジェクトは削除されません。D1 行削除後に孤立プレフィックスとしてクリーンアップレポートに表示される場合があります。
+            </p>
+          </div>
+        )}
+        <p>
+          続行するには <code>{PHRASES[kind]}</code> を正確に入力してください。トークンは 15 分間有効です。
+        </p>
+        <form class="admin-form" method="post" action={deleteAction(kind)}>
+          <input type="hidden" name="token" value={token} />
+          <label class="admin-field">
+            確認フレーズ
+            <input type="text" name="phrase" required autocomplete="off" />
+          </label>
+          <button type="submit" class="admin-button admin-button-danger">{isUser ? 'ユーザーを完全削除' : 'アルバムを完全削除'}</button>
+        </form>
+      </section>
     </Layout>
   )
 }
 
 function UserHardDeleteCompletedPage({ target }: { target: UserForHardDelete }) {
   return (
-    <Layout title="User hard delete completed">
-      <a class="back-link" href="/admin/users">
+    <Layout title="User hard delete completed" area="admin">
+      <a class="admin-back-link" href="/admin/users">
         Back to users
       </a>
-      <h1>User hard delete completed</h1>
-      <p>The user row was deleted from D1.</p>
-      <table class="user-table">
-        <tbody>
-          <tr>
-            <th>User ID</th>
-            <td>{target.id}</td>
-          </tr>
-          <tr>
-            <th>Display name</th>
-            <td>{target.display_name}</td>
-          </tr>
-          <tr>
-            <th>Previous status</th>
-            <td>{target.enabled === 1 ? 'enabled' : 'disabled'}</td>
-          </tr>
-        </tbody>
-      </table>
-      <p class="empty-note">
+      <h1 class="admin-page-title">User hard delete completed</h1>
+      <p class="admin-notice admin-notice-info">The user row was deleted from D1.</p>
+      <div class="admin-table-scroll">
+        <table class="admin-table">
+          <tbody>
+            <tr>
+              <th>User ID</th>
+              <td>{target.id}</td>
+            </tr>
+            <tr>
+              <th>Display name</th>
+              <td>{target.display_name}</td>
+            </tr>
+            <tr>
+              <th>Previous status</th>
+              <td>{target.enabled === 1 ? 'enabled' : 'disabled'}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="admin-notice admin-notice-empty">
         Sessions and album permissions are removed by the existing D1 foreign-key cascade.
       </p>
     </Layout>
@@ -384,32 +390,34 @@ function UserHardDeleteCompletedPage({ target }: { target: UserForHardDelete }) 
 
 function AlbumHardDeleteCompletedPage({ target }: { target: AlbumForHardDelete }) {
   return (
-    <Layout title="Album hard delete completed">
-      <a class="back-link" href="/admin/albums">
+    <Layout title="Album hard delete completed" area="admin">
+      <a class="admin-back-link" href="/admin/albums">
         Back to albums
       </a>
-      <h1>Album hard delete completed</h1>
-      <p>The sync target entry was removed first, then the album row was deleted from D1.</p>
-      <table class="user-table">
-        <tbody>
-          <tr>
-            <th>Album ID</th>
-            <td>{target.id}</td>
-          </tr>
-          <tr>
-            <th>Title</th>
-            <td>{target.title}</td>
-          </tr>
-          <tr>
-            <th>Previous status</th>
-            <td>{target.enabled === 1 ? 'enabled' : 'disabled'}</td>
-          </tr>
-        </tbody>
-      </table>
-      <p class="empty-note">
+      <h1 class="admin-page-title">Album hard delete completed</h1>
+      <p class="admin-notice admin-notice-info">The sync target entry was removed first, then the album row was deleted from D1.</p>
+      <div class="admin-table-scroll">
+        <table class="admin-table">
+          <tbody>
+            <tr>
+              <th>Album ID</th>
+              <td>{target.id}</td>
+            </tr>
+            <tr>
+              <th>Title</th>
+              <td>{target.title}</td>
+            </tr>
+            <tr>
+              <th>Previous status</th>
+              <td>{target.enabled === 1 ? 'enabled' : 'disabled'}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="admin-notice admin-notice-empty">
         Album permissions are removed by the existing D1 foreign-key cascade.
       </p>
-      <p class="empty-note">
+      <p class="admin-notice admin-notice-empty">
         R2 album objects were not deleted. They may appear as orphaned prefixes in /admin/r2-cleanup.
       </p>
     </Layout>

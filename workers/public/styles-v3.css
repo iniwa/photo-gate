@@ -355,6 +355,10 @@ summary:focus-visible,
   margin-top: 3rem;
 }
 
+.pagination {
+  margin-top: 1.5rem;
+}
+
 .pagination-next {
   display: block;
   width: 100%;
@@ -812,81 +816,330 @@ main.immersive {
 }
 
 /* ==========================================================================
-   LEGACY COMPAT (removed in Phase 4)
-   Dark-token-adapted rules for classes still emitted by pages not yet
-   migrated to the v2 design (admin tables/notices, and back-link/next-link/
-   empty-note shared with admin). Kept intentionally plain — these
-   components are redesigned in their own phase, not here.
+   Admin operator area
    ========================================================================== */
 
-.back-link {
-  display: inline-block;
-  margin-bottom: 1.25rem;
-  min-height: 44px;
-  line-height: 44px;
+.admin-area-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0.125rem 0.5rem;
+  border: 1px solid var(--amber);
+  border-radius: 999px;
   color: var(--amber);
-  text-decoration: none;
-  font-size: 0.9rem;
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  line-height: 1;
 }
 
-.back-link:hover {
+.admin-main {
+  border-top: 2px solid var(--amber);
+}
+
+.admin-main > * + * {
+  margin-top: 1.25rem;
+}
+
+.admin-page-title {
+  margin-top: 0;
+}
+
+.admin-section-heading {
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.admin-back-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--amber);
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+
+.admin-back-link:hover {
+  color: var(--amber-strong);
   text-decoration: underline;
 }
 
-.pagination {
-  margin-top: 1.5rem;
-  text-align: center;
+.admin-home {
+  max-width: 42rem;
 }
 
-.next-link {
-  display: inline-block;
-  padding: 0.6rem 1.25rem;
+.admin-nav {
+  margin-top: 1.25rem;
+}
+
+.admin-nav-list {
+  display: grid;
+  gap: 0.625rem;
+  list-style: none;
+}
+
+.admin-nav-link {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0.75rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.admin-nav-link:hover {
+  background: var(--surface-raised);
+  color: var(--amber);
+}
+
+.admin-panel {
+  max-width: 42rem;
+  padding: 1rem;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+}
+
+.admin-panel > * + * {
+  margin-top: 1rem;
+}
+
+.admin-form {
+  display: grid;
+  gap: 1rem;
+  max-width: 42rem;
+}
+
+form.admin-panel > * + * {
+  margin-top: 0;
+}
+
+.admin-action-form {
+  margin-top: 1rem;
+}
+
+.admin-field {
+  display: grid;
+  gap: 0.375rem;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.admin-main input:not([type="hidden"]),
+.admin-main select {
+  width: 100%;
+  min-height: 44px;
+  padding: 0.625rem 0.75rem;
+  background: var(--bg);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  color: var(--text);
+  font: inherit;
+}
+
+.admin-main input:not([type="hidden"]):focus-visible,
+.admin-main select:focus-visible {
+  border-color: var(--amber);
+}
+
+.admin-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0.625rem 0.875rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.admin-button-primary {
+  background: var(--amber);
+  color: var(--on-amber);
+}
+
+.admin-button-primary:hover {
+  background: var(--amber-strong);
+}
+
+.admin-button-secondary {
+  background: transparent;
+  border-color: var(--hairline);
+  color: var(--text);
+}
+
+.admin-button-secondary:hover {
+  background: var(--surface-raised);
+  border-color: var(--amber);
+}
+
+.admin-button-danger {
+  background: transparent;
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.admin-button-danger:hover {
+  background: var(--danger);
+  color: var(--bg);
+}
+
+.admin-action-group {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 14rem;
+}
+
+.admin-row-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.admin-row-form input:not([type="hidden"]),
+.admin-row-form select {
+  flex: 1 1 11rem;
+  width: auto;
+}
+
+.admin-row-form .admin-button {
+  flex: 0 0 auto;
+}
+
+.admin-notice {
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+}
+
+.admin-notice-info {
+  background: var(--surface);
+  color: var(--text-muted);
+}
+
+.admin-notice-warning {
+  background: var(--warning-surface);
+  border-color: var(--warning-text);
+  color: var(--warning-text);
+}
+
+.admin-notice-empty {
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.admin-danger-panel {
+  max-width: 52rem;
+  background: var(--danger-surface);
+  border-color: var(--danger);
+}
+
+.admin-danger-panel .admin-notice-warning {
+  border-color: var(--danger);
+}
+
+.admin-meta {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.admin-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  margin-top: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  -webkit-overflow-scrolling: touch;
+}
+
+.admin-table {
+  width: 100%;
+  min-width: 36rem;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.admin-table th,
+.admin-table td {
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--hairline);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.admin-table tr:last-child th,
+.admin-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.admin-table thead th {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.admin-table tbody th {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.admin-pagination {
+  margin-top: 1.5rem;
+}
+
+.admin-pagination-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0.625rem 1.25rem;
+  background: transparent;
   border: 1px solid var(--hairline);
   border-radius: var(--radius);
   color: var(--amber);
   text-decoration: none;
-  font-size: 0.9rem;
 }
 
-.next-link:hover {
+.admin-pagination-link:hover {
   background: var(--surface);
 }
 
-.empty-note {
-  color: var(--text-muted);
-  margin-top: 1.5rem;
-}
+@media (max-width: 640px) {
+  .admin-main > * + * {
+    margin-top: 1rem;
+  }
 
-.user-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 1.25rem;
-  font-size: 0.875rem;
-}
+  .admin-panel {
+    padding: 0.875rem;
+  }
 
-.user-table th,
-.user-table td {
-  border-bottom: 1px solid var(--hairline);
-  padding: 0.5rem 0.75rem;
-  text-align: left;
-  vertical-align: top;
-}
+  .admin-action-group {
+    min-width: 16rem;
+  }
 
-.user-table th {
-  color: var(--text-muted);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-size: 0.75rem;
-}
+  .admin-row-form {
+    align-items: stretch;
+  }
 
-.notice {
-  background: var(--warning-surface);
-  color: var(--warning-text);
-  padding: 0.25rem 0.75rem;
-  border-radius: var(--radius);
-  font-size: 0.8125rem;
-  font-weight: 500;
+  .admin-row-form .admin-button {
+    flex: 1 1 auto;
+  }
+
+  .admin-table {
+    min-width: 38rem;
+  }
 }
 
 /* V3-1 album timeline */

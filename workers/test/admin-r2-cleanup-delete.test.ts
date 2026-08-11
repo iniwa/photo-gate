@@ -410,6 +410,17 @@ describe('admin-routes: POST /admin/r2-cleanup/confirm success', () => {
     expect(body).toContain('DELETE ORPHANS')
   })
 
+  it('uses the admin danger surface while keeping R2 deletion preview-only', async () => {
+    const app = makeApp(goodAuth())
+    const body = await (await postR2CleanupConfirm(app, VALID_CONFIRM_OPTIONS)).text()
+    expect(body).toContain('class="admin-area-chip"')
+    expect(body).toContain('class="admin-main"')
+    expect(body).toContain('admin-danger-panel')
+    expect(body).toContain('class="admin-table-scroll"')
+    expect(body).toContain('R2 オブジェクトは削除されません')
+    expect(body).not.toContain('src="/app.js"')
+  })
+
   it('page does not contain R2 bucket name, full object keys, or PhotoPrism data', async () => {
     const app = makeApp(goodAuth())
     const res = await postR2CleanupConfirm(app, VALID_CONFIRM_OPTIONS)

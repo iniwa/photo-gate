@@ -689,6 +689,15 @@ describe('admin-routes: success — valid config, token, allowlisted email', () 
     expect(body).toContain('管理コンソール')
   })
 
+  it('uses the admin shell without viewer JavaScript', async () => {
+    const res = await getAdmin(makeApp(goodAuth()))
+    const body = await res.text()
+    expect(body).toContain('class="admin-area-chip"')
+    expect(body).toContain('class="admin-main"')
+    expect(body).toContain('class="admin-nav-link"')
+    expect(body).not.toContain('src="/app.js"')
+  })
+
   it('body does NOT contain login form action', async () => {
     const res = await getAdmin(makeApp(goodAuth()))
     const body = await res.text()
@@ -959,6 +968,17 @@ describe('admin-routes: GET /admin/users success', () => {
     const res = await getAdmin(app, { path: '/admin/users' })
     const body = await res.text()
     expect(body).toContain('なし')
+  })
+
+  it('uses the admin table wrapper and action controls', async () => {
+    const app = makeApp(goodAuth(), makeUserRepo([SAMPLE_USER]))
+    const body = await (await getAdmin(app, { path: '/admin/users' })).text()
+    expect(body).toContain('class="admin-main"')
+    expect(body).toContain('class="admin-table-scroll"')
+    expect(body).toContain('class="admin-table"')
+    expect(body).toContain('class="admin-action-group"')
+    expect(body).not.toContain('class="user-table"')
+    expect(body).not.toContain('src="/app.js"')
   })
 
   it('body shows ロック中 for non-null locked_until', async () => {
