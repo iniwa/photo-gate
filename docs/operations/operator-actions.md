@@ -71,14 +71,15 @@ npx wrangler secret list
 ビューワー管理画面の同期ターゲット選択に使うカタログを更新する場合:
 
 1. PhotoPrism のアルバム一覧が正しい状態であることを確認する。
-2. sync サービスが実行できる環境 (Pi または docker exec) で以下を実行する:
-
-```sh
-photo-gate-sync publish-catalog
-```
-
-3. 管理画面 `https://share-photo.iniwach.com/admin/albums` で
+2. 管理画面 `https://share-photo.iniwach.com/admin/sync` で **Sync Now** を
+   押し、保留中インジケーターが消えて `runsCompleted` が増えるまで待つ。
+   sync daemon は起動時および成功同期後にカタログを自動公開するため、
+   Pi への SSH や `docker exec` は不要である。
+3. 管理画面 `https://share-photo.iniwach.com/admin/albums` を再読み込みし、
    カタログの内容が正しく表示されることを確認する。
+
+`photo-gate-sync publish-catalog` はローカル診断用に残すが、通常の運用手順
+では実行しない。
 
 > publish-catalog は PhotoPrism アルバム UID をハッシュ化した `catalogId` のみを
 > R2 の `ops/album-catalog.json` に書き込む。生 UID・URL・トークン・R2 認証情報は

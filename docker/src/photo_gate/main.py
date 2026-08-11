@@ -630,6 +630,24 @@ async def run_publish_catalog(
     return 0
 
 
+async def _best_effort_publish_catalog(
+    publish_catalog_fn: Callable[[], object] | None,
+    log: logging.Logger,
+) -> None:
+    """Publish the sanitized catalog without changing daemon sync semantics."""
+    if publish_catalog_fn is None:
+        return
+
+    try:
+        result = await publish_catalog_fn()
+    except Exception:
+        log.warning("album catalog publication failed; continuing sync daemon")
+        return
+
+    if result != 0:
+        log.warning("album catalog publication failed; continuing sync daemon")
+
+
 async def run_sync_daemon(
     args: argparse.Namespace,
     *,
@@ -637,6 +655,7 @@ async def run_sync_daemon(
     client_factory: Callable | None = None,
     store_factory: Callable | None = None,
     sync_fn: Callable | None = None,
+    catalog_publish_fn: Callable[[], object] | None = None,
     clock: Callable[[], datetime] | None = None,
     sleep_fn: Callable[[float], object] | None = None,
     heartbeat_period: float = 60.0,
@@ -646,7 +665,7 @@ async def run_sync_daemon(
     Async composition function for sync-daemon.
 
     Validates args, then loops: run sync -> write health -> sleep -> repeat.
-    Injectable for tests: sleep_fn, clock, heartbeat_period.
+    Injectable for tests: sleep_fn, clock, heartbeat_period, catalog_publish_fn.
     Returns exit code:
       0 -- normal shutdown (SIGTERM/SIGINT or max-runs reached)
       2 -- argument/config validation error
@@ -755,6 +774,11 @@ async def run_sync_daemon(
                 pass
 
     heartbeat_bg = asyncio.create_task(_heartbeat_task())
+
+    # Keep the browser-owned album picker fresh without requiring an operator
+    # to open a Pi shell. Catalog failure is intentionally isolated from sync
+    # and health semantics.
+    await _best_effort_publish_catalog(catalog_publish_fn, log)
 
     runs = 0
     exit_code = 0
@@ -875,6 +899,7 @@ async def run_sync_daemon(
                     runs_completed=runs,
                     heartbeat_at=_utc_now_iso(clock),
                 )
+                await _best_effort_publish_catalog(catalog_publish_fn, log)
             else:
                 # attempt_code == 1: runtime failure; continue
                 log.warning(
@@ -1027,7 +1052,13 @@ def main() -> None:
     if args.command == "sync-once":
         sys.exit(asyncio.run(run_sync_once(args)))
     elif args.command == "sync-daemon":
-        sys.exit(asyncio.run(run_sync_daemon(args)))
+        async def _daemon_catalog_publish() -> int:
+            return await run_publish_catalog(args)
+
+        sys.exit(asyncio.run(run_sync_daemon(
+            args,
+            catalog_publish_fn=_daemon_catalog_publish,
+        )))
     elif args.command == "healthcheck":
         sys.exit(_run_healthcheck(args))
     elif args.command == "publish-catalog":

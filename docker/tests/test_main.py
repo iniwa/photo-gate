@@ -6,10 +6,12 @@ All service dependencies are injected via factories.
 """
 
 import asyncio
+import sys
 from datetime import datetime, timezone
 
 import pytest
 
+import photo_gate.main as main_module
 from photo_gate.main import _build_parser, _describe_error, run_publish_catalog, run_sync_once
 from photo_gate.photoprism_client import PhotoPrismError
 
@@ -68,6 +70,40 @@ def test_help_exits_with_zero():
     with pytest.raises(SystemExit) as exc_info:
         parser.parse_args(["--help"])
     assert exc_info.value.code == 0
+
+
+def test_sync_daemon_cli_wires_catalog_publication(monkeypatch):
+    daemon_args = [
+        "photo-gate-sync",
+        "sync-daemon",
+        "--album-id", "my-album",
+        "--album-title", "My Album",
+        "--photoprism-album-uid", "uid123abc",
+        "--confirm-upload",
+    ]
+    publish_calls = []
+    captured = {}
+
+    async def fake_publish_catalog(args):
+        publish_calls.append(args)
+        return 0
+
+    async def fake_sync_daemon(args, *, catalog_publish_fn=None, **kwargs):
+        captured["args"] = args
+        captured["catalog_publish_fn"] = catalog_publish_fn
+        return 0
+
+    monkeypatch.setattr(main_module, "run_publish_catalog", fake_publish_catalog)
+    monkeypatch.setattr(main_module, "run_sync_daemon", fake_sync_daemon)
+    monkeypatch.setattr(sys, "argv", daemon_args)
+
+    with pytest.raises(SystemExit) as exc_info:
+        main_module.main()
+
+    assert exc_info.value.code == 0
+    assert captured["args"].command == "sync-daemon"
+    assert asyncio.run(captured["catalog_publish_fn"]()) == 0
+    assert publish_calls == [captured["args"]]
 
 
 def test_sync_once_help_exits_with_zero():

@@ -64,6 +64,12 @@ photo-gate-sync publish-catalog
 - On success, prints `Published album catalog: count=N`.
 - On failure, prints a sanitized error line and exits non-zero.
 
+The normal production path does not require this command: `sync-daemon` also
+publishes the same catalog at daemon startup and after every successful sync.
+From the admin UI, use **Sync Now** and wait for the sync to finish before
+reloading the album page. The standalone command remains available for local
+diagnosis only.
+
 **Published schema (version 1):**
 
 ```json
@@ -270,7 +276,11 @@ ops/album-catalog.json
 
 - Content-Type: `application/json`
 - Cache-Control: `private, no-cache`
-- Written by `photo-gate-sync publish-catalog`; the Worker reads it in a later phase (A3)
+- Written by `photo-gate-sync publish-catalog` and, in normal operation, by
+  `sync-daemon` at startup and after successful syncs.
+- Catalog publication is best-effort: a failure emits a sanitized daemon
+  warning and does not change sync success/failure, health counters, or the
+  Docker HEALTHCHECK result.
 
 The object contains only safe display fields. The published JSON must never include:
 raw PhotoPrism UIDs, PhotoPrism URLs, API tokens, preview tokens, NAS paths, original filenames,

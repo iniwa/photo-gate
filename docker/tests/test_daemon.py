@@ -195,6 +195,164 @@ def test_daemon_runs_n_times_and_exits_0(tmp_path):
     assert len(sync_calls) == 3
 
 
+def test_daemon_publishes_catalog_on_startup_and_after_successful_attempts(tmp_path):
+    parser = _build_parser()
+    args = parser.parse_args(_VALID_DAEMON_ARGS + [
+        "--max-runs", "2",
+        "--health-file", str(tmp_path / "health.json"),
+        "--interval-seconds", "60",
+    ])
+
+    sync_calls = []
+    catalog_calls = []
+    events = []
+
+    async def counting_sync(*args, **kwargs):
+        sync_calls.append(1)
+        events.append("sync")
+
+    async def publish_catalog():
+        catalog_calls.append(1)
+        events.append("catalog")
+        return 0
+
+    async def instant_sleep(seconds):
+        pass
+
+    code = asyncio.run(run_sync_daemon(
+        args,
+        config_loader=_FakeConfig,
+        client_factory=lambda cfg: _FakeClient(),
+        store_factory=lambda cfg: object(),
+        sync_fn=counting_sync,
+        catalog_publish_fn=publish_catalog,
+        clock=lambda: _FIXED_TS,
+        sleep_fn=instant_sleep,
+    ))
+
+    assert code == 0
+    assert len(sync_calls) == 2
+    assert len(catalog_calls) == 3  # startup + one per successful sync
+    assert events == ["catalog", "sync", "catalog", "sync", "catalog"]
+
+
+def test_daemon_catalog_failure_does_not_change_successful_sync_state(tmp_path, capsys):
+    parser = _build_parser()
+    health_path = str(tmp_path / "health.json")
+    args = parser.parse_args(_VALID_DAEMON_ARGS + [
+        "--max-runs", "1",
+        "--health-file", health_path,
+        "--interval-seconds", "60",
+    ])
+
+    catalog_calls = []
+    fake_secret = "FAKE-PHOTOPRISM-TOKEN-12345"
+
+    async def failed_catalog_publish():
+        catalog_calls.append(1)
+        raise RuntimeError(fake_secret)
+
+    async def instant_sleep(seconds):
+        pass
+
+    code = asyncio.run(run_sync_daemon(
+        args,
+        config_loader=_FakeConfig,
+        client_factory=lambda cfg: _FakeClient(),
+        store_factory=lambda cfg: object(),
+        sync_fn=_noop_sync,
+        catalog_publish_fn=failed_catalog_publish,
+        clock=lambda: _FIXED_TS,
+        sleep_fn=instant_sleep,
+    ))
+
+    with open(health_path) as f:
+        health = json.load(f)
+    output = capsys.readouterr().out
+
+    assert code == 0
+    assert len(catalog_calls) == 2  # startup + successful sync
+    assert health["last_result"] == "ok"
+    assert health["last_error"] is None
+    assert health["runs_completed"] == 1
+    assert "album catalog publication failed; continuing sync daemon" in output
+    assert fake_secret not in output
+
+
+def test_daemon_catalog_nonzero_return_does_not_change_successful_sync_state(tmp_path):
+    parser = _build_parser()
+    health_path = str(tmp_path / "health.json")
+    args = parser.parse_args(_VALID_DAEMON_ARGS + [
+        "--max-runs", "1",
+        "--health-file", health_path,
+        "--interval-seconds", "60",
+    ])
+
+    catalog_calls = []
+
+    async def unavailable_catalog_publish():
+        catalog_calls.append(1)
+        return 1
+
+    async def instant_sleep(seconds):
+        pass
+
+    code = asyncio.run(run_sync_daemon(
+        args,
+        config_loader=_FakeConfig,
+        client_factory=lambda cfg: _FakeClient(),
+        store_factory=lambda cfg: object(),
+        sync_fn=_noop_sync,
+        catalog_publish_fn=unavailable_catalog_publish,
+        clock=lambda: _FIXED_TS,
+        sleep_fn=instant_sleep,
+    ))
+
+    with open(health_path) as f:
+        health = json.load(f)
+
+    assert code == 0
+    assert len(catalog_calls) == 2  # startup + successful sync
+    assert health["last_result"] == "ok"
+    assert health["last_error"] is None
+    assert health["runs_completed"] == 1
+
+
+def test_daemon_does_not_publish_catalog_after_failed_sync(tmp_path):
+    parser = _build_parser()
+    args = parser.parse_args(_VALID_DAEMON_ARGS + [
+        "--max-runs", "1",
+        "--health-file", str(tmp_path / "health.json"),
+        "--interval-seconds", "60",
+    ])
+
+    catalog_calls = []
+
+    async def failed_sync(*args, **kwargs):
+        raise RuntimeError("injected failure")
+
+    async def publish_catalog():
+        catalog_calls.append(1)
+        return 0
+
+    async def instant_sleep(seconds):
+        pass
+
+    code = asyncio.run(run_sync_daemon(
+        args,
+        config_loader=_FakeConfig,
+        client_factory=lambda cfg: _FakeClient(),
+        store_factory=lambda cfg: object(),
+        sync_fn=failed_sync,
+        catalog_publish_fn=publish_catalog,
+        clock=lambda: _FIXED_TS,
+        sleep_fn=instant_sleep,
+    ))
+
+    assert code == 0
+    assert len(catalog_calls) == 1  # startup only
+
+
 # ---------------------------------------------------------------------------
 # Failed sync: continues, increments consecutive_failures, resets on success
 # ---------------------------------------------------------------------------
