@@ -25,7 +25,8 @@ and the active handoff when one exists. `FABLE.md`,
 handoffs are historical references, not current authority.
 
 Shared generation sources are under `D:/Git/CLAUDEmdStrage/_base/`; this
-project uses the common sources plus the Windows, Docker, and Web profiles.
+project uses the common sources plus the Windows, Docker, Web, and Cloudflare
+profiles.
 
 ## Instruction Precedence
 
@@ -41,8 +42,14 @@ explicitly establishes an edit boundary. Verified repository facts override
 base defaults. Report only conflicts that cannot be resolved from this order
 and repository evidence.
 
+## Priorities
+
+Apply these priorities in order: correctness, safety, and preservation of user work; token efficiency across the complete task; autonomous completion of the approved outcome; elapsed execution speed. Avoid repeated discovery, copied durable context, overlapping writers, speculative review, and delegation whose handoff cost exceeds the work transferred.
+
 ## Primary Session, Delegation, and Ownership
 
+- Prefer the smallest correct change that satisfies the approved outcome, requirements, and acceptance criteria.
+- Before creating a new implementation or adding a dependency, inspect existing code, the standard library, and platform-native capabilities; reuse a suitable capability unless that would weaken correctness, security, compatibility, or maintainability.
 - The user selects the primary model at runtime. The primary session owns task
   interpretation, material design, approval boundaries, delegation, final
   integration, and user communication.
@@ -51,10 +58,18 @@ and repository evidence.
   discovery, source edits, focused verification, and minor corrections with
   that writer rather than duplicating them in the primary session.
 - Use `bounded_explorer` for behaviorally read-only repository exploration,
-  extraction, log analysis, and test triage. Use `adaptive_implementer` when a
-  bounded outcome clearly needs broader cross-file or cross-subsystem
-  reasoning. Use `bounded_reviewer` only when independent read-only review is
-  justified by risk, ambiguity, or breadth.
+  extraction, log analysis, and test triage when the question is genuinely
+  independent; do not fan out discovery that the cohesive implementer can
+  perform cheaply. Use `adaptive_implementer` when a bounded outcome clearly
+  needs broader cross-file or cross-subsystem reasoning. Use
+  `bounded_reviewer` only for a concrete material correctness, security, data,
+  compatibility, cross-system, or verification risk. Normally skip it for a
+  localized low-risk content, copy, or deterministic documentation or
+  configuration change after self-review.
+- Choose `adaptive_implementer` directly when acceptance materially depends on
+  unresolved native/platform lifecycle, cross-layer runtime, or broad
+  operability contracts; do not first force a predictably inadequate bounded
+  writer route.
 - When the active surface can select configured named roles, start them
   without inherited conversation history and without an explicit model or
   effort override; transfer only the compact task-specific goal, acceptance
@@ -71,9 +86,13 @@ and repository evidence.
   unless an explicit user instruction changes project policy.
 
 Keep small, conversation-dependent, design-heavy, approval-sensitive, or
-transfer-negative work in the primary session. A delegated implementer owns
-the approved outcome through directly related code, tests, fixtures,
-documentation, configuration, dependencies, build or packaging files, CI,
+transfer-negative work in the primary session. Keep one cohesive outcome and
+its corrections in the current task; identify a fresh Codex task/chat boundary
+when a genuinely independent phase has its own acceptance and verification
+instead of silently carrying unrelated long-lived context forward. A
+delegated implementer owns the approved outcome through directly related
+code, tests, fixtures, documentation, configuration, dependencies, build or
+packaging files, CI,
 local migrations, focused verification, and minor in-scope corrections when
 reasonably necessary.
 
@@ -91,8 +110,27 @@ check, stale-reference/static-asset sweep, and the required per-item
 passed/blocked/unmet return-evidence shape. The
 writer self-reviews the stable diff, fixes minor failures, and completes that
 gate before any independent reviewer starts. Reviewer findings are sent back
-as one packet to the same writer. Append only safe telemetry envelope fields;
-never include prompts, messages, tool data, secrets, or private values.
+as one packet to the same writer. Normally use at most one independent reviewer
+per cohesive outcome. A second reviewer requires a distinct material risk or
+an unusable or blocked first review, and the primary records that reason.
+If task telemetry is captured outside this repository, retain only safe
+envelope fields; never include prompts, messages, tool data, secrets, or
+private values. This project does not require a project worklog.
+
+At the second correction round for one cohesive outcome, or after two blocked
+or partial implementation returns caused by an unresolved acceptance,
+authority, or environment issue, pause further corrective delegation. The
+primary classifies the cause and restates acceptance, protected boundaries,
+authority, environment, and remaining evidence before choosing the same
+bounded writer only if the remainder is still bounded, an adaptive route for
+genuinely broader reasoning, approval or user input for missing authority, or
+a fresh independent task boundary. This token-efficiency circuit breaker does
+not weaken verification or abandon safe blocked work.
+
+After that reset, keep substantive corrections with the one newly selected
+writer (adaptive when warranted). The primary edits source directly only when
+the fix is demonstrably too small to justify transfer or named-role delegation
+is unavailable; it does not resume parallel corrective writing by default.
 
 If the user writes in Japanese, respond in Japanese. Preserve the repository's
 established language for documentation, comments, identifiers, logs, and

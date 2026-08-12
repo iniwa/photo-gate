@@ -39,9 +39,10 @@ have one active source.
 
 ## First Pilot
 
-At pilot selection, the active V3-1 timeline handoff was the unimplemented baseline and had accepted design,
-observable acceptance criteria, protected behavior, non-goals, and focused
-verification. It is therefore the first prepared `bounded_implementer` pilot.
+At pilot selection, the active V3-1 timeline handoff was the unimplemented
+baseline and had accepted design, observable acceptance criteria, protected
+behavior, non-goals, and focused verification. It is therefore the first
+prepared `bounded_implementer` pilot.
 The documentation migration itself does not implement, deploy, or publish
 V3-1.
 
@@ -57,6 +58,17 @@ independent review, and a safe repeatable JSONL exporter that records only
 non-sensitive envelope telemetry. Browser QA remains separate and is not
 claimed by this pilot.
 
+A 2026-08-04 follow-up retained the single-writer route and made review and
+task boundaries explicit. The cohesive implementer owns cheap related
+discovery; multiple explorers are not a substitute for that writer.
+Independent `bounded_reviewer` review is reserved for a concrete material
+correctness, security, data, compatibility, cross-system, or verification risk
+and is normally skipped for localized low-risk content or deterministic
+documentation/configuration changes after self-review. A genuinely independent
+phase with its own acceptance and verification is identified as a fresh Codex
+task/chat boundary rather than silently inheriting unrelated long-lived
+context.
+
 ## Historical Baseline
 
 The previous active `CLAUDE.md` remains available at commit
@@ -64,3 +76,32 @@ The previous active `CLAUDE.md` remains available at commit
 `5f6d212b48b37a61d2dcb80d6d263fd83cf48d4f`. Accepted decisions, completed
 handoffs, and historical progress records are not rewritten merely to replace
 old model terminology.
+
+## 2026-08-04 Implementation Discipline Follow-up
+
+Prefer the smallest correct change that satisfies the approved outcome,
+requirements, and acceptance criteria. Before creating a new implementation or
+adding a dependency, inspect existing code, the standard library, and
+platform-native capabilities; reuse a suitable capability unless that would
+weaken correctness, security, compatibility, or maintainability. The real
+project `AGENTS.md` is authoritative; synchronization of its stored copy is
+maintained separately by the shared-source repository.
+
+## 2026-08-04 Common Policy Reconciliation
+
+Photo-gate now aligns semantically with the shared priorities, single-writer
+delegation, role thresholds and fallback, primary-only ownership, self-gate and
+consolidated corrections, and fresh independent-task boundary. Its
+photo-sharing security, approval, deployment, and verification rules remain
+authoritative.
+
+## 2026-08-11 Correction-Churn Follow-up
+
+Normally one independent reviewer evaluates the stable self-reviewed outcome;
+a second requires a distinct material risk or an unusable or blocked first
+review. At the second correction round, or after two blocked or partial
+implementation returns caused by unresolved acceptance, authority, or
+environment, the primary pauses further corrective delegation and resets the
+contract before selecting a bounded, adaptive, approval, or fresh-task route.
+This token-efficiency circuit breaker does not weaken Photo-gate's privacy,
+authorization, deletion, deployment, or verification gates.
