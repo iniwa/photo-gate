@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 
 import pyvips
@@ -26,6 +27,15 @@ _SOURCE_SIZE_PX = {
 }
 
 _THUMB_SOURCE_SIZE = "fit_720"
+
+
+@dataclass(frozen=True)
+class SyncAlbumResult:
+    """Safe per-album counters returned only after a successful manifest write."""
+
+    photos_total: int
+    photos_uploaded: int
+    photos_skipped: int
 
 
 def _require_plausible_source(
@@ -68,7 +78,7 @@ async def sync_album(
     generated_at: datetime,
     concurrency: int = 2,
     preview_source_size: str = "fit_3840",
-) -> None:
+) -> SyncAlbumResult:
     """
     Sync one album:
       1. Read previous manifest for reupload suppression (cache miss on any error).
@@ -162,3 +172,8 @@ async def sync_album(
     manifest_json = build_manifest(album, photos, settings, generated_at)
     await store.put(manifest_key, manifest_json.encode("utf-8"), "application/json")
     _log.info("uploaded manifest for album %s", album.album_id)
+    return SyncAlbumResult(
+        photos_total=len(photos),
+        photos_uploaded=_uploaded[0],
+        photos_skipped=_skipped[0],
+    )

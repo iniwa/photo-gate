@@ -66,9 +66,9 @@ photo-gate-sync publish-catalog
 
 The normal production path does not require this command: `sync-daemon` also
 publishes the same catalog at daemon startup and after every successful sync.
-From the admin UI, use **Sync Now** and wait for the sync to finish before
-reloading the album page. The standalone command remains available for local
-diagnosis only.
+From the admin UI, use **カタログを更新** to request this catalog-only operation;
+it does not enter the image-sync path. The standalone command remains available
+for local diagnosis only.
 
 **Published schema (version 1):**
 
@@ -208,7 +208,10 @@ Release images are published to GitHub Container Registry as
 - `photo_gate.album_catalog` — catalog builder: converts PhotoPrism album rows to sanitized JSON (`ops/album-catalog.json`)
 - `photo_gate.sync_status` — builds sanitized sync status payload for R2 (`ops/sync-status.json`)
 - `photo_gate.sync_request` — validates manual sync request objects read from R2 (`ops/sync-request.json`)
+- `photo_gate.catalog_refresh_request` — validates catalog-only request objects (`ops/catalog-refresh-request.json`)
+- `photo_gate.sync_result` — builds sanitized aggregate operation results (`ops/sync-result.json`)
 - `photo_gate.sync_targets` — validates sync target list objects read from R2 (`ops/sync-targets.json`)
+- `photo_gate.daemon`, `photo_gate.sync_once`, `photo_gate.request_consumer`, and `photo_gate.status_publisher` — daemon lifecycle split by responsibility; `photo_gate.main` remains the compatible CLI facade
 
 Tests run entirely without network access, real PhotoPrism, R2, or credentials.
 
@@ -226,6 +229,18 @@ ops/sync-status.json
 - Status publish is best-effort: failure does not affect sync success/failure semantics or Docker HEALTHCHECK
 - If R2 credentials or configuration are unavailable at daemon startup, the object is not published; local health file behavior remains the source of Docker HEALTHCHECK truth
 - The object contains only aggregate/operational fields; no PID, album title, PhotoPrism UID/URL/token, R2 credentials, or source photo data
+
+The daemon also best-effort publishes the most recent operation aggregate at:
+
+```text
+ops/sync-result.json
+```
+
+It records only operation kind, trigger kind, success/partial/failure, start and
+completion timestamps, aggregate target/photo counters, and whether the catalog
+was refreshed. It never contains album IDs, titles, photo IDs, object keys,
+source identities, errors, credentials, or image metadata. A failure to write
+this optional result does not change image-sync or health-check semantics.
 
 ## Manual Sync Requests
 
@@ -265,6 +280,26 @@ credentials appear in the object or in any log line.
   `"scheduled"`) and `lastHandledRequestId` (request ID after a manual sync,
   or `null`). The local health file remains schema 1 and does not include
   trigger fields.
+
+## Catalog-Only Refresh Requests
+
+`POST /admin/catalog-refresh/request` writes a separate schema-1 object to
+private R2 at `ops/catalog-refresh-request.json`. The daemon validates it with
+the same bounded size, timestamp, staleness, duplicate, and best-effort deletion
+rules as a normal sync request, but accepts only `kind=publish-catalog`.
+
+Handling this request runs `publish-catalog` only. It does not list photos,
+download previews, encode images, upload derivatives, or modify a manifest.
+The separate key preserves compatibility: a daemon that predates this release
+will ignore it rather than treating it as a normal image sync request.
+
+## R2 Transport Reliability
+
+The S3-compatible R2 client explicitly uses standard retries with at most four
+total attempts, a 10-second connect timeout, and a 60-second read timeout.
+These bounds apply to the existing private R2 reads and writes; they do not
+change object keys, cache policy, visibility, or the all-or-nothing manifest
+publication rule.
 
 ## Album Catalog
 

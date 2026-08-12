@@ -38,7 +38,7 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 | Multi-select download | `POST /download/:albumId/selection` | D1 (session + album permission + `download_enabled` gate) + R2 (manifest membership check only); validates same-origin, form Content-Type, variant (`thumb`\|`preview`), and 1–100 selected photo IDs against the manifest; renders a private no-store HTML page of individual links to existing GET download routes — no R2 photo object reads, no ZIP, no JavaScript, no RAW/original |
 | Admin surface | `GET /admin` | Cloudflare Access JWT + email allowlist |
 | Admin user inventory | `GET /admin/users` | D1 (read-only; no `password_hash`) |
-| Admin album inventory | `GET /admin/albums` | D1 (read-only; no `photoprism_album_uid`, transform settings, or `strip_exif`) |
+| Admin album inventory | `GET /admin/albums` | D1 (read-only; no `photoprism_album_uid`, transform settings, or `strip_exif`) + private R2 catalog/target reads + bounded manifest `head()` probes. The readiness label uses only safe aggregate facts (target configured, manifest present/unknown, expiry, enabled state, active-user permission count); it never reads image or manifest bodies, lists R2 objects, or renders source identities. |
 | Admin permission inventory + assignment UI | `GET /admin/permissions` | D1 (3 queries: users `id/display_name/enabled`, albums `id/title/enabled`, permissions `album_id/user_id/created_at`; no `password_hash`, `photoprism_album_uid`; renders `<select>` dropdowns for grant form; disabled users/albums shown with `(無効)` badge; fail closed if either list exceeds 100 rows) |
 | Admin permission grant | `POST /admin/permissions/grant` | D1 (insert; idempotent ON CONFLICT DO NOTHING) |
 | Admin permission revoke | `POST /admin/permissions/revoke` | D1 (delete; idempotent on absent pair) |
@@ -51,8 +51,9 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 | Admin user display name update | `POST /admin/users/update-display-name` | D1 (UPDATE display_name, updated_at; no password_hash, enabled, fail_count, locked_until, sessions, or permissions touched; unknown userId is 500) |
 | Admin hard-delete controls | `POST /admin/users/confirm-delete`, `POST /admin/users/delete`, `POST /admin/albums/confirm-delete`, `POST /admin/albums/delete` | Users: two-step HMAC confirmation then `DELETE FROM users WHERE id = ?` with D1 cascade for sessions/permissions. Albums: two-step HMAC confirmation; remove matching sync target first, then `DELETE FROM albums WHERE id = ?`; no R2 album asset deletion |
 | Admin ops summary | `GET /admin/ops` | D1 (read-only aggregate counts from `users`, `albums`, `album_permissions`, `sessions`; no row-level identity, title, hash, token, PhotoPrism UID, or R2 data) |
-| Admin sync status | `GET /admin/sync` | Private R2 (read-only; accepts schema 1 and schema 2 status from `ops/sync-status.json`; schema 1 normalizes trigger fields to null; schema 2 includes `lastTriggerKind` and `lastHandledRequestId`; also reads pending request state from `ops/sync-request.json`; renders Sync Now form and pending indicator) |
+| Admin sync status | `GET /admin/sync` | Private R2 (read-only; accepts schema 1 and schema 2 daemon status from `ops/sync-status.json`, pending requests from `ops/sync-request.json` and `ops/catalog-refresh-request.json`, and a sanitized aggregate result from `ops/sync-result.json`; renders independent image-sync/catalog-update controls and aggregate counters only) |
 | Admin sync request writer | `POST /admin/sync/request` | Private R2 (write-only; fixed key `ops/sync-request.json`; admin-only; validates exact `kind=sync-now` form input; Docker daemon consumes and handles; Sync Now form exposed on `GET /admin/sync`) |
+| Admin catalog-refresh request writer | `POST /admin/catalog-refresh/request` | Private R2 (write-only; fixed key `ops/catalog-refresh-request.json`; admin-only; validates exact `kind=publish-catalog` form input; Docker daemon consumes this as a catalog-only operation, never as an image sync) |
 | Admin sync target upsert | `POST /admin/albums/sync-target-upsert` | Private R2 `ops/album-catalog.json` (catalog check: verifies submitted `catalogId` exists; missing/malformed → 500, absent → 400) + D1 (read album by `albumId`) + Private R2 (read-modify-write `ops/sync-targets.json`; accepts `albumId`+`catalogId`; rejects duplicate `catalogId` across albums; fixed thumb/preview/stripExif schema) |
 | Admin sync target remove | `POST /admin/albums/sync-target-remove` | Private R2 (read-modify-write `ops/sync-targets.json`; accepts `albumId`; removes matching entry; no-op for unknown album ID) |
 | Admin R2 cleanup report | `GET /admin/r2-cleanup` | Private R2 (`list()` only under `albums/` and `ops/`; no object body reads) + D1 (read-only: `SELECT id, enabled FROM albums`; no title, photoprism_album_uid, or transform settings); read-only dry-run reporting only — does not delete, mutate, or move any R2 object |
@@ -73,6 +74,7 @@ npm ci
 npm run lint
 npm run typecheck
 npm test
+npm run test:coverage
 npm run build
 ```
 
@@ -332,6 +334,17 @@ removed from the reserved-401 set; only `/api` and `/img` remain there.
 | `strip_exif` | Internal transform setting |
 
 Approved columns: `id`, `title`, `enabled`, `expires_at`, `download_enabled`, `created_at`, `updated_at`.
+
+### Admin album sharing readiness
+
+The inventory's `共有準備` label is derived from the existing album page plus
+safe operational facts: whether the sanitized catalog is available, whether a
+sync target exists, whether the private manifest object is present, whether the
+album is expired or enabled, and an aggregate count of permissions assigned to
+enabled users. Manifest probes use at
+most four concurrent `head()` calls for the current page and never read a
+manifest body, image body, R2 listing, or source field. An R2 probe failure is
+rendered as an explicit unknown state, never as a false "missing" result.
 
 ### Admin permission inventory — approved columns
 

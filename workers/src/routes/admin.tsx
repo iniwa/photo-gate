@@ -9,7 +9,23 @@ import type { AdminOpsSummary } from '../types/admin-ops.js'
 import type { AdminSyncStatus } from '../types/admin-sync-status.js'
 import type { AdminSyncRequest } from '../types/admin-sync-request.js'
 import type { AdminAlbumCatalogEntry } from '../types/admin-album-catalog.js'
-import { Layout } from '../templates/layout.js'
+import type { AdminSyncTarget } from '../types/admin-sync-target.js'
+import type { AdminCatalogRefreshRequest } from '../types/admin-catalog-refresh-request.js'
+import type { AdminSyncResult } from '../types/admin-sync-result.js'
+import type {
+  AdminAlbumReadiness,
+  AdminAlbumReadinessFact,
+  AdminAlbumReadinessStatus,
+} from '../types/admin-album-readiness.js'
+import {
+  AdminAlbumsPage,
+  AdminHome,
+  AdminOpsPage,
+  AdminPermissionsPage,
+  AdminR2CleanupPage,
+  AdminSyncPage,
+  AdminUsersPage,
+} from './admin-pages.js'
 import { requireAdmin } from '../middleware/require-admin.js'
 import { forbiddenResponse } from '../middleware/auth-response.js'
 import { isValidId } from '../services/repository-validation.js'
@@ -52,6 +68,7 @@ export interface AdminRouteDeps {
   syncTargetRepo: {
     upsertTarget(albumId: string, catalogId: string, title: string, expiresAt: string | null, downloadEnabled: 0 | 1, publishedAt: string): Promise<void>
     removeTarget(albumId: string, publishedAt: string): Promise<void>
+    getTargets?(): Promise<AdminSyncTarget[]>
   }
   permissionRepo: {
     listAssignmentOptions(after?: { albumId: string; userId: string }): Promise<AssignmentOptions>
@@ -70,6 +87,19 @@ export interface AdminRouteDeps {
       | { status: 'missing' }
       | { status: 'found'; value: AdminSyncRequest }
     >
+  }
+  catalogRefreshRequestRepo?: {
+    writeRequest(req: AdminCatalogRefreshRequest): Promise<void>
+    getPendingRequest(): Promise<
+      | { status: 'missing' }
+      | { status: 'found'; value: AdminCatalogRefreshRequest }
+    >
+  }
+  syncResultRepo?: {
+    getResult(): Promise<{ status: 'missing' } | { status: 'found'; value: AdminSyncResult }>
+  }
+  albumReadinessRepo?: {
+    getFacts(albumIds: readonly string[]): Promise<AdminAlbumReadinessFact[]>
   }
   catalogRepo: {
     getCatalog(): Promise<
@@ -415,6 +445,104 @@ async function parseSyncRequestFields(
 }
 
 /**
+ * Parse the catalog-only request form. It intentionally uses a different
+ * private R2 object from a normal sync request, so an older Docker daemon
+ * cannot consume it as an image-sync instruction.
+ */
+async function parseCatalogRefreshRequestFields(
+  c: AdminContext,
+): Promise<{ kind: 'publish-catalog' } | null> {
+  let body: Record<string, string | File | (string | File)[]>
+  try {
+    body = await c.req.parseBody({ all: true })
+  } catch {
+    return null
+  }
+  if (Object.keys(body).length !== 1) return null
+  const kind = body['kind']
+  if (typeof kind !== 'string' || kind !== 'publish-catalog') return null
+  return { kind: 'publish-catalog' }
+}
+
+function readinessLabel(status: AdminAlbumReadinessStatus): string {
+  if (status === 'catalog-unavailable') return 'カタログ更新待ち'
+  if (status === 'target-not-configured') return '同期対象未設定'
+  if (status === 'target-needs-refresh') return '同期対象を再設定'
+  if (status === 'sync-pending') return '同期待ち'
+  if (status === 'expired') return '期限切れ'
+  if (status === 'activation-required') return '有効化が必要'
+  if (status === 'permission-required') return '共有先未設定'
+  if (status === 'ready') return '共有可能'
+  return '状態確認不可'
+}
+
+function readiness(status: AdminAlbumReadinessStatus): AdminAlbumReadiness {
+  return { status, label: readinessLabel(status) }
+}
+
+/**
+ * Derive an administrator-visible sharing state from safe aggregate facts.
+ * No PhotoPrism UID, R2 key, manifest body, or photo identity is accepted or
+ * rendered here.
+ */
+function buildAlbumReadiness(
+  page: AdminAlbumPage,
+  catalog: { status: 'missing' } | { status: 'available'; publishedAt: string; albums: AdminAlbumCatalogEntry[] },
+  targets: AdminSyncTarget[] | null,
+  facts: AdminAlbumReadinessFact[] | null,
+  now: Date,
+): ReadonlyMap<string, AdminAlbumReadiness> {
+  const result = new Map<string, AdminAlbumReadiness>()
+  const targetByAlbum = targets === null ? null : new Map(targets.map((target) => [target.albumId, target]))
+  const factByAlbum = facts === null ? null : new Map(facts.map((fact) => [fact.albumId, fact]))
+  const catalogIds = catalog.status === 'available' ? new Set(catalog.albums.map((entry) => entry.catalogId)) : null
+
+  for (const album of page.albums) {
+    if (catalog.status === 'missing') {
+      result.set(album.id, readiness('catalog-unavailable'))
+      continue
+    }
+    if (targetByAlbum === null || factByAlbum === null || catalogIds === null) {
+      result.set(album.id, readiness('unknown'))
+      continue
+    }
+    const target = targetByAlbum.get(album.id)
+    if (target === undefined) {
+      result.set(album.id, readiness('target-not-configured'))
+      continue
+    }
+    if (!catalogIds.has(target.catalogId)) {
+      result.set(album.id, readiness('target-needs-refresh'))
+      continue
+    }
+    const fact = factByAlbum.get(album.id)
+    if (fact === undefined || fact.manifest === 'unknown') {
+      result.set(album.id, readiness('unknown'))
+      continue
+    }
+    if (fact.manifest === 'missing') {
+      result.set(album.id, readiness('sync-pending'))
+      continue
+    }
+    const expiry = album.expires_at === null ? null : new Date(album.expires_at)
+    if (expiry !== null && (!Number.isFinite(expiry.valueOf()) || expiry <= now)) {
+      result.set(album.id, readiness('expired'))
+      continue
+    }
+    if (album.enabled === 0) {
+      result.set(album.id, readiness('activation-required'))
+      continue
+    }
+    if (fact.permissionCount === 0) {
+      result.set(album.id, readiness('permission-required'))
+      continue
+    }
+    result.set(album.id, readiness('ready'))
+  }
+  return result
+}
+
+/**
  * Admin surface, mounted at `/admin` by index.tsx BEFORE the reserved-401 loop so
  * it owns every `/admin` and `/admin/*` request and nothing falls through to the
  * public viewer page router.
@@ -500,15 +628,33 @@ export function createAdminRoutes(
     }
 
     let catalog: { status: 'missing' } | { status: 'available'; publishedAt: string; albums: AdminAlbumCatalogEntry[] }
+    let targets: AdminSyncTarget[] | null
+    let facts: AdminAlbumReadinessFact[] | null
+    let now: Date
     try {
-      catalog = await deps.catalogRepo.getCatalog()
+      ;[catalog, targets, facts] = await Promise.all([
+        deps.catalogRepo.getCatalog(),
+        deps.syncTargetRepo.getTargets === undefined
+          ? Promise.resolve(null)
+          : deps.syncTargetRepo.getTargets(),
+        deps.albumReadinessRepo === undefined
+          ? Promise.resolve(null)
+          : deps.albumReadinessRepo.getFacts(page.albums.map((album) => album.id)),
+      ])
+      now = deps.clock()
     } catch {
       c.header('Cache-Control', 'no-store')
       return c.text('Internal Server Error', 500)
     }
 
     c.header('Cache-Control', 'no-store')
-    return c.html(<AdminAlbumsPage page={page} catalog={catalog} />)
+    return c.html(
+      <AdminAlbumsPage
+        page={page}
+        catalog={catalog}
+        readinessByAlbumId={buildAlbumReadiness(page, catalog, targets, facts, now)}
+      />,
+    )
   })
 
   admin.get('/permissions', async (c) => {
@@ -569,25 +715,45 @@ export function createAdminRoutes(
   admin.get('/sync', async (c) => {
     const deps = depsFromEnv(c.env)
     let result: { status: 'missing' } | { status: 'found'; value: AdminSyncStatus }
-    try {
-      result = await deps.syncStatusRepo.getStatus()
-    } catch {
-      c.header('Cache-Control', 'no-store')
-      return c.text('Internal Server Error', 500)
-    }
     let pendingResult: { status: 'missing' } | { status: 'found'; value: AdminSyncRequest }
+    let catalogPendingResult: { status: 'missing' } | { status: 'found'; value: AdminCatalogRefreshRequest }
+    let syncResult: { status: 'missing' } | { status: 'found'; value: AdminSyncResult }
     try {
-      pendingResult = await deps.syncRequestRepo.getPendingRequest()
+      ;[result, pendingResult, catalogPendingResult, syncResult] = await Promise.all([
+        deps.syncStatusRepo.getStatus(),
+        deps.syncRequestRepo.getPendingRequest(),
+        deps.catalogRefreshRequestRepo === undefined
+          ? Promise.resolve({ status: 'missing' } as const)
+          : deps.catalogRefreshRequestRepo.getPendingRequest(),
+        deps.syncResultRepo === undefined
+          ? Promise.resolve({ status: 'missing' } as const)
+          : deps.syncResultRepo.getResult(),
+      ])
     } catch {
       c.header('Cache-Control', 'no-store')
       return c.text('Internal Server Error', 500)
     }
-    const isPending = pendingResult.status === 'found'
+    const isSyncPending = pendingResult.status === 'found'
+    const isCatalogRefreshPending = catalogPendingResult.status === 'found'
     c.header('Cache-Control', 'no-store')
     if (result.status === 'missing') {
-      return c.html(<AdminSyncPage syncStatus={null} isPending={isPending} />)
+      return c.html(
+        <AdminSyncPage
+          syncStatus={null}
+          isSyncPending={isSyncPending}
+          isCatalogRefreshPending={isCatalogRefreshPending}
+          syncResult={syncResult.status === 'found' ? syncResult.value : null}
+        />,
+      )
     }
-    return c.html(<AdminSyncPage syncStatus={result.value} isPending={isPending} />)
+    return c.html(
+      <AdminSyncPage
+        syncStatus={result.value}
+        isSyncPending={isSyncPending}
+        isCatalogRefreshPending={isCatalogRefreshPending}
+        syncResult={syncResult.status === 'found' ? syncResult.value : null}
+      />,
+    )
   })
 
   admin.get('/r2-cleanup', async (c) => {
@@ -653,6 +819,48 @@ export function createAdminRoutes(
       const deps = depsFromEnv(c.env)
       const requestedAt = deps.clock().toISOString()
       await deps.syncRequestRepo.writeRequest({ schema: 1, requestId, requestedAt, kind: 'sync-now' })
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+
+    c.header('Cache-Control', 'no-store')
+    c.header('Location', '/admin/sync')
+    return c.body(null, 303)
+  })
+
+  // Catalog-only request writer. This intentionally uses a different request
+  // repository/key from sync-now, so it cannot be consumed as an image-sync
+  // request by a Docker daemon that predates this feature.
+  admin.post('/catalog-refresh/request', async (c) => {
+    if (!isSameOrigin(c)) return forbiddenResponse(c)
+    if (!isFormContentType(c.req.header('Content-Type'))) {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Bad Request', 400)
+    }
+    const fields = await parseCatalogRefreshRequestFields(c)
+    if (fields === null) {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Bad Request', 400)
+    }
+
+    let requestId: string
+    try {
+      requestId = crypto.randomUUID().replaceAll('-', '')
+    } catch {
+      c.header('Cache-Control', 'no-store')
+      return c.text('Internal Server Error', 500)
+    }
+
+    try {
+      const deps = depsFromEnv(c.env)
+      if (deps.catalogRefreshRequestRepo === undefined) throw new Error('catalog refresh unavailable')
+      await deps.catalogRefreshRequestRepo.writeRequest({
+        schema: 1,
+        requestId,
+        requestedAt: deps.clock().toISOString(),
+        kind: fields.kind,
+      })
     } catch {
       c.header('Cache-Control', 'no-store')
       return c.text('Internal Server Error', 500)
@@ -1259,560 +1467,4 @@ export function createAdminRoutes(
   })
 
   return admin
-}
-
-/**
- * Minimal admin home page with links to the inventories.
- */
-function AdminHome() {
-  return (
-    <Layout title="管理コンソール" area="admin">
-      <section class="admin-home">
-        <h1 class="admin-page-title">管理コンソール</h1>
-        <nav class="admin-nav" aria-label="管理メニュー">
-          <ul class="admin-nav-list">
-            <li><a class="admin-nav-link" href="/admin/users">ユーザー一覧</a></li>
-            <li><a class="admin-nav-link" href="/admin/albums">アルバム一覧</a></li>
-            <li><a class="admin-nav-link" href="/admin/permissions">権限一覧</a></li>
-            <li><a class="admin-nav-link" href="/admin/ops">運用サマリ</a></li>
-            <li><a class="admin-nav-link" href="/admin/sync">同期状態</a></li>
-            <li><a class="admin-nav-link" href="/admin/r2-cleanup">R2 クリーンアップレポート（ドライラン）</a></li>
-          </ul>
-        </nav>
-      </section>
-    </Layout>
-  )
-}
-
-/**
- * User inventory page with create-user form and per-row password-reset form.
- * password_hash is never selected, returned, rendered, or logged.
- */
-function AdminUsersPage({ page }: { page: AdminUserPage }) {
-  const { users, hasMore } = page
-  const lastId = users.length > 0 ? users[users.length - 1]!.id : undefined
-
-  return (
-    <Layout title="ユーザー一覧" area="admin">
-      <a class="admin-back-link" href="/admin">
-        ← 管理コンソールへ
-      </a>
-      <h1 class="admin-page-title">ユーザー一覧</h1>
-      <form class="admin-form admin-panel" method="post" action="/admin/users/create">
-        <h2 class="admin-section-heading">ユーザーを作成</h2>
-        <label class="admin-field">
-          ユーザーID
-          <input type="text" name="userId" required />
-        </label>
-        <label class="admin-field">
-          表示名
-          <input type="text" name="displayName" required />
-        </label>
-        <label class="admin-field">
-          パスワード
-          <input type="password" name="password" required />
-        </label>
-        <button type="submit" class="admin-button admin-button-primary">作成</button>
-      </form>
-      {users.length === 0 ? (
-        <p class="admin-notice admin-notice-empty">ユーザーがいません</p>
-      ) : (
-        <div class="admin-table-scroll">
-          <table class="admin-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>表示名</th>
-                <th>状態</th>
-                <th>ログイン失敗回数</th>
-                <th>ロック</th>
-                <th>作成日時</th>
-                <th>更新日時</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u) => (
-                <tr key={u.id}>
-                  <td>{u.id}</td>
-                  <td>{u.display_name}</td>
-                  <td>{u.enabled === 1 ? '有効' : '無効'}</td>
-                  <td>{u.fail_count}</td>
-                  <td>
-                    {u.locked_until === null
-                      ? 'なし'
-                      : `ロック中 (${u.locked_until})`}
-                  </td>
-                  <td>{u.created_at}</td>
-                  <td>{u.updated_at}</td>
-                  <td>
-                    <div class="admin-action-group">
-                      {u.enabled === 1 ? (
-                        <form class="admin-row-form" method="post" action="/admin/users/disable">
-                          <input type="hidden" name="userId" value={u.id} />
-                          <button type="submit" class="admin-button admin-button-secondary">無効化</button>
-                        </form>
-                      ) : (
-                        <form class="admin-row-form" method="post" action="/admin/users/enable">
-                          <input type="hidden" name="userId" value={u.id} />
-                          <button type="submit" class="admin-button admin-button-secondary">有効化</button>
-                        </form>
-                      )}
-                      <form class="admin-row-form" method="post" action="/admin/users/update-display-name">
-                        <input type="hidden" name="userId" value={u.id} />
-                        <input type="text" name="displayName" value={u.display_name} required />
-                        <button type="submit" class="admin-button admin-button-secondary">表示名変更</button>
-                      </form>
-                      <form class="admin-row-form" method="post" action="/admin/users/reset-password">
-                        <input type="hidden" name="userId" value={u.id} />
-                        <input type="password" name="password" required />
-                        <button type="submit" class="admin-button admin-button-secondary">パスワードリセット</button>
-                      </form>
-                      <form class="admin-row-form" method="post" action="/admin/users/confirm-delete">
-                        <input type="hidden" name="userId" value={u.id} />
-                        <button type="submit" class="admin-button admin-button-danger">削除確認プレビュー</button>
-                      </form>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {hasMore && lastId !== undefined ? (
-        <nav class="admin-pagination" aria-label="ユーザー一覧のページ送り">
-          <a class="admin-pagination-link" href={`/admin/users?after=${lastId}`}>
-            次へ
-          </a>
-        </nav>
-      ) : null}
-    </Layout>
-  )
-}
-
-/**
- * Read-only album inventory page.
- * photoprism_album_uid, transform settings, and strip_exif are never selected,
- * returned, rendered, or logged.
- */
-function AdminAlbumsPage({
-  page,
-  catalog,
-}: {
-  page: AdminAlbumPage
-  catalog: { status: 'missing' } | { status: 'available'; publishedAt: string; albums: AdminAlbumCatalogEntry[] }
-}) {
-  const { albums, hasMore } = page
-  const lastId = albums.length > 0 ? albums[albums.length - 1]!.id : undefined
-  const catalogEntries = catalog.status === 'available' ? catalog.albums : []
-
-  return (
-    <Layout title="アルバム一覧" area="admin">
-      <a class="admin-back-link" href="/admin">
-        ← 管理コンソールへ
-      </a>
-      <h1 class="admin-page-title">アルバム一覧</h1>
-      <form class="admin-form admin-panel" method="post" action="/admin/albums/create">
-        <h2 class="admin-section-heading">アルバムを作成</h2>
-        <label class="admin-field">
-          アルバムID
-          <input type="text" name="albumId" required />
-        </label>
-        <label class="admin-field">
-          タイトル
-          <input type="text" name="title" required />
-        </label>
-        <label class="admin-field">
-          PhotoPrism album UID
-          <input type="text" name="photoprismAlbumUid" required />
-        </label>
-        <label class="admin-field">
-          有効期限
-          <input type="text" name="expiresAt" placeholder="YYYY-MM-DDTHH:mm:ss.sssZ または空" />
-        </label>
-        <label class="admin-field">
-          ダウンロード
-          <select name="downloadEnabled">
-            <option value="0" selected>不可</option>
-            <option value="1">許可</option>
-          </select>
-        </label>
-        <button type="submit" class="admin-button admin-button-primary">作成</button>
-      </form>
-      {albums.length === 0 ? (
-        <p class="admin-notice admin-notice-empty">アルバムがありません</p>
-      ) : (
-        <div class="admin-table-scroll">
-          <table class="admin-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>タイトル</th>
-                <th>状態</th>
-                <th>有効期限</th>
-                <th>ダウンロード</th>
-                <th>作成日時</th>
-                <th>更新日時</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {albums.map((a) => (
-                <tr key={a.id}>
-                  <td>{a.id}</td>
-                  <td>{a.title}</td>
-                  <td>{a.enabled === 1 ? '有効' : '無効'}</td>
-                  <td>{a.expires_at === null ? 'なし' : a.expires_at}</td>
-                  <td>{a.download_enabled === 1 ? '許可' : '不可'}</td>
-                  <td>{a.created_at}</td>
-                  <td>{a.updated_at}</td>
-                  <td>
-                    <div class="admin-action-group">
-                      {a.enabled === 1 ? (
-                        <form class="admin-row-form" method="post" action="/admin/albums/disable">
-                          <input type="hidden" name="albumId" value={a.id} />
-                          <button type="submit" class="admin-button admin-button-secondary">無効化</button>
-                        </form>
-                      ) : (
-                        <form class="admin-row-form" method="post" action="/admin/albums/enable">
-                          <input type="hidden" name="albumId" value={a.id} />
-                          <button type="submit" class="admin-button admin-button-secondary">有効化</button>
-                        </form>
-                      )}
-                      <form class="admin-row-form" method="post" action="/admin/albums/update-public-metadata">
-                        <input type="hidden" name="albumId" value={a.id} />
-                        <input type="text" name="title" value={a.title} required />
-                        <input type="text" name="expiresAt" value={a.expires_at ?? ''} placeholder="YYYY-MM-DDTHH:mm:ss.sssZ または空" />
-                        <select name="downloadEnabled">
-                          <option value="0" selected={a.download_enabled === 0}>不可</option>
-                          <option value="1" selected={a.download_enabled === 1}>許可</option>
-                        </select>
-                        <button type="submit" class="admin-button admin-button-secondary">メタデータ更新</button>
-                      </form>
-                      {catalogEntries.length > 0 ? (
-                        <form class="admin-row-form" method="post" action="/admin/albums/sync-target-upsert">
-                          <input type="hidden" name="albumId" value={a.id} />
-                          <select name="catalogId" required>
-                            {catalogEntries.map(entry => (
-                              <option key={entry.catalogId} value={entry.catalogId}>
-                                {entry.title} ({entry.photoCount !== null ? `${entry.photoCount}枚` : '不明'}, {entry.updatedAt ?? '不明'})
-                              </option>
-                            ))}
-                          </select>
-                          <button type="submit" class="admin-button admin-button-secondary">同期ターゲット設定</button>
-                        </form>
-                      ) : (
-                        <p class="admin-notice admin-notice-empty">カタログ未取得</p>
-                      )}
-                      <form class="admin-row-form" method="post" action="/admin/albums/sync-target-remove">
-                        <input type="hidden" name="albumId" value={a.id} />
-                        <button type="submit" class="admin-button admin-button-secondary">同期ターゲット削除</button>
-                      </form>
-                      <form class="admin-row-form" method="post" action="/admin/albums/confirm-delete">
-                        <input type="hidden" name="albumId" value={a.id} />
-                        <button type="submit" class="admin-button admin-button-danger">削除確認プレビュー</button>
-                      </form>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {hasMore && lastId !== undefined ? (
-        <nav class="admin-pagination" aria-label="アルバム一覧のページ送り">
-          <a class="admin-pagination-link" href={`/admin/albums?after=${lastId}`}>
-            次へ
-          </a>
-        </nav>
-      ) : null}
-    </Layout>
-  )
-}
-
-/**
- * Read-only operational summary page. Displays only aggregate counts.
- * No row-level identity, title, hash, token, PhotoPrism UID, or R2 data.
- */
-function AdminOpsPage({ summary }: { summary: AdminOpsSummary }) {
-  return (
-    <Layout title="運用サマリ" area="admin">
-      <a class="admin-back-link" href="/admin">
-        ← 管理コンソールへ
-      </a>
-      <h1 class="admin-page-title">運用サマリ</h1>
-      <p class="admin-meta">生成日時: {summary.generatedAt}</p>
-      <h2 class="admin-section-heading">ユーザー</h2>
-      <div class="admin-table-scroll">
-        <table class="admin-table">
-          <tbody>
-            <tr><th>合計</th><td>{summary.users.total}</td></tr>
-            <tr><th>有効</th><td>{summary.users.enabled}</td></tr>
-            <tr><th>無効</th><td>{summary.users.disabled}</td></tr>
-            <tr><th>ロック中</th><td>{summary.users.locked}</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <h2 class="admin-section-heading">アルバム</h2>
-      <div class="admin-table-scroll">
-        <table class="admin-table">
-          <tbody>
-            <tr><th>合計</th><td>{summary.albums.total}</td></tr>
-            <tr><th>有効</th><td>{summary.albums.enabled}</td></tr>
-            <tr><th>無効</th><td>{summary.albums.disabled}</td></tr>
-            <tr><th>期限切れ</th><td>{summary.albums.expired}</td></tr>
-            <tr><th>まもなく期限切れ (7日以内)</th><td>{summary.albums.expiringSoon}</td></tr>
-            <tr><th>ダウンロード許可</th><td>{summary.albums.downloadable}</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <h2 class="admin-section-heading">権限</h2>
-      <div class="admin-table-scroll">
-        <table class="admin-table">
-          <tbody>
-            <tr><th>合計</th><td>{summary.permissions.total}</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <h2 class="admin-section-heading">セッション</h2>
-      <div class="admin-table-scroll">
-        <table class="admin-table">
-          <tbody>
-            <tr><th>合計</th><td>{summary.sessions.total}</td></tr>
-            <tr><th>期限切れ</th><td>{summary.sessions.expired}</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </Layout>
-  )
-}
-
-/**
- * Permission assignment page. Renders safe select menus (album title, user
- * display_name, enabled status) for the grant form and existing revoke forms.
- *
- * Selected/rendered fields only:
- *   users  — id (hidden value), display_name (option label), enabled (status badge)
- *   albums — id (hidden value), title (option label), enabled (status badge)
- *   album_permissions — album_id, user_id, created_at
- *
- * Never renders: password_hash, session tokens, photoprism_album_uid, R2 keys,
- * transform settings, fail_count, locked_until, or PhotoPrism/NAS source data.
- */
-function AdminPermissionsPage({ options }: { options: AssignmentOptions }) {
-  const { users, albums, permissions, hasMore } = options
-  const last = permissions.length > 0 ? permissions[permissions.length - 1] : undefined
-
-  return (
-    <Layout title="権限一覧" area="admin">
-      <a class="admin-back-link" href="/admin">
-        ← 管理コンソールへ
-      </a>
-      <h1 class="admin-page-title">権限一覧</h1>
-      <form class="admin-form admin-panel" method="post" action="/admin/permissions/grant">
-        <h2 class="admin-section-heading">権限を付与</h2>
-        <label class="admin-field">
-          アルバム
-          <select name="albumId" required>
-            {albums.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.title}{a.enabled === 0 ? ' (無効)' : ''}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label class="admin-field">
-          ユーザー
-          <select name="userId" required>
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.display_name}{u.enabled === 0 ? ' (無効)' : ''}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button type="submit" class="admin-button admin-button-primary">付与</button>
-      </form>
-      {permissions.length === 0 ? (
-        <p class="admin-notice admin-notice-empty">権限がありません</p>
-      ) : (
-        <div class="admin-table-scroll">
-          <table class="admin-table">
-            <thead>
-              <tr>
-                <th>アルバムID</th>
-                <th>ユーザーID</th>
-                <th>作成日時</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {permissions.map((p) => (
-                <tr key={`${p.album_id}/${p.user_id}`}>
-                  <td>{p.album_id}</td>
-                  <td>{p.user_id}</td>
-                  <td>{p.created_at}</td>
-                  <td>
-                    <div class="admin-action-group">
-                      <form class="admin-row-form" method="post" action="/admin/permissions/revoke">
-                        <input type="hidden" name="albumId" value={p.album_id} />
-                        <input type="hidden" name="userId" value={p.user_id} />
-                        <button type="submit" class="admin-button admin-button-secondary">取り消し</button>
-                      </form>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {hasMore && last !== undefined ? (
-        <nav class="admin-pagination" aria-label="権限一覧のページ送り">
-          <a class="admin-pagination-link" href={`/admin/permissions?after_album=${last.album_id}&after_user=${last.user_id}`}>
-            次へ
-          </a>
-        </nav>
-      ) : null}
-    </Layout>
-  )
-}
-
-function triggerKindLabel(kind: 'scheduled' | 'manual' | null): string {
-  if (kind === 'scheduled') return '定期実行'
-  if (kind === 'manual') return '手動実行'
-  return '未報告'
-}
-
-/**
- * Sync status page. Renders sanitized operational fields, a pending indicator,
- * and a no-JS form to trigger a manual sync.
- * No album title, PhotoPrism UID/URL/token, R2 credentials, raw JSON,
- * pending request ID, or pending timestamp is rendered.
- */
-function AdminSyncPage({ syncStatus, isPending }: { syncStatus: AdminSyncStatus | null; isPending: boolean }) {
-  return (
-    <Layout title="同期状態" area="admin">
-      <a class="admin-back-link" href="/admin">
-        ← 管理コンソールへ
-      </a>
-      <h1 class="admin-page-title">同期状態</h1>
-      {isPending && (<p class="admin-notice admin-notice-warning">同期リクエスト処理待ち</p>)}
-      <form class="admin-action-form" method="post" action="/admin/sync/request">
-        <input type="hidden" name="kind" value="sync-now" />
-        <button type="submit" class="admin-button admin-button-primary">今すぐ同期</button>
-      </form>
-      {syncStatus === null ? (
-        <p class="admin-notice admin-notice-empty">未報告 (status not reported yet)</p>
-      ) : (
-        <>
-          <p class="admin-meta">公開日時: {syncStatus.publishedAt}</p>
-          <div class="admin-table-scroll">
-            <table class="admin-table">
-              <tbody>
-                <tr><th>アルバムID</th><td>{syncStatus.albumId}</td></tr>
-                <tr><th>同期間隔 (秒)</th><td>{syncStatus.intervalSeconds}</td></tr>
-                <tr><th>開始日時</th><td>{syncStatus.startedAt}</td></tr>
-                <tr><th>最終ハートビート</th><td>{syncStatus.heartbeatAt}</td></tr>
-                <tr><th>最終試行開始</th><td>{syncStatus.lastAttemptStartedAt ?? '未実行'}</td></tr>
-                <tr><th>最終試行完了</th><td>{syncStatus.lastAttemptCompletedAt ?? '未完了'}</td></tr>
-                <tr><th>最終結果</th><td>{syncStatus.lastResult ?? '未実行'}</td></tr>
-                <tr><th>最終エラー</th><td>{syncStatus.lastError ?? 'なし'}</td></tr>
-                <tr><th>連続失敗回数</th><td>{syncStatus.consecutiveFailures}</td></tr>
-                <tr><th>完了回数</th><td>{syncStatus.runsCompleted}</td></tr>
-                <tr><th>トリガー種別</th><td>{triggerKindLabel(syncStatus.lastTriggerKind)}</td></tr>
-                {syncStatus.lastHandledRequestId !== null && (
-                  <tr><th>最終処理リクエストID</th><td>{syncStatus.lastHandledRequestId}</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
-    </Layout>
-  )
-}
-
-function categoryLabel(category: 'owned-active' | 'owned-disabled' | 'orphan'): string {
-  if (category === 'owned-active') return '所有（有効）'
-  if (category === 'owned-disabled') return '所有（無効）'
-  return '孤立'
-}
-
-function AdminR2CleanupPage({ report }: { report: AdminR2CleanupReport }) {
-  const orphanCount = report.albums.filter((e) => e.category === 'orphan').length
-  return (
-    <Layout title="R2 クリーンアップレポート" area="admin">
-      <a class="admin-back-link" href="/admin">
-        ← 管理コンソールへ
-      </a>
-      <h1 class="admin-page-title">R2 クリーンアップレポート（ドライラン）</h1>
-      <p class="admin-notice admin-notice-info">このレポートは読み取り専用です。R2 オブジェクトの削除は行いません。</p>
-      {report.truncated ? (
-        <p class="admin-notice admin-notice-warning">
-          警告: オブジェクト数または取得ページ数が上限に達しました。結果が切り詰められています。
-        </p>
-      ) : null}
-      <h2 class="admin-section-heading">アルバムプレフィックス</h2>
-      {report.albums.length === 0 ? (
-        <p class="admin-notice admin-notice-empty">アルバムプレフィックスがありません</p>
-      ) : (
-        <div class="admin-table-scroll">
-          <table class="admin-table">
-            <thead>
-              <tr>
-                <th>カテゴリ</th>
-                <th>アルバムID</th>
-                <th>オブジェクト数</th>
-                <th>合計バイト数（概算）</th>
-              </tr>
-            </thead>
-            <tbody>
-              {report.albums.map((entry) => (
-                <tr key={entry.albumId}>
-                  <td>{categoryLabel(entry.category)}</td>
-                  <td>{entry.albumId}</td>
-                  <td>{entry.objectCount}</td>
-                  <td>{entry.totalBytes}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      <h2 class="admin-section-heading">集計</h2>
-      <div class="admin-table-scroll">
-        <table class="admin-table">
-          <tbody>
-            <tr>
-              <th>不正形式オブジェクト数</th>
-              <td>{report.malformedCount}</td>
-            </tr>
-            <tr>
-              <th>不正形式合計バイト数</th>
-              <td>{report.malformedBytes}</td>
-            </tr>
-            <tr>
-              <th>除外 ops/ オブジェクト数</th>
-              <td>{report.excludedOpsCount}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      {!report.truncated && orphanCount > 0 ? (
-        <section class="admin-panel admin-danger-panel">
-          <h2 class="admin-section-heading">孤立プレフィックス確認プレビュー（Phase 2）</h2>
-          <p>
-            孤立プレフィックスの確認プレビューを開始できます。実際の R2
-            オブジェクト削除は行われません。サーバー側で再スキャンと候補セット検証のみ行います。
-          </p>
-          <form class="admin-action-form" method="post" action="/admin/r2-cleanup/confirm">
-            <button type="submit" class="admin-button admin-button-danger">孤立プレフィックス確認プレビューを開始</button>
-          </form>
-        </section>
-      ) : null}
-    </Layout>
-  )
 }

@@ -41,7 +41,16 @@ _STATUS_KEY = "ops/sync-status.json"
 _REQUEST_KEY = "ops/sync-request.json"
 _CATALOG_KEY = "ops/album-catalog.json"
 _TARGETS_KEY = "ops/sync-targets.json"
+_CATALOG_REFRESH_REQUEST_KEY = "ops/catalog-refresh-request.json"
+_SYNC_RESULT_KEY = "ops/sync-result.json"
 _STATUS_CACHE = "private, no-cache"
+
+# Explicit bounded networking behavior for Raspberry Pi deployments. Boto3's
+# standard retry mode retries safely idempotent S3 operations without adding a
+# second application-level retry loop around uploads or request consumption.
+_R2_CONNECT_TIMEOUT_SECONDS = 10
+_R2_READ_TIMEOUT_SECONDS = 60
+_R2_TOTAL_MAX_ATTEMPTS = 4
 
 
 @dataclass(frozen=True, repr=False)
@@ -111,6 +120,10 @@ def _validate_key(key: str) -> None:
         return
     if key == _TARGETS_KEY:
         return
+    if key == _CATALOG_REFRESH_REQUEST_KEY:
+        return
+    if key == _SYNC_RESULT_KEY:
+        return
     if not _ALLOWED_KEY.match(key):
         raise ValueError(
             f"key does not match any allowed schema path "
@@ -121,7 +134,7 @@ def _validate_key(key: str) -> None:
 
 
 def _cache_control(key: str) -> str:
-    if key in (_STATUS_KEY, _CATALOG_KEY, _TARGETS_KEY):
+    if key in (_STATUS_KEY, _CATALOG_KEY, _TARGETS_KEY, _CATALOG_REFRESH_REQUEST_KEY, _SYNC_RESULT_KEY):
         return _STATUS_CACHE
     if key.endswith("/manifest.json"):
         return _MANIFEST_CACHE
@@ -155,6 +168,9 @@ class R2ObjectStore:
             config=Config(
                 signature_version="s3v4",
                 s3={"addressing_style": "path"},
+                connect_timeout=_R2_CONNECT_TIMEOUT_SECONDS,
+                read_timeout=_R2_READ_TIMEOUT_SECONDS,
+                retries={"mode": "standard", "total_max_attempts": _R2_TOTAL_MAX_ATTEMPTS},
             ),
         )
 

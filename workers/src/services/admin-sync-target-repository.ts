@@ -235,6 +235,15 @@ export class AdminSyncTargetRepository {
     await this.writeTargets(updated, publishedAt)
   }
 
+  /**
+   * Read the validated target list for administrative readiness reporting.
+   * The returned entries contain only already-sanitized Worker IDs, hashed
+   * catalog IDs, public titles, and fixed transform settings.
+   */
+  async getTargets(): Promise<AdminSyncTarget[]> {
+    return this.readTargets()
+  }
+
   async removeTarget(albumId: string, publishedAt: string): Promise<void> {
     if (!isValidId(albumId)) throw syncTargetWriteError()
     if (!isCanonicalWorkerIso(publishedAt)) throw syncTargetWriteError()

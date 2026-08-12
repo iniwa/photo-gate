@@ -206,6 +206,22 @@ def test_config_repr_excludes_secrets():
     assert _ENDPOINT in r
 
 
+def test_default_client_uses_explicit_bounded_timeouts_and_standard_retries(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_client(*args, **kwargs):
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr("photo_gate.r2_store.boto3.client", fake_client)
+    R2ObjectStore(_CONFIG)
+    config = captured["config"]
+    assert config.connect_timeout == 10
+    assert config.read_timeout == 60
+    assert config.retries["mode"] == "standard"
+    assert config.retries["total_max_attempts"] == 4
+
+
 # ---------------------------------------------------------------------------
 # Key validation — rejection cases
 # ---------------------------------------------------------------------------
@@ -562,6 +578,42 @@ def test_other_ops_key_rejected_by_get():
     store, _ = _make_store()
     with pytest.raises(ValueError):
         asyncio.run(store.get("ops/something-else.json"))
+
+
+# ---------------------------------------------------------------------------
+# Catalog-refresh request and aggregate result keys
+# ---------------------------------------------------------------------------
+
+_CATALOG_REFRESH_REQUEST_KEY = "ops/catalog-refresh-request.json"
+_SYNC_RESULT_KEY = "ops/sync-result.json"
+
+
+@pytest.mark.parametrize("key", [_CATALOG_REFRESH_REQUEST_KEY, _SYNC_RESULT_KEY])
+def test_new_private_ops_key_is_accepted_for_put_with_no_cache(key):
+    store, stubber = _make_store()
+    data = b'{"schema":1}'
+    stubber.add_response(
+        "put_object",
+        {},
+        expected_params={
+            "Bucket": _BUCKET,
+            "Key": key,
+            "Body": data,
+            "ContentType": "application/json",
+            "CacheControl": "private, no-cache",
+        },
+    )
+    with stubber:
+        asyncio.run(store.put(key, data, "application/json"))
+    from photo_gate.r2_store import _cache_control
+    assert _cache_control(key) == "private, no-cache"
+
+
+@pytest.mark.parametrize("key", [_CATALOG_REFRESH_REQUEST_KEY, _SYNC_RESULT_KEY])
+def test_new_private_ops_key_rejects_non_json_content_type(key):
+    store, _ = _make_store()
+    with pytest.raises(ValueError, match="content type"):
+        asyncio.run(store.put(key, b"x", "text/plain"))
 
 
 # ---------------------------------------------------------------------------

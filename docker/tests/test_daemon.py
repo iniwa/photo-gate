@@ -750,7 +750,9 @@ class _FakeStore:
         self.get_calls: list[str] = []
         self.delete_calls: list[str] = []
         self._fail = fail
-        self._request_bytes = request_bytes
+        self._objects: dict[str, bytes] = {}
+        if request_bytes is not None:
+            self._objects["ops/sync-request.json"] = request_bytes
 
     async def put(self, key: str, data: bytes, content_type: str) -> None:
         if self._fail:
@@ -759,11 +761,11 @@ class _FakeStore:
 
     async def get(self, key: str) -> bytes | None:
         self.get_calls.append(key)
-        return self._request_bytes
+        return self._objects.get(key)
 
     async def delete(self, key: str) -> None:
         self.delete_calls.append(key)
-        self._request_bytes = None  # simulate deletion clearing the object
+        self._objects.pop(key, None)
 
 
 _HEALTH = HealthState(
@@ -823,10 +825,11 @@ def test_daemon_publishes_status_on_lifecycle():
         )
     )
     assert code == 0
-    # At minimum: initial publish + attempt-start or attempt-completed
+    # At minimum: initial status + lifecycle status plus the new aggregate
+    # result publication. Both private ops keys use application/json.
     assert len(store.calls) >= 2
     for key, data, ct in store.calls:
-        assert key == "ops/sync-status.json"
+        assert key in {"ops/sync-status.json", "ops/sync-result.json"}
         assert ct == "application/json"
 
 
@@ -1041,7 +1044,7 @@ def test_daemon_duplicate_request_skipped_second_sync_runs(tmp_path):
     class _NoDeleteStore(_FakeStore):
         async def delete(self, key):
             self.delete_calls.append(key)
-            # Do NOT clear _request_bytes to simulate delete failure
+            # Do NOT clear the object to simulate delete failure.
 
     store = _NoDeleteStore(request_bytes=_FIXED_REQUEST_BYTES)
     args = _daemon_args_with(tmp_path, max_runs=2)
@@ -1074,11 +1077,13 @@ def test_daemon_sleep_poll_breaks_early_when_request_appears(tmp_path):
     class _AppearingStore(_FakeStore):
         async def get(self, key):
             self.get_calls.append(key)
+            if key != "ops/sync-request.json":
+                return None
             # First poll at loop start sees nothing. The mid-sleep poll sees
             # the request, and the next loop-start poll consumes it.
-            if len(self.get_calls) == 1:
+            if self.get_calls.count("ops/sync-request.json") == 1:
                 return None
-            return self._request_bytes
+            return self._objects.get(key)
 
     store = _AppearingStore(request_bytes=_FIXED_REQUEST_BYTES)
     args = _daemon_args_with(tmp_path, max_runs=2, interval_seconds=120)
@@ -1161,6 +1166,111 @@ def test_daemon_request_delete_failure_does_not_crash(tmp_path):
     assert code == 0
     # delete was attempted despite failure
     assert "ops/sync-request.json" in store.delete_calls
+
+
+# ---------------------------------------------------------------------------
+# Catalog-only request and aggregate result publication
+# ---------------------------------------------------------------------------
+
+
+class _KeyedOpsStore:
+    """Key-aware private-R2 fake used for new request/result behavior."""
+
+    def __init__(self, objects: dict[str, bytes] | None = None):
+        self.objects = dict(objects or {})
+        self.puts: list[tuple[str, bytes, str]] = []
+        self.get_calls: list[str] = []
+        self.delete_calls: list[str] = []
+
+    async def get(self, key: str) -> bytes | None:
+        self.get_calls.append(key)
+        return self.objects.get(key)
+
+    async def put(self, key: str, data: bytes, content_type: str) -> None:
+        self.puts.append((key, data, content_type))
+        self.objects[key] = data
+
+    async def delete(self, key: str) -> None:
+        self.delete_calls.append(key)
+        self.objects.pop(key, None)
+
+
+def _catalog_refresh_request_bytes() -> bytes:
+    return _json.dumps({
+        "schema": 1,
+        "requestId": "c1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+        "requestedAt": "2026-06-12T00:00:00.000Z",
+        "kind": "publish-catalog",
+    }).encode("utf-8")
+
+
+def test_catalog_only_request_never_invokes_image_sync_and_publishes_result(tmp_path):
+    from photo_gate.catalog_refresh_request import CATALOG_REFRESH_REQUEST_KEY
+    from photo_gate.sync_result import SYNC_RESULT_KEY
+
+    args = _daemon_args_with(tmp_path, max_runs=1)
+    store = _KeyedOpsStore({CATALOG_REFRESH_REQUEST_KEY: _catalog_refresh_request_bytes()})
+    sync_calls: list[object] = []
+    catalog_calls: list[object] = []
+
+    async def forbidden_sync(*args, **kwargs):
+        sync_calls.append((args, kwargs))
+
+    async def publish_catalog():
+        catalog_calls.append(1)
+        return 0
+
+    code = asyncio.run(run_sync_daemon(
+        args,
+        config_loader=_FakeConfig,
+        client_factory=lambda cfg: _FakeClient(),
+        store_factory=lambda cfg: object(),
+        sync_fn=forbidden_sync,
+        catalog_publish_fn=publish_catalog,
+        clock=lambda: _FIXED_TS,
+        sleep_fn=_instant_sleep,
+        status_store=store,
+    ))
+
+    assert code == 0
+    assert sync_calls == []
+    # Startup refresh plus the requested refresh are both catalog-only.
+    assert len(catalog_calls) == 2
+    assert CATALOG_REFRESH_REQUEST_KEY in store.delete_calls
+    results = [json.loads(data) for key, data, _ in store.puts if key == SYNC_RESULT_KEY]
+    assert results[-1]["operation"] == "catalog-refresh"
+    assert results[-1]["result"] == "ok"
+    assert results[-1]["photos"] == {"total": 0, "uploaded": 0, "skipped": 0}
+
+
+def test_sync_result_aggregates_only_safe_counts(tmp_path):
+    from types import SimpleNamespace
+    from photo_gate.sync_result import SYNC_RESULT_KEY
+
+    args = _daemon_args_with(tmp_path, max_runs=1)
+    store = _KeyedOpsStore()
+
+    async def counted_sync(*args, **kwargs):
+        return SimpleNamespace(photos_total=5, photos_uploaded=2, photos_skipped=3)
+
+    code = asyncio.run(run_sync_daemon(
+        args,
+        config_loader=_FakeConfig,
+        client_factory=lambda cfg: _FakeClient(),
+        store_factory=lambda cfg: object(),
+        sync_fn=counted_sync,
+        clock=lambda: _FIXED_TS,
+        sleep_fn=_instant_sleep,
+        status_store=store,
+    ))
+
+    assert code == 0
+    result = next(json.loads(data) for key, data, _ in store.puts if key == SYNC_RESULT_KEY)
+    assert result["operation"] == "sync"
+    assert result["targets"] == {"attempted": 1, "succeeded": 1, "failed": 0}
+    assert result["photos"] == {"total": 5, "uploaded": 2, "skipped": 3}
+    assert "albumId" not in result
+    assert "error" not in result
 
 
 def test_daemon_manual_sync_updates_health_file(tmp_path):

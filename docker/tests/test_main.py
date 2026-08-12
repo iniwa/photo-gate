@@ -859,6 +859,24 @@ def test_publish_catalog_success_returns_0():
     assert code == 0
 
 
+def test_publish_catalog_uses_utc_clock_by_default():
+    received_ts: list[str] = []
+    parser = _build_parser()
+    args = parser.parse_args(_PUBLISH_CATALOG_ARGS)
+
+    code = asyncio.run(run_publish_catalog(
+        args,
+        config_loader=_FakeConfig,
+        client_factory=lambda cfg: _FakePublishClient([_make_album()]),
+        store_factory=lambda cfg: _FakePublishStore(),
+        publish_fn=lambda albums, published_at: received_ts.append(published_at) or _FAKE_CATALOG_BYTES,
+    ))
+
+    assert code == 0
+    assert len(received_ts) == 1
+    assert received_ts[0].endswith("Z")
+
+
 def test_publish_catalog_success_prints_count(capsys):
     albums = [_make_album("uid001"), _make_album("uid002"), _make_album("uid003")]
     parser = _build_parser()
