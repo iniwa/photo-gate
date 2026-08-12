@@ -114,19 +114,23 @@ Completed locally:
   - Coverage: 91.32% statements, 89.84% branches, 95.96% functions, 95.48%
     lines.
   - `npm audit` found 0 vulnerabilities after dependency updates.
-- Docker: `python -m pytest` and `python -m compileall src`.
-  - 470 passed, 46 skipped (the skipped image tests require local libvips).
-- The source-level Docker checks ran with the locally available Python 3.11.9.
-  The package correctly requires Python 3.12 or newer, so a clean editable
-  install could not be reproduced on this workstation. The release container
-  and Docker CI remain the supported Python 3.12 verification path.
+- Docker source checks in a clean Python 3.12.10 virtual environment:
+  `pip install -e ".[dev]"`, `python -m pytest`,
+  `python -m compileall -q src`, and `python -m pip check`.
+  - 470 passed and 46 skipped locally; the skipped tests require native
+    libvips, which is supplied by the release container.
+  - The editable install and dependency consistency check passed.
+- Docker image verification against the pinned Python 3.12 / Debian trixie
+  runtime and libvips 8.16.1:
+  - The `test` stage built successfully and all 516 tests passed in the
+    container, including the 46 libvips-dependent tests skipped on Windows.
+  - The final image built successfully; CLI help, `sync-once --help`, libvips
+    import, non-root execution (`uid=1001`, `gid=1001`), entrypoint, default
+    command, healthcheck, and absence of exposed ports were verified.
+  - A no-push BuildKit build succeeded for both `linux/amd64` and
+    `linux/arm64`.
+  - No secret-like build-history patterns were found.
 - `git diff --check` passed apart from existing CRLF normalization warnings.
-
-Not run locally:
-
-- Docker image build/container smoke. Docker Desktop's Linux Engine was not
-  running (`//./pipe/dockerDesktopLinuxEngine` was unavailable). Docker CI must
-  provide the release-image verification.
 
 ## Protected Boundaries Confirmed
 
