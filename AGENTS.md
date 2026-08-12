@@ -107,12 +107,18 @@ acceptance criterion outside the delegated scope.
 For each initial delegation, record the exact mechanics, edge/fallback matrix,
 protected regressions, focused checks, any required stable-diff full-suite
 check, stale-reference/static-asset sweep, and the required per-item
-passed/blocked/unmet return-evidence shape. The
-writer self-reviews the stable diff, fixes minor failures, and completes that
-gate before any independent reviewer starts. Reviewer findings are sent back
-as one packet to the same writer. Normally use at most one independent reviewer
-per cohesive outcome. A second reviewer requires a distinct material risk or
-an unusable or blocked first review, and the primary records that reason.
+passed/blocked/unmet return-evidence shape. The writer self-reviews the stable
+diff, fixes minor failures, and completes that gate before any independent
+reviewer starts. This self-gate is a dispatch barrier: a final
+`bounded_reviewer` must not start, or remain in acceptance review, while the
+implementation writer is still changing the candidate. If the implementation
+writer (including a replacement writer) changes the candidate after review
+begins, treat the earlier review as diagnostic and pre-stable; finish the
+writer self-gate, then start one fresh final review only when material risk
+still warrants it. Reviewer findings are sent back as one packet to the same
+writer. Normally use at most one independent reviewer per cohesive outcome. A
+second reviewer requires a distinct material risk or an unusable or blocked
+first review, and the primary records that reason.
 If task telemetry is captured outside this repository, retain only safe
 envelope fields; never include prompts, messages, tool data, secrets, or
 private values. This project does not require a project worklog.
