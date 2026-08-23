@@ -48,6 +48,7 @@ Apply these priorities in order: correctness, safety, and preservation of user w
 
 ## Primary Session, Delegation, and Ownership
 
+- Before implementation, classify the initial route from acceptance evidence: `small-primary` for small or transfer-negative work, `bounded` for settled multi-step work with one verifiable writer, `adaptive` when unresolved native, platform, runtime, or cross-subsystem behavior is material, or `non-implementation` for analysis, design, review, or operations. This classification does not force delegation; reclassify only after a material scope change or contract reset.
 - Prefer the smallest correct change that satisfies the approved outcome, requirements, and acceptance criteria.
 - Before creating a new implementation or adding a dependency, inspect existing code, the standard library, and platform-native capabilities; reuse a suitable capability unless that would weaken correctness, security, compatibility, or maintainability.
 - The user selects the primary model at runtime. The primary session owns task
