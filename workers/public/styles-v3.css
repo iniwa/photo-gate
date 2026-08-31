@@ -488,9 +488,9 @@ summary:focus-visible,
 
 .selection-form {
   display: block;
-  /* Room for the fixed .selection-bar, including its JS-enhanced second row
-     (live count wraps onto its own line — see .selection-count-live). */
-  padding-bottom: 7.5rem;
+  /* Room for the fixed .selection-bar. JavaScript enhancements can add a
+     count, controls, and a ZIP status row on narrow screens. */
+  padding-bottom: 12rem;
 }
 
 .selection-bar {
@@ -501,6 +501,7 @@ summary:focus-visible,
   bottom: 0;
   z-index: 10;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.75rem;
   padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
   background: var(--surface);
@@ -541,6 +542,54 @@ summary:focus-visible,
 
 .selection-submit:hover {
   background: var(--amber-strong);
+}
+
+.selection-batch-download {
+  min-height: 44px;
+  padding: 0.6rem 1.25rem;
+  background: transparent;
+  color: var(--amber);
+  border: 1px solid var(--amber);
+  border-radius: var(--radius);
+  font-weight: 650;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.selection-batch-download:hover:not(:disabled) {
+  background: var(--amber-glow);
+}
+
+.selection-batch-download:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.selection-zip-status {
+  color: var(--text-muted);
+  flex-basis: 100%;
+  font-size: 0.85rem;
+}
+
+@media (max-width: 640px) {
+  @supports selector(:has(*)) {
+    .selection-form:has(input[name='photoId']:checked) .selection-bar {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  .selection-variant,
+  .selection-submit,
+  .selection-batch-download {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .selection-count-live,
+  .selection-zip-status {
+    grid-column: 1 / -1;
+  }
 }
 
 .selection-count {

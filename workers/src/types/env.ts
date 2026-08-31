@@ -7,6 +7,12 @@ export interface Env {
   DB: D1Database
   PHOTO_BUCKET: R2Bucket
   /**
+   * Lightweight login throttles configured in wrangler.toml. They are not
+   * identity stores and must never replace the D1 account lockout policy.
+   */
+  LOGIN_ACCOUNT_RATE_LIMIT: RateLimit
+  LOGIN_NETWORK_RATE_LIMIT: RateLimit
+  /**
    * /admin Cloudflare Access configuration. Registered at deploy time (Worker
    * vars/secrets), NOT in wrangler.toml or source. All three are optional here so
    * a missing or malformed value fails closed to a generic 403 rather than a type

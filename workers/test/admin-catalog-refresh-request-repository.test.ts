@@ -20,7 +20,10 @@ describe('AdminCatalogRefreshRequestRepository', () => {
   it('writes only the separate catalog-refresh key with private metadata', async () => {
     const puts: Array<{ key: string; body: string; options: unknown }> = []
     const bucket = {
-      put: async (key: string, body: unknown, options: unknown) => { puts.push({ key, body: body as string, options }) },
+      put: async (key: string, body: unknown, options: unknown) => {
+        puts.push({ key, body: body as string, options })
+        return {} as R2Object
+      },
     } as unknown as R2Bucket
 
     await new AdminCatalogRefreshRequestRepository(bucket).writeRequest(REQUEST)
@@ -31,7 +34,13 @@ describe('AdminCatalogRefreshRequestRepository', () => {
     expect(JSON.parse(puts[0]!.body)).toEqual(REQUEST)
     expect(puts[0]?.options).toEqual({
       httpMetadata: { contentType: 'application/json', cacheControl: 'private, no-cache' },
+      onlyIf: { etagDoesNotMatch: '*' },
     })
+  })
+
+  it('coalesces when a catalog refresh request is already pending', async () => {
+    const bucket = { put: async () => null } as unknown as R2Bucket
+    await expect(new AdminCatalogRefreshRequestRepository(bucket).writeRequest(REQUEST)).resolves.toBe('already-pending')
   })
 
   it('rejects a non-catalog request before writing', async () => {

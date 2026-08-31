@@ -8,6 +8,7 @@ import type { AuthVariables } from '../src/types/auth-context.js'
 import type { SessionWithUser } from '../src/types/session.js'
 import type { PrivateObjectBody, PrivateObjectReader } from '../src/types/private-object.js'
 import { ObjectServiceError } from '../src/services/private-album-object-service.js'
+import { isValidId } from '../src/services/safe-id.js'
 import {
   albumManifestKey,
   albumCoverKey,
@@ -136,18 +137,21 @@ interface FakeState {
 function makeDeps(opts: FakeOptions = {}): { deps: ImgRouteDeps; state: FakeState } {
   const state: FakeState = { sessionCalls: [], permissionCalls: [] }
   const deps: ImgRouteDeps = {
-    sessionRepo: {
-      async fetchValidSession(digest, now) {
+    albumAccessRepo: {
+      async getAuthorizedAlbumAccess(digest, albumId, now) {
         state.sessionCalls.push({ digest, now })
         if (opts.sessionThrows) throw new Error('D1 down')
-        return opts.validSession === undefined ? validSession() : opts.validSession
-      },
-    },
-    permChecker: {
-      async checkPermission(userId, albumId, now) {
-        state.permissionCalls.push({ userId, albumId, now })
+        const session = opts.validSession === undefined ? validSession() : opts.validSession
+        if (session === null || session.user_enabled !== 1) return null
+        if (!isValidId(albumId)) return { userId: session.user_id, album: null }
+        state.permissionCalls.push({ userId: session.user_id, albumId, now })
         if (opts.permissionThrows) throw new Error('D1 down')
-        return opts.permission ?? true
+        return {
+          userId: session.user_id,
+          album: (opts.permission ?? true)
+            ? { id: albumId, title: 'D1 Album Title', download_enabled: 0 }
+            : null,
+        }
       },
     },
     reader: opts.reader ?? mapReader(new Map()).reader,

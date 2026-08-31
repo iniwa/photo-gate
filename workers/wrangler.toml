@@ -22,3 +22,22 @@ database_id = "de77cb73-497a-4a41-bd1c-151fd907be3f"
 [[r2_buckets]]
 binding = "PHOTO_BUCKET"
 bucket_name = "photo-gate"
+
+# These namespace IDs are intentionally unique to this Worker/account pair.
+# The account limiter protects repeated guesses for one submitted ID; the
+# network limiter limits high-cardinality unknown-ID attempts before PBKDF2.
+[[ratelimits]]
+name = "LOGIN_ACCOUNT_RATE_LIMIT"
+namespace_id = "487013621"
+
+  [ratelimits.simple]
+  limit = 5
+  period = 60
+
+[[ratelimits]]
+name = "LOGIN_NETWORK_RATE_LIMIT"
+namespace_id = "487013622"
+
+  [ratelimits.simple]
+  limit = 30
+  period = 60

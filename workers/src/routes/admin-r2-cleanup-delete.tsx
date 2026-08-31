@@ -3,6 +3,7 @@ import type { Env } from '../types/env.js'
 import type { AdminR2CleanupReport } from '../types/admin-r2-cleanup.js'
 import { Layout } from '../templates/layout.js'
 import { forbiddenResponse } from '../middleware/auth-response.js'
+import { parseUrlEncodedForm } from '../services/url-encoded-form.js'
 import {
   type CleanupTokenPayload,
   R2_CLEANUP_HMAC_MIN_KEY_LEN,
@@ -16,6 +17,7 @@ type AdminContext = Context<{ Bindings: Env }>
 
 export const R2_CLEANUP_CONFIRM_MAX_ORPHAN_PREFIXES = 50
 export const R2_CLEANUP_CONFIRM_MAX_OBJECTS = 500
+const MAX_R2_CLEANUP_FORM_BYTES = 4 * 1024
 
 export type R2CleanupConfirmDeps = {
   hmacKey: string | undefined
@@ -45,12 +47,8 @@ function isFormContentType(contentType: string | undefined): boolean {
 export async function parseConfirmBody(
   c: AdminContext,
 ): Promise<Record<never, never> | null> {
-  let body: Record<string, string | File | (string | File)[]>
-  try {
-    body = await c.req.parseBody({ all: true })
-  } catch {
-    return null
-  }
+  const body = await parseUrlEncodedForm(c.req.raw, MAX_R2_CLEANUP_FORM_BYTES)
+  if (body === null) return null
   if (Object.keys(body).length !== 0) return null
   return {}
 }
@@ -58,12 +56,8 @@ export async function parseConfirmBody(
 export async function parseDeleteBody(
   c: AdminContext,
 ): Promise<{ token: string; phrase: string } | null> {
-  let body: Record<string, string | File | (string | File)[]>
-  try {
-    body = await c.req.parseBody({ all: true })
-  } catch {
-    return null
-  }
+  const body = await parseUrlEncodedForm(c.req.raw, MAX_R2_CLEANUP_FORM_BYTES)
+  if (body === null) return null
   if (Object.keys(body).length !== 2) return null
   const token = body['token']
   const phrase = body['phrase']

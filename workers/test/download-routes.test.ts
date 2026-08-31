@@ -107,20 +107,18 @@ interface FakeOptions {
 
 function makeDeps(opts: FakeOptions = {}): DownloadRouteDeps {
   return {
-    sessionRepo: {
-      async fetchValidSession() {
-        return opts.validSession === undefined ? validSession() : opts.validSession
-      },
-    },
-    permChecker: {
-      async checkPermission() {
-        return opts.permission ?? true
-      },
-    },
-    albumRepo: {
-      async getAuthorizedAlbum() {
+    albumAccessRepo: {
+      async getAuthorizedAlbumAccess(_digest, albumId) {
+        const session = opts.validSession === undefined ? validSession() : opts.validSession
+        if (session === null || session.user_enabled !== 1) return null
+        if (!(opts.permission ?? true)) return { userId: session.user_id, album: null }
         if (opts.summary === 'throw') throw new Error('D1 down')
-        return opts.summary === undefined ? albumSummary(1) : opts.summary
+        return {
+          userId: session.user_id,
+          album: opts.summary === undefined
+            ? { ...albumSummary(1), id: albumId }
+            : opts.summary,
+        }
       },
     },
     reader: opts.reader ?? mapReader(new Map()),
@@ -265,10 +263,10 @@ describe('GET /download/:albumId/preview/:photoId — download_enabled gate', ()
     expect(res.status).toBe(403)
   })
 
-  it('album repo throws -> 500', async () => {
+  it('combined album access lookup throws -> 503', async () => {
     const app = makeApp(makeDeps({ summary: 'throw' }))
     const res = await get(app, `/download/${ALBUM_ID}/preview/${PHOTO_ID}`, await validCookie())
-    expect(res.status).toBe(500)
+    expect(res.status).toBe(503)
   })
 })
 
@@ -519,10 +517,10 @@ describe('GET /download/:albumId/thumb/:photoId — download_enabled gate', () =
     expect(res.status).toBe(403)
   })
 
-  it('album repo throws -> 500', async () => {
+  it('combined album access lookup throws -> 503', async () => {
     const app = makeApp(makeDeps({ summary: 'throw' }))
     const res = await get(app, `/download/${ALBUM_ID}/thumb/${PHOTO_ID}`, await validCookie())
-    expect(res.status).toBe(500)
+    expect(res.status).toBe(503)
   })
 })
 
@@ -858,11 +856,11 @@ describe('POST /download/:albumId/selection — download_enabled gate', () => {
     expect(res.status).toBe(403)
   })
 
-  it('album repo throws -> 500', async () => {
+  it('combined album access lookup throws -> 503', async () => {
     const app = makeApp(makeDeps({ summary: 'throw' }))
     const cookie = await validCookie()
     const res = await post(app, `/download/${ALBUM_ID}/selection`, selectionBody([PHOTO_ID], 'thumb'), cookie, 'http://localhost')
-    expect(res.status).toBe(500)
+    expect(res.status).toBe(503)
   })
 })
 

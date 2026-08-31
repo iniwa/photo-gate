@@ -29,13 +29,13 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 | Surface | Routes | Backing |
 |---|---|---|
 | Login UI | `GET /` | D1 (session probe; fail-safe to form) |
-| Album pages | `GET /albums`, `GET /albums/:albumId` | D1 (authorization) + R2 (manifest) |
-| Photo preview page | `GET /albums/:albumId/photos/:photoId` | D1 (session + album permission) + R2 (manifest membership check); HTML page embeds existing `/img` preview route via `<img>` — page route does not read the preview object directly; no originals, no PhotoPrism/NAS, no R2 mutation |
-| Auth API | `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me` | D1 |
-| Image delivery | `GET /img/:albumId/{cover,thumb/:photoId,preview/:photoId}` | D1 + R2 |
+| Album pages | `GET /albums`, `GET /albums/:albumId` | Album detail resolves session, enabled user, permission, and active album summary in one D1 lookup; then R2 manifest |
+| Photo preview page | `GET /albums/:albumId/photos/:photoId` | One D1 session-and-album lookup + R2 manifest membership check; HTML embeds existing `/img` preview route via `<img>` and does not read the preview object directly |
+| Auth API | `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me` | D1; login accepts a bounded URL-encoded form and applies native per-account and per-network rate limits before D1/PBKDF2 |
+| Image delivery | `GET /img/:albumId/{cover,thumb/:photoId,preview/:photoId}` | One D1 session-and-album lookup + R2 |
 | Thumb download | `GET /download/:albumId/thumb/:photoId` | D1 (session + album permission + `download_enabled` gate) + R2 (manifest membership check, then thumb WebP as attachment); serves only existing generated thumb WebP — no originals, no new R2 objects, no R2 mutation |
 | Preview download | `GET /download/:albumId/preview/:photoId` | D1 (session + album permission + `download_enabled` gate) + R2 (manifest membership check, then preview JPEG as attachment); serves only existing generated preview JPEG — no originals, no new R2 objects, no R2 mutation |
-| Multi-select download | `POST /download/:albumId/selection` | D1 (session + album permission + `download_enabled` gate) + R2 (manifest membership check only); validates same-origin, form Content-Type, variant (`thumb`\|`preview`), and 1–100 selected photo IDs against the manifest; renders a private no-store HTML page of individual links to existing GET download routes — no R2 photo object reads, no ZIP, no JavaScript, no RAW/original |
+| Multi-select download | `POST /download/:albumId/selection` + optional browser ZIP | The no-JS form validates same-origin, Content-Type, variant (`thumb`\|`preview`), and 1–100 IDs against the manifest, then renders private individual links. `batch-download-v1.js` optionally fetches at most 20 existing authorized derivative routes and creates a browser-local, uncompressed ZIP (25 MiB/file, 100 MiB total); Workers never build ZIPs or read extra R2 objects. No RAW/original. |
 | Admin surface | `GET /admin` | Cloudflare Access JWT + email allowlist |
 | Admin user inventory | `GET /admin/users` | D1 (read-only; no `password_hash`) |
 | Admin album inventory | `GET /admin/albums` | D1 (read-only; no `photoprism_album_uid`, transform settings, or `strip_exif`) + private R2 catalog/target reads + bounded manifest `head()` probes. The readiness label uses only safe aggregate facts (target configured, manifest present/unknown, expiry, enabled state, active-user permission count); it never reads image or manifest bodies, lists R2 objects, or renders source identities. |
@@ -52,8 +52,8 @@ Cloudflare Workers application for photo-gate. It serves the shared photo viewin
 | Admin hard-delete controls | `POST /admin/users/confirm-delete`, `POST /admin/users/delete`, `POST /admin/albums/confirm-delete`, `POST /admin/albums/delete` | Users: two-step HMAC confirmation then `DELETE FROM users WHERE id = ?` with D1 cascade for sessions/permissions. Albums: two-step HMAC confirmation; remove matching sync target first, then `DELETE FROM albums WHERE id = ?`; no R2 album asset deletion |
 | Admin ops summary | `GET /admin/ops` | D1 (read-only aggregate counts from `users`, `albums`, `album_permissions`, `sessions`; no row-level identity, title, hash, token, PhotoPrism UID, or R2 data) |
 | Admin sync status | `GET /admin/sync` | Private R2 (read-only; accepts schema 1 and schema 2 daemon status from `ops/sync-status.json`, pending requests from `ops/sync-request.json` and `ops/catalog-refresh-request.json`, and a sanitized aggregate result from `ops/sync-result.json`; renders independent image-sync/catalog-update controls and aggregate counters only) |
-| Admin sync request writer | `POST /admin/sync/request` | Private R2 (write-only; fixed key `ops/sync-request.json`; admin-only; validates exact `kind=sync-now` form input; Docker daemon consumes and handles; Sync Now form exposed on `GET /admin/sync`) |
-| Admin catalog-refresh request writer | `POST /admin/catalog-refresh/request` | Private R2 (write-only; fixed key `ops/catalog-refresh-request.json`; admin-only; validates exact `kind=publish-catalog` form input; Docker daemon consumes this as a catalog-only operation, never as an image sync) |
+| Admin sync request writer | `POST /admin/sync/request` | Private R2 (write-only; fixed key `ops/sync-request.json`; exact `kind=sync-now`; create-only conditional write coalesces duplicate clicks into one pending request) |
+| Admin catalog-refresh request writer | `POST /admin/catalog-refresh/request` | Private R2 (write-only; fixed key `ops/catalog-refresh-request.json`; exact `kind=publish-catalog`; create-only conditional write coalesces duplicate clicks) |
 | Admin sync target upsert | `POST /admin/albums/sync-target-upsert` | Private R2 `ops/album-catalog.json` (catalog check: verifies submitted `catalogId` exists; missing/malformed → 500, absent → 400) + D1 (read album by `albumId`) + Private R2 (read-modify-write `ops/sync-targets.json`; accepts `albumId`+`catalogId`; rejects duplicate `catalogId` across albums; fixed thumb/preview/stripExif schema) |
 | Admin sync target remove | `POST /admin/albums/sync-target-remove` | Private R2 (read-modify-write `ops/sync-targets.json`; accepts `albumId`; removes matching entry; no-op for unknown album ID) |
 | Admin R2 cleanup report | `GET /admin/r2-cleanup` | Private R2 (`list()` only under `albums/` and `ops/`; no object body reads) + D1 (read-only: `SELECT id, enabled FROM albums`; no title, photoprism_album_uid, or transform settings); read-only dry-run reporting only — does not delete, mutate, or move any R2 object |
@@ -74,11 +74,24 @@ npm ci
 npm run lint
 npm run typecheck
 npm test
+npm run test:integration
 npm run test:coverage
 npm run build
 ```
 
-Verification runs without a Cloudflare account, D1, R2, PhotoPrism, or secrets.
+Unit tests run without a Cloudflare account, production D1/R2, PhotoPrism, or
+secrets. `npm run test:integration` starts an isolated Miniflare Worker with the
+real migrations plus local D1, R2, and Rate Limit bindings.
+
+## Resource Bounds
+
+- URL-encoded login, admin mutation, confirmation, and multi-select forms are
+  streamed with route-specific byte ceilings before parsing.
+- The private R2 reader preserves object size only to reject oversized JSON;
+  manifests are rejected before text buffering when they exceed the manifest
+  validator limit, and the sync-status reader has an 8 KiB ceiling.
+- The two login Rate Limit bindings are an inexpensive abuse-control layer, not
+  a replacement for the D1 account lockout policy.
 
 ## Local development
 

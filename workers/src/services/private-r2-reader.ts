@@ -32,12 +32,19 @@ export class PrivateR2Reader implements PrivateObjectReader {
     if (object === null) return null
 
     let body: ReadableStream
+    let size: number
     let readText: () => Promise<string>
     try {
-      if (!(object.body instanceof ReadableStream) || typeof object.text !== 'function') {
+      if (
+        !(object.body instanceof ReadableStream) ||
+        typeof object.text !== 'function' ||
+        !Number.isSafeInteger(object.size) ||
+        object.size < 0
+      ) {
         throw readerError()
       }
       body = object.body
+      size = object.size
       readText = object.text.bind(object)
     } catch {
       throw readerError()
@@ -45,6 +52,7 @@ export class PrivateR2Reader implements PrivateObjectReader {
 
     return {
       body,
+      size,
       text: async (): Promise<string> => {
         try {
           const text = await readText()

@@ -21,8 +21,8 @@ import { AdminAlbumReadinessRepository } from './services/admin-album-readiness-
 import { AdminR2CleanupRepository } from './services/admin-r2-cleanup-repository.js'
 import { AuthRepository } from './services/auth-repository.js'
 import { SessionRepository } from './services/session-repository.js'
-import { PermissionRepository } from './services/permission-repository.js'
 import { AuthorizedAlbumRepository } from './services/authorized-album-repository.js'
+import { ViewerAlbumAccessRepository } from './services/viewer-album-access-repository.js'
 import { PrivateR2Reader } from './services/private-r2-reader.js'
 import { parseAccessConfig, createVerifierCache } from './services/cloudflare-access-jwt.js'
 import { parseAdminAllowlist } from './middleware/require-admin.js'
@@ -56,6 +56,15 @@ app.use('*', securityHeaders)
 app.route('/api/auth', createAuthApi((env) => ({
   authRepo: new AuthRepository(env.DB),
   sessionRepo: new SessionRepository(env.DB),
+  loginRateLimit: {
+    async allowAttempt(accountKey, networkKey) {
+      const [account, network] = await Promise.all([
+        env.LOGIN_ACCOUNT_RATE_LIMIT.limit({ key: accountKey }),
+        env.LOGIN_NETWORK_RATE_LIMIT.limit({ key: networkKey }),
+      ])
+      return account.success && network.success
+    },
+  },
   clock: () => new Date(),
 })))
 
@@ -65,8 +74,7 @@ app.route('/api/auth', createAuthApi((env) => ({
 // through to the reserved 401. If env.DB / env.PHOTO_BUCKET are undefined at
 // runtime, the repositories and reader reject and handlers close to 401/403/503/500.
 app.route('/img', createImgRoutes((env) => ({
-  sessionRepo: new SessionRepository(env.DB),
-  permChecker: new PermissionRepository(env.DB),
+  albumAccessRepo: new ViewerAlbumAccessRepository(env.DB),
   clock: () => new Date(),
   reader: new PrivateR2Reader(env.PHOTO_BUCKET),
 })))
@@ -93,13 +101,11 @@ app.route('/admin', createAdminRoutes(resolveAdminAuth, (env) => ({
 })))
 
 // Viewer download route. Mounted before the reserved-401 loop so GET shapes
-// (/download/:albumId/preview/:photoId) reach this router. Auth chain is identical
-// to /img: requireSession + requireAlbumPermission + download_enabled gate before
-// any R2 or manifest read.
+// (/download/:albumId/preview/:photoId) reach this router. A single D1 lookup
+// confirms the session and album access before the download-enabled gate and any
+// manifest or R2 object read.
 app.route('/download', createDownloadRoutes((env) => ({
-  sessionRepo: new SessionRepository(env.DB),
-  permChecker: new PermissionRepository(env.DB),
-  albumRepo: new AuthorizedAlbumRepository(env.DB),
+  albumAccessRepo: new ViewerAlbumAccessRepository(env.DB),
   reader: new PrivateR2Reader(env.PHOTO_BUCKET),
   clock: () => new Date(),
 })))
@@ -125,8 +131,8 @@ for (const prefix of RESERVED) {
 // (303 to /, 403, 500, or 503) without leaking errors.
 app.route('/', createPages((env) => ({
   sessionRepo: new SessionRepository(env.DB),
-  permChecker: new PermissionRepository(env.DB),
   albumRepo: new AuthorizedAlbumRepository(env.DB),
+  albumAccessRepo: new ViewerAlbumAccessRepository(env.DB),
   reader: new PrivateR2Reader(env.PHOTO_BUCKET),
   clock: () => new Date(),
 })))

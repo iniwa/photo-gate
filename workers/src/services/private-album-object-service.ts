@@ -6,7 +6,7 @@ import {
   photoThumbKey,
   photoPreviewKey,
 } from './r2-object-key.js'
-import { parseManifest } from './manifest-validator.js'
+import { MANIFEST_LIMITS, parseManifest } from './manifest-validator.js'
 
 export type ObjectLoadResult<T> =
   | { status: 'found'; value: T }
@@ -73,6 +73,12 @@ export async function loadAlbumManifest(
 
   const obj = await readObject(reader, key)
   if (obj === null) return { status: 'not_found' }
+  if (
+    obj.size !== undefined &&
+    (!Number.isSafeInteger(obj.size) || obj.size < 0 || obj.size > MANIFEST_LIMITS.MAX_JSON_BYTES)
+  ) {
+    throw new ObjectServiceError('manifest_invalid')
+  }
 
   let text: string
   try {

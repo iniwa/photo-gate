@@ -11,7 +11,8 @@ import { parseSessionCookie } from '../services/session-cookie.js'
 import { digestSessionToken } from '../services/auth-crypto.js'
 import { loadAlbumManifest } from '../services/private-album-object-service.js'
 import { requireSessionPage } from '../middleware/require-session-page.js'
-import { requireAlbumPermission } from '../middleware/require-album-permission.js'
+import type { ViewerAlbumAccess } from '../services/viewer-album-access-repository.js'
+import { requireViewerAlbumAccessPage } from '../middleware/require-viewer-album-access.js'
 import type { ManifestPhoto } from '../types/manifest.js'
 import { aspectRatioClass, groupPhotosByDate, validDimension } from '../services/viewer-photo-presentation.js'
 
@@ -21,9 +22,6 @@ export interface PageDeps {
   sessionRepo: {
     fetchValidSession(tokenDigest: string, now: string): Promise<SessionWithUser | null>
   }
-  permChecker: {
-    checkPermission(userId: string, albumId: string, now: string): Promise<boolean>
-  }
   albumRepo: {
     listAuthorizedAlbums(
       userId: string,
@@ -31,11 +29,13 @@ export interface PageDeps {
       limit: number,
       afterAlbumId?: string,
     ): Promise<AuthorizedAlbumSummary[]>
-    getAuthorizedAlbum(
-      userId: string,
+  }
+  albumAccessRepo: {
+    getAuthorizedAlbumAccess(
+      tokenDigest: string,
       albumId: string,
       now: string,
-    ): Promise<AuthorizedAlbumSummary | null>
+    ): Promise<ViewerAlbumAccess | null>
   }
   reader: PrivateObjectReader
   clock: () => Date
@@ -62,9 +62,9 @@ export function createPages(depsFromEnv: (env: Env) => PageDeps): Hono<PageEnv> 
     fetchValidSession: (tokenDigest, now) =>
       depsFromEnv(env).sessionRepo.fetchValidSession(tokenDigest, now),
   })
-  const lazyPermChecker = (env: Env): PageDeps['permChecker'] => ({
-    checkPermission: (userId, albumId, now) =>
-      depsFromEnv(env).permChecker.checkPermission(userId, albumId, now),
+  const lazyAlbumAccessRepo = (env: Env): PageDeps['albumAccessRepo'] => ({
+    getAuthorizedAlbumAccess: (tokenDigest, albumId, now) =>
+      depsFromEnv(env).albumAccessRepo.getAuthorizedAlbumAccess(tokenDigest, albumId, now),
   })
   const lazyReader = (env: Env): PrivateObjectReader => ({
     get: (key) => depsFromEnv(env).reader.get(key),
@@ -94,9 +94,9 @@ export function createPages(depsFromEnv: (env: Env) => PageDeps): Hono<PageEnv> 
     return middleware(c, next)
   }
 
-  const albumPermission: MiddlewareHandler<PageEnv> = async (c, next) => {
-    const middleware = requireAlbumPermission(
-      lazyPermChecker(c.env),
+  const albumAccessPage: MiddlewareHandler<PageEnv> = async (c, next) => {
+    const middleware = requireViewerAlbumAccessPage(
+      lazyAlbumAccessRepo(c.env),
       (ctx) => ctx.req.param('albumId'),
       lazyClock(c.env),
     ) as unknown as MiddlewareHandler<PageEnv>
@@ -104,10 +104,8 @@ export function createPages(depsFromEnv: (env: Env) => PageDeps): Hono<PageEnv> 
   }
 
   pages.use('/albums', sessionPage)
-  pages.use('/albums/:albumId', sessionPage)
-  pages.use('/albums/:albumId', albumPermission)
-  pages.use('/albums/:albumId/photos/:photoId', sessionPage)
-  pages.use('/albums/:albumId/photos/:photoId', albumPermission)
+  pages.use('/albums/:albumId', albumAccessPage)
+  pages.use('/albums/:albumId/photos/:photoId', albumAccessPage)
 
   pages.get('/albums', async (c) => {
     const userId = c.get('userId')
@@ -137,18 +135,9 @@ export function createPages(depsFromEnv: (env: Env) => PageDeps): Hono<PageEnv> 
   })
 
   pages.get('/albums/:albumId', async (c) => {
-    const userId = c.get('userId')
     const albumId = c.req.param('albumId')
-    const now = lazyClock(c.env)().toISOString()
-
-    let summary: AuthorizedAlbumSummary | null
-    try {
-      summary = await depsFromEnv(c.env).albumRepo.getAuthorizedAlbum(userId, albumId, now)
-    } catch {
-      return genericError(c)
-    }
-    // Permission already passed, but the album may have raced away. Fail closed.
-    if (summary === null) return genericForbidden(c)
+    const summary = c.get('authorizedAlbum')
+    if (summary === undefined) return genericForbidden(c)
 
     // loadAlbumManifest throws ObjectServiceError (manifest_invalid / reader_failure)
     // or any other error -> generic 500. Manifest absence is a value, not a throw.
@@ -179,18 +168,11 @@ export function createPages(depsFromEnv: (env: Env) => PageDeps): Hono<PageEnv> 
   pages.get('/albums/:albumId/photos/:photoId', async (c) => {
     const albumId = c.req.param('albumId')
     const photoId = c.req.param('photoId')
-    const userId = c.get('userId')
-    const now = lazyClock(c.env)().toISOString()
 
     if (!isValidId(photoId)) return genericNotFound(c)
 
-    let summary: AuthorizedAlbumSummary | null
-    try {
-      summary = await depsFromEnv(c.env).albumRepo.getAuthorizedAlbum(userId, albumId, now)
-    } catch {
-      return genericError(c)
-    }
-    if (summary === null) return genericForbidden(c)
+    const summary = c.get('authorizedAlbum')
+    if (summary === undefined) return genericForbidden(c)
 
     let manifestResult
     try {
@@ -403,7 +385,11 @@ function AlbumDetailPage({
   )
 
   return (
-    <Layout title={title} authenticated>
+    <Layout
+      title={title}
+      authenticated
+      head={downloadEnabled ? <script type="module" src="/batch-download-v1.js"></script> : undefined}
+    >
       <div class="album-detail-header">
         <a class="detail-back-link" href="/albums">
           ← アルバム
@@ -412,7 +398,12 @@ function AlbumDetailPage({
         <span class="photo-count">{photos.length}枚</span>
       </div>
       {downloadEnabled ? (
-        <form method="post" action={`/download/${albumId}/selection`} class="selection-form">
+        <form
+          method="post"
+          action={`/download/${albumId}/selection`}
+          class="selection-form"
+          data-batch-download-base={`/download/${albumId}`}
+        >
           {timeline}
           <div class="selection-bar">
             <select name="variant" class="selection-variant">

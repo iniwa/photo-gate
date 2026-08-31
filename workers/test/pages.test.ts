@@ -97,23 +97,26 @@ function makeDeps(opts: FakeOptions = {}): { deps: PageDeps; state: FakeState } 
         return opts.validSession === undefined ? validSession() : opts.validSession
       },
     },
-    permChecker: {
-      async checkPermission() {
-        return opts.permission ?? true
-      },
-    },
     albumRepo: {
       async listAuthorizedAlbums(userId, now, limit, after) {
         state.listCalls.push({ userId, now, limit, after })
         if (opts.listThrows) throw new Error('D1 down')
         return opts.albums ?? []
       },
-      async getAuthorizedAlbum(userId, albumId, now) {
-        state.getCalls.push({ userId, albumId, now })
+    },
+    albumAccessRepo: {
+      async getAuthorizedAlbumAccess(_digest, albumId, now) {
+        const session = opts.validSession === undefined ? validSession() : opts.validSession
+        if (session === null || session.user_enabled !== 1) return null
+        if (!(opts.permission ?? true)) return { userId: session.user_id, album: null }
+        state.getCalls.push({ userId: session.user_id, albumId, now })
         if (opts.getThrows) throw new Error('D1 down')
-        return opts.summary === undefined
-          ? { id: albumId, title: 'D1 Album Title', download_enabled: 0 }
-          : opts.summary
+        return {
+          userId: session.user_id,
+          album: opts.summary === undefined
+            ? { id: albumId, title: 'D1 Album Title', download_enabled: 0 }
+            : opts.summary,
+        }
       },
     },
     reader: opts.reader ?? mapReader(new Map()),
@@ -358,6 +361,19 @@ describe('GET /albums/:albumId', () => {
     expect(text).toContain('href="/albums"')
   })
 
+  it('uses one combined D1 access lookup for an authorized album detail', async () => {
+    const objects = new Map<string, PrivateObjectBody>()
+    objects.set(albumManifestKey(ALBUM_ID), manifestBody(manifestJson([])))
+    const { deps, state } = makeDeps({ reader: mapReader(objects) })
+
+    const res = await get(makeApp(deps), `/albums/${ALBUM_ID}`, await validCookie())
+
+    expect(res.status).toBe(200)
+    expect(state.getCalls).toEqual([
+      { userId: USER_ID, albumId: ALBUM_ID, now: NOW },
+    ])
+  })
+
   it('manifest not_found -> 200 準備中 page with the album title', async () => {
     const { deps } = makeDeps({ reader: mapReader(new Map()) })
     const app = makeApp(deps)
@@ -385,11 +401,11 @@ describe('GET /albums/:albumId', () => {
     expect(res.status).toBe(403)
   })
 
-  it('getAuthorizedAlbum throws -> 500 generic', async () => {
+  it('combined album access lookup throws -> 503 generic', async () => {
     const { deps } = makeDeps({ getThrows: true })
     const app = makeApp(deps)
     const res = await get(app, `/albums/${ALBUM_ID}`, await validCookie())
-    expect(res.status).toBe(500)
+    expect(res.status).toBe(503)
     const text = await res.text()
     assertNoSensitive(text)
     expect(text).not.toContain('D1 down')
@@ -441,6 +457,8 @@ describe('GET /albums/:albumId', () => {
     const res = await get(app, `/albums/${ALBUM_ID}`, await validCookie())
     const text = await res.text()
     expect(text).toContain(`action="/download/${ALBUM_ID}/selection"`)
+    expect(text).toContain(`data-batch-download-base="/download/${ALBUM_ID}"`)
+    expect(text).toContain('type="module" src="/batch-download-v1.js"')
     expect(text).toContain('aria-label="「First」を選択"')
     expect(text).toContain('aria-label="「Second」を選択"')
   })
@@ -549,6 +567,7 @@ describe('GET /albums/:albumId', () => {
     expect(text).not.toContain('selection')
     expect(text).not.toContain('name="photoId"')
     expect(text).not.toContain('name="variant"')
+    expect(text).not.toContain('/batch-download-v1.js')
   })
 
   it('download_enabled=1 multi-select form: no RAW option in variant select', async () => {
@@ -653,11 +672,11 @@ describe('GET /albums/:albumId/photos/:photoId', () => {
     expect(res.status).toBe(403)
   })
 
-  it('getAuthorizedAlbum throws -> 500 generic, no sensitive data', async () => {
+  it('combined album access lookup throws -> 503 generic, no sensitive data', async () => {
     const { deps } = makeDeps({ getThrows: true })
     const app = makeApp(deps)
     const res = await get(app, `/albums/${ALBUM_ID}/photos/${PHOTO_1}`, await validCookie())
-    expect(res.status).toBe(500)
+    expect(res.status).toBe(503)
     const text = await res.text()
     assertNoSensitive(text)
     expect(text).not.toContain('D1 down')
@@ -704,6 +723,21 @@ describe('GET /albums/:albumId/photos/:photoId', () => {
     expect(text).toContain(`href="/albums/${ALBUM_ID}"`)
     expect(text).not.toContain('3000')
     expect(text).not.toContain('2026-05-01')
+  })
+
+  it('uses one combined D1 access lookup for an authorized photo preview', async () => {
+    const { deps, state } = makeDeps({ reader: threePhotoManifest() })
+
+    const res = await get(
+      makeApp(deps),
+      `/albums/${ALBUM_ID}/photos/${PHOTO_1}`,
+      await validCookie(),
+    )
+
+    expect(res.status).toBe(200)
+    expect(state.getCalls).toEqual([
+      { userId: USER_ID, albumId: ALBUM_ID, now: NOW },
+    ])
   })
 
   it('photo title used as escaped alt text', async () => {

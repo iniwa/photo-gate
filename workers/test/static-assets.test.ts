@@ -20,9 +20,39 @@ describe('static asset headers', () => {
   Cache-Control: public, max-age=31536000, immutable
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
+
+/batch-download-v1.js
+  Cache-Control: public, max-age=31536000, immutable
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+
+/zip-store-v1.js
+  Cache-Control: public, max-age=31536000, immutable
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
 `)
     expect(headers).not.toContain('/styles.css')
     expect(existsSync(resolve(process.cwd(), 'public/styles.css'))).toBe(false)
+  })
+
+  it('serves versioned client-side ZIP assets without changing the legacy app asset', () => {
+    const batch = readFileSync(resolve(process.cwd(), 'public/batch-download-v1.js'), 'utf8')
+    const zip = readFileSync(resolve(process.cwd(), 'public/zip-store-v1.js'), 'utf8')
+    expect(batch).toContain("from '/zip-store-v1.js'")
+    expect(batch).toContain('MAX_FILES = 20')
+    expect(batch).toContain('MAX_ARCHIVE_BYTES = 100 * 1024 * 1024')
+    expect(batch).toContain("if (remaining < 1) throw new Error('archive size limit reached')")
+    expect(batch).not.toContain('/raw/')
+    expect(zip).toContain('createStoredZip')
+    expect(zip).toContain("type: 'application/zip'")
+  })
+
+  it('keeps the enhanced selection bar usable on narrow screens', () => {
+    const css = readFileSync(resolve(process.cwd(), 'public/styles-v3.css'), 'utf8').replace(/\r\n/g, '\n')
+    expect(css).toContain('.selection-bar {\n  display: flex;')
+    expect(css).toContain('flex-wrap: wrap;')
+    expect(css).toContain('.selection-form:has(input[name=\'photoId\']:checked) .selection-bar {\n      display: grid;')
+    expect(css).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));')
   })
 
   it('defines the CSS-only justified timeline contract', () => {

@@ -13,6 +13,7 @@ import {
   photoThumbKey,
   photoPreviewKey,
 } from '../src/services/r2-object-key.js'
+import { MANIFEST_LIMITS } from '../src/services/manifest-validator.js'
 
 // ---------------------------------------------------------------------------
 // Test fixtures
@@ -172,6 +173,22 @@ describe('loadAlbumManifest', () => {
       }
       await loadAlbumManifest(readerFor(body), ALBUM_ID)
       expect(textCallCount).toBe(1)
+    })
+
+    it('rejects an oversized manifest from metadata before calling text()', async () => {
+      let textCalled = false
+      const body: PrivateObjectBody = {
+        body: null,
+        size: MANIFEST_LIMITS.MAX_JSON_BYTES + 1,
+        text: async () => {
+          textCalled = true
+          return VALID_MANIFEST_JSON
+        },
+      }
+      await expect(loadAlbumManifest(readerFor(body), ALBUM_ID)).rejects.toSatisfy(
+        (e: unknown) => e instanceof ObjectServiceError && e.code === 'manifest_invalid',
+      )
+      expect(textCalled).toBe(false)
     })
 
     it('throws ObjectServiceError(reader_failure) when reader rejects', async () => {

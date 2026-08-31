@@ -7,6 +7,8 @@ const MAX_REQUEST_SIZE = 4096
 
 const EXPECTED_REQUEST_KEYS = new Set(['schema', 'requestId', 'requestedAt', 'kind'])
 
+export type SyncRequestWriteOutcome = 'created' | 'already-pending'
+
 function isCanonicalWorkerIso(value: string): boolean {
   if (!WORKER_ISO_RE.test(value)) return false
   try {
@@ -51,7 +53,12 @@ export class AdminSyncRequestRepository {
     this.#bucket = bucket
   }
 
-  async writeRequest(req: AdminSyncRequest): Promise<void> {
+  /**
+   * Creates a pending request without replacing one that Docker has not yet
+   * consumed. Concurrent administrator actions coalesce into the existing
+   * request instead of discarding its request id or timestamp.
+   */
+  async writeRequest(req: AdminSyncRequest): Promise<SyncRequestWriteOutcome> {
     if (!REQUEST_ID_RE.test(req.requestId)) throw syncRequestWriteError()
     if (!isCanonicalWorkerIso(req.requestedAt)) throw syncRequestWriteError()
     if (req.kind !== 'sync-now') throw syncRequestWriteError()
@@ -64,12 +71,14 @@ export class AdminSyncRequestRepository {
     })
 
     try {
-      await this.#bucket.put(SYNC_REQUEST_KEY, body, {
+      const stored = await this.#bucket.put(SYNC_REQUEST_KEY, body, {
         httpMetadata: {
           contentType: 'application/json',
           cacheControl: 'private, no-cache',
         },
+        onlyIf: { etagDoesNotMatch: '*' },
       })
+      return stored === null ? 'already-pending' : 'created'
     } catch {
       throw syncRequestWriteError()
     }

@@ -7,6 +7,8 @@ const WORKER_ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
 const MAX_REQUEST_SIZE = 4096
 const EXPECTED_REQUEST_KEYS = new Set(['schema', 'requestId', 'requestedAt', 'kind'])
 
+export type CatalogRefreshRequestWriteOutcome = 'created' | 'already-pending'
+
 function isCanonicalWorkerIso(value: string): boolean {
   if (!WORKER_ISO_RE.test(value)) return false
   try {
@@ -52,7 +54,8 @@ export class AdminCatalogRefreshRequestRepository {
     this.#bucket = bucket
   }
 
-  async writeRequest(req: AdminCatalogRefreshRequest): Promise<void> {
+  /** Creates a request only when no catalog refresh is already pending. */
+  async writeRequest(req: AdminCatalogRefreshRequest): Promise<CatalogRefreshRequestWriteOutcome> {
     if (!REQUEST_ID_RE.test(req.requestId)) throw catalogRefreshRequestWriteError()
     if (!isCanonicalWorkerIso(req.requestedAt)) throw catalogRefreshRequestWriteError()
     if (req.kind !== 'publish-catalog') throw catalogRefreshRequestWriteError()
@@ -64,12 +67,14 @@ export class AdminCatalogRefreshRequestRepository {
       kind: req.kind,
     })
     try {
-      await this.#bucket.put(CATALOG_REFRESH_REQUEST_KEY, body, {
+      const stored = await this.#bucket.put(CATALOG_REFRESH_REQUEST_KEY, body, {
         httpMetadata: {
           contentType: 'application/json',
           cacheControl: 'private, no-cache',
         },
+        onlyIf: { etagDoesNotMatch: '*' },
       })
+      return stored === null ? 'already-pending' : 'created'
     } catch {
       throw catalogRefreshRequestWriteError()
     }

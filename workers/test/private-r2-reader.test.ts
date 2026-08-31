@@ -27,6 +27,10 @@ function makeStream(content = 'image'): ReadableStream {
   })
 }
 
+async function textReader(): Promise<string> {
+  return 'text'
+}
+
 function makeBucket(result: unknown, error?: Error): { bucket: R2Bucket; keys: string[] } {
   const keys: string[] = []
   const bucket = {
@@ -47,6 +51,7 @@ function makeObject(text = 'manifest text'): R2ObjectBody {
     etag: 'secret-etag',
     httpMetadata: { contentType: 'secret/type' },
     customMetadata: { secret: 'value' },
+    size: text.length,
   } as unknown as R2ObjectBody
 }
 
@@ -115,10 +120,11 @@ describe('PrivateR2Reader', () => {
     const { bucket } = makeBucket(original)
     const result = await new PrivateR2Reader(bucket).get(ALLOWED_KEYS[0]!)
     expect(result).not.toBe(original)
-    expect(Object.keys(result ?? {}).sort()).toEqual(['body', 'text'])
+    expect(Object.keys(result ?? {}).sort()).toEqual(['body', 'size', 'text'])
     expect(result?.body).toBe(original.body)
     expect('etag' in (result ?? {})).toBe(false)
     expect('httpMetadata' in (result ?? {})).toBe(false)
+    expect(result?.size).toBe(original.size)
   })
 
   it('delegates text only when called', async () => {
@@ -144,8 +150,11 @@ describe('PrivateR2Reader', () => {
 
   it.each([
     {},
-    { body: null, text: async () => 'text' },
+    { body: null, text: textReader },
     { body: makeStream(), text: 'not a function' },
+    { body: makeStream(), text: textReader },
+    { body: makeStream(), text: textReader, size: -1 },
+    { body: makeStream(), text: textReader, size: 1.5 },
   ])('rejects malformed objects', async (object) => {
     const { bucket } = makeBucket(object)
     await expect(new PrivateR2Reader(bucket).get(ALLOWED_KEYS[0]!)).rejects.toBeInstanceOf(

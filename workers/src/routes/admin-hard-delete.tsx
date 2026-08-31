@@ -3,6 +3,7 @@ import type { Env } from '../types/env.js'
 import { Layout } from '../templates/layout.js'
 import { forbiddenResponse } from '../middleware/auth-response.js'
 import { isValidId } from '../services/repository-validation.js'
+import { parseUrlEncodedForm } from '../services/url-encoded-form.js'
 import {
   type HardDeleteCategory,
   type HardDeleteTokenPayload,
@@ -37,6 +38,8 @@ const PHRASES: Record<TargetKind, string> = {
   album: 'DELETE ALBUM',
 }
 
+const MAX_HARD_DELETE_FORM_BYTES = 4 * 1024
+
 const CATEGORIES: Record<TargetKind, HardDeleteCategory> = {
   user: 'user-delete',
   album: 'album-delete',
@@ -62,12 +65,8 @@ function isFormContentType(contentType: string | undefined): boolean {
 }
 
 async function parseConfirmBody(c: AdminContext, fieldName: 'userId' | 'albumId'): Promise<string | null> {
-  let body: Record<string, string | File | (string | File)[]>
-  try {
-    body = await c.req.parseBody({ all: true })
-  } catch {
-    return null
-  }
+  const body = await parseUrlEncodedForm(c.req.raw, MAX_HARD_DELETE_FORM_BYTES)
+  if (body === null) return null
   if (Object.keys(body).length !== 1) return null
   const id = body[fieldName]
   if (typeof id !== 'string') return null
@@ -76,12 +75,8 @@ async function parseConfirmBody(c: AdminContext, fieldName: 'userId' | 'albumId'
 }
 
 async function parseDeleteBody(c: AdminContext): Promise<{ token: string; phrase: string } | null> {
-  let body: Record<string, string | File | (string | File)[]>
-  try {
-    body = await c.req.parseBody({ all: true })
-  } catch {
-    return null
-  }
+  const body = await parseUrlEncodedForm(c.req.raw, MAX_HARD_DELETE_FORM_BYTES)
+  if (body === null) return null
   if (Object.keys(body).length !== 2) return null
   const token = body['token']
   const phrase = body['phrase']

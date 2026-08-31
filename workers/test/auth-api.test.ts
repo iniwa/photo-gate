@@ -41,6 +41,7 @@ interface FakeState {
   inserts: RecordedInsert[]
   deletes: string[]
   validSessionCalls: Array<{ digest: string; now: string }>
+  rateLimitCalls: Array<{ accountKey: string; networkKey: string }>
 }
 
 interface FakeOptions {
@@ -52,6 +53,8 @@ interface FakeOptions {
   deleteThrows?: boolean
   validSession?: SessionWithUser | null
   fetchValidSessionThrows?: boolean
+  rateAllowed?: boolean
+  rateLimitThrows?: boolean
   clock?: () => Date
 }
 
@@ -63,6 +66,7 @@ function makeDeps(opts: FakeOptions = {}): { deps: AuthApiDeps; state: FakeState
     inserts: [],
     deletes: [],
     validSessionCalls: [],
+    rateLimitCalls: [],
   }
   const deps: AuthApiDeps = {
     authRepo: {
@@ -93,6 +97,13 @@ function makeDeps(opts: FakeOptions = {}): { deps: AuthApiDeps; state: FakeState
         state.validSessionCalls.push({ digest, now })
         if (opts.fetchValidSessionThrows) throw new Error('D1 down')
         return opts.validSession ?? null
+      },
+    },
+    loginRateLimit: {
+      async allowAttempt(accountKey, networkKey) {
+        state.rateLimitCalls.push({ accountKey, networkKey })
+        if (opts.rateLimitThrows) throw new Error('rate limit unavailable')
+        return opts.rateAllowed ?? true
       },
     },
     clock: opts.clock ?? (() => new Date(NOW)),
@@ -251,6 +262,9 @@ describe('POST /api/auth/login failures', () => {
     expect(state.fetchCalls).toHaveLength(0)
     expect(state.failures).toHaveLength(0)
     expect(state.inserts).toHaveLength(0)
+    expect(state.rateLimitCalls).toEqual([
+      { accountKey: 'account:invalid', networkKey: 'network:unknown' },
+    ])
   })
 
   it('locked account with correct password: 303 to /?error=1, records failure, no session', async () => {
@@ -305,6 +319,7 @@ describe('POST /api/auth/login body and content-type validation', () => {
     expect(state.fetchCalls).toHaveLength(0)
     expect(state.failures).toHaveLength(0)
     expect(state.inserts).toHaveLength(0)
+    expect(state.rateLimitCalls).toHaveLength(0)
   }
 
   it('JSON content-type: 401 with zero repo calls', async () => {
@@ -348,6 +363,75 @@ describe('POST /api/auth/login body and content-type validation', () => {
       body: new URLSearchParams({ userId: 'viewer-1', password: PASSWORD }).toString(),
     })
     expect(res.status).toBe(303)
+  })
+
+  it('declared oversized form: 401 without rate limit, D1, or password work', async () => {
+    const { deps, state } = makeDeps({ row: null })
+    const app = makeApp(deps)
+    const res = await app.request(`${APP_ORIGIN}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        Origin: APP_ORIGIN,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': '4097',
+      },
+      body: 'userId=viewer-1&password=irrelevant',
+    })
+    expect(res.status).toBe(401)
+    expect(state.rateLimitCalls).toHaveLength(0)
+    expect(state.fetchCalls).toHaveLength(0)
+    expect(state.failures).toHaveLength(0)
+    expect(state.inserts).toHaveLength(0)
+  })
+})
+
+describe('POST /api/auth/login rate limiting', () => {
+  it('returns generic 429 before D1 and password verification when the limit denies the attempt', async () => {
+    const row = await makeRow()
+    const { deps, state } = makeDeps({ row, rateAllowed: false })
+    const app = makeApp(deps)
+    const res = await loginRequest(
+      app,
+      { userId: 'viewer-1', password: PASSWORD },
+      { 'CF-Connecting-IP': '2001:db8::42' },
+    )
+    expect(res.status).toBe(429)
+    expect(await res.text()).toBe('Too Many Requests')
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(res.headers.get('retry-after')).toBe('60')
+    expect(state.rateLimitCalls).toEqual([
+      { accountKey: 'account:viewer-1', networkKey: 'network:2001:db8::42' },
+    ])
+    expect(state.fetchCalls).toHaveLength(0)
+    expect(state.failures).toHaveLength(0)
+    expect(state.inserts).toHaveLength(0)
+  })
+
+  it('uses bounded fallback keys for malformed account and network identifiers', async () => {
+    const { deps, state } = makeDeps({ rateAllowed: false })
+    const app = makeApp(deps)
+    const res = await loginRequest(
+      app,
+      { userId: '!not-an-id!', password: PASSWORD },
+      { 'CF-Connecting-IP': 'forged, forwarded, value' },
+    )
+    expect(res.status).toBe(429)
+    expect(state.rateLimitCalls).toEqual([
+      { accountKey: 'account:invalid', networkKey: 'network:unknown' },
+    ])
+  })
+
+  it('fails closed with 503 when the rate-limit binding is unavailable', async () => {
+    const { deps, state } = makeDeps({ rateLimitThrows: true })
+    const app = makeApp(deps)
+    const res = await loginRequest(app, { userId: 'viewer-1', password: PASSWORD })
+    expect(res.status).toBe(503)
+    expect(await res.text()).toBe('Service Unavailable')
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(state.rateLimitCalls).toHaveLength(1)
+    expect(state.fetchCalls).toHaveLength(0)
+    expect(state.failures).toHaveLength(0)
+    expect(state.inserts).toHaveLength(0)
   })
 })
 

@@ -14,8 +14,8 @@ function makeR2(object: { text(): Promise<string> } | null, throwOnGet = false):
   } as unknown as R2Bucket
 }
 
-function makeObject(text: string) {
-  return { text: async () => text }
+function makeObject(text: string, size?: number) {
+  return { text: async () => text, ...(size === undefined ? {} : { size }) }
 }
 
 // ---------------------------------------------------------------------------
@@ -291,6 +291,21 @@ describe('AdminSyncStatusRepository - R2/JSON failures', () => {
 
   it('throws on malformed JSON', async () => {
     await expect(getRepo('not-json')).rejects.toThrow()
+  })
+
+  it('rejects oversized status metadata before reading its text', async () => {
+    let textCalled = false
+    const bucket = {
+      get: async () => ({
+        size: 8193,
+        text: async () => {
+          textCalled = true
+          return makeValidPayload()
+        },
+      }),
+    } as unknown as R2Bucket
+    await expect(new AdminSyncStatusRepository(bucket).getStatus()).rejects.toThrow('sync status read failed')
+    expect(textCalled).toBe(false)
   })
 
   it('error message is sanitized', async () => {

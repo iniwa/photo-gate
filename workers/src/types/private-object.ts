@@ -1,11 +1,14 @@
 /**
  * Minimal readable body contract for private object reads.
- * All stored metadata (Content-Type, ETag, size, upload timestamp, checksums, etc.)
- * is intentionally excluded; route-independent services must not trust or forward it.
+ * Stored metadata is intentionally excluded except the byte length. The byte
+ * length is used only to reject oversized JSON before buffering it; it is never
+ * rendered or forwarded in an HTTP response.
  */
 export interface PrivateObjectBody {
   /** Readable stream body, passable directly to new Response(). */
   readonly body: ReadableStream | null
+  /** Optional object byte length used only for bounded manifest reads. */
+  readonly size?: number
   /** Reads the full object content as a UTF-8 string (for manifest parsing only). */
   text(): Promise<string>
 }

@@ -2,16 +2,15 @@ import { Hono } from 'hono'
 import type { MiddlewareHandler } from 'hono'
 import type { Env } from '../types/env.js'
 import type { AuthVariables } from '../types/auth-context.js'
-import type { SessionWithUser } from '../types/session.js'
 import type { PrivateObjectReader } from '../types/private-object.js'
 import { isValidId } from '../services/safe-id.js'
+import type { ViewerAlbumAccess } from '../services/viewer-album-access-repository.js'
 import {
   loadManifestAuthorizedThumb,
   loadManifestAuthorizedPreview,
 } from '../services/manifest-authorized-photo-service.js'
 import { loadAlbumCover } from '../services/private-album-object-service.js'
-import { requireSession } from '../middleware/require-session.js'
-import { requireAlbumPermission } from '../middleware/require-album-permission.js'
+import { requireViewerAlbumAccess } from '../middleware/require-viewer-album-access.js'
 import {
   privateImageResponse,
   objectNotFoundResponse,
@@ -19,11 +18,12 @@ import {
 } from '../middleware/private-object-response.js'
 
 export interface ImgRouteDeps {
-  sessionRepo: {
-    fetchValidSession(tokenDigest: string, now: string): Promise<SessionWithUser | null>
-  }
-  permChecker: {
-    checkPermission(userId: string, albumId: string, now: string): Promise<boolean>
+  albumAccessRepo: {
+    getAuthorizedAlbumAccess(
+      tokenDigest: string,
+      albumId: string,
+      now: string,
+    ): Promise<ViewerAlbumAccess | null>
   }
   reader: PrivateObjectReader
   clock: () => Date
@@ -39,8 +39,9 @@ type ImgEnv = { Bindings: Env; Variables: AuthVariables }
  *   GET /:albumId/preview/:photoId -> albums/{albumId}/previews/{photoId}.jpg
  *
  * Per-request chain, in fixed order:
- *   1. requireSession      — invalid session -> 401, nothing else runs.
- *   2. requireAlbumPermission — denied / invalid albumId -> 403, reader never reached.
+ *   1. requireViewerAlbumAccess — invalid session -> 401; denied / invalid
+ *      albumId -> 403; reader never reached. The session and permission facts
+ *      are resolved in one D1 query.
  *   3. handler — thumb/preview enforce manifest membership before any image read;
  *      cover is an album-scoped asset and is NOT manifest-gated (see ADR 2.2.4).
  *
@@ -54,14 +55,8 @@ export function createImgRoutes(
 ): Hono<ImgEnv> {
   const img = new Hono<ImgEnv>()
 
-  // requireSession / requireAlbumPermission are typed with only { Variables }, which
-  // Hono treats as invariant against this router's { Bindings; Variables } env.
-  // Widening the handler type here keeps the middleware untouched and is sound: they
-  // only read request state and set the `userId` variable.
-  //
-  // Session validation applies to every path. Permission is attached to the exact
-  // parameterized route patterns so that c.req.param('albumId') resolves when the
-  // resolver runs (a router-level '*' use does not capture named params).
+  // The access guard is attached to the exact parameterized route patterns so
+  // c.req.param('albumId') resolves when the resolver runs.
   //
   // Deps are resolved lazily inside each repository/reader call rather than eagerly per
   // request. This keeps the chain fail-closed: a missing or malformed binding makes the
@@ -70,40 +65,27 @@ export function createImgRoutes(
   // dep is resolved. requireSession parses the cookie before touching the fetcher, so a
   // missing binding never turns a no-cookie request into a 500.
   //
-  // `clock` is resolved up front because requireSession/requireAlbumPermission read it,
-  // but only after their own cookie/userId/albumId checks; resolving it is just calling
-  // depsFromEnv, and any failure there closes to 503/500 through the existing try/catch.
-  const lazySessionRepo = (env: Env): ImgRouteDeps['sessionRepo'] => ({
-    fetchValidSession: (tokenDigest, now) =>
-      depsFromEnv(env).sessionRepo.fetchValidSession(tokenDigest, now),
-  })
-  const lazyPermChecker = (env: Env): ImgRouteDeps['permChecker'] => ({
-    checkPermission: (userId, albumId, now) =>
-      depsFromEnv(env).permChecker.checkPermission(userId, albumId, now),
+  const lazyAlbumAccessRepo = (env: Env): ImgRouteDeps['albumAccessRepo'] => ({
+    getAuthorizedAlbumAccess: (tokenDigest, albumId, now) =>
+      depsFromEnv(env).albumAccessRepo.getAuthorizedAlbumAccess(tokenDigest, albumId, now),
   })
   const lazyReader = (env: Env): PrivateObjectReader => ({
     get: (key) => depsFromEnv(env).reader.get(key),
   })
   const lazyClock = (env: Env): (() => Date) => () => depsFromEnv(env).clock()
 
-  img.use('*', async (c, next) => {
-    const middleware = requireSession(lazySessionRepo(c.env), lazyClock(c.env)) as
-      unknown as MiddlewareHandler<ImgEnv>
-    return middleware(c, next)
-  })
-
-  const albumPermission: MiddlewareHandler<ImgEnv> = async (c, next) => {
-    const middleware = requireAlbumPermission(
-      lazyPermChecker(c.env),
+  const albumAccess: MiddlewareHandler<ImgEnv> = async (c, next) => {
+    const middleware = requireViewerAlbumAccess(
+      lazyAlbumAccessRepo(c.env),
       (ctx) => ctx.req.param('albumId'),
       lazyClock(c.env),
     ) as unknown as MiddlewareHandler<ImgEnv>
     return middleware(c, next)
   }
 
-  img.use('/:albumId/cover', albumPermission)
-  img.use('/:albumId/thumb/:photoId', albumPermission)
-  img.use('/:albumId/preview/:photoId', albumPermission)
+  img.use('/:albumId/cover', albumAccess)
+  img.use('/:albumId/thumb/:photoId', albumAccess)
+  img.use('/:albumId/preview/:photoId', albumAccess)
 
   img.get('/:albumId/cover', async (c) => {
     const albumId = c.req.param('albumId')

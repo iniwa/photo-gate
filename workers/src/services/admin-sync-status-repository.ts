@@ -2,6 +2,7 @@ import { isValidId } from './safe-id.js'
 import type { AdminSyncStatus } from '../types/admin-sync-status.js'
 
 const SYNC_STATUS_KEY = 'ops/sync-status.json'
+const MAX_STATUS_SIZE = 8192
 
 // Forbidden content in lastError (case-insensitive)
 const LAST_ERROR_FORBIDDEN =
@@ -173,6 +174,9 @@ export class AdminSyncStatusRepository {
       throw syncStatusReadError()
     }
     if (object === null) return { status: 'missing' }
+    if (object.size !== undefined && object.size > MAX_STATUS_SIZE) {
+      throw syncStatusReadError()
+    }
 
     let text: string
     try {

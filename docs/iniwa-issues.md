@@ -23,9 +23,10 @@
   - 理由: 既存の境界では、Workers は NAS/PhotoPrism/RAW/original にアクセスしない。R2にもRAW/RW2/original/location-bearing sourceを置かない。
   - 次に行うこと: RAW/original export を許可するか、許可するなら誰に・どの経路で・どの監査/確認付きで行うかを別ADRで決める。
 
-- [ ] 一覧から複数選択してダウンロードするUI
-  - thumb/preview の単体ダウンロードは実装済み。
-  - 複数選択・一括ダウンロードは未実装。
+- [x] 一覧から複数選択してダウンロードするUI
+  - thumb/preview の単体ダウンロードに加え、アルバム詳細で1〜100枚を選択できる。
+  - JavaScript有効時は、最大20枚の選択済みthumb/previewをブラウザ内で1つの無圧縮ZIPにまとめて保存できる。Workersは既存の認可済み個別ダウンロードだけを返し、ZIP生成・画像処理は行わない。
+  - 1枚25 MiB、ZIP合計100 MiBの上限を超える場合は中止し、従来のリンク一覧を使う。JavaScript無効時も `POST /download/:albumId/selection` が選択内容をマニフェストで検証して個別リンクを表示する。
   - RAW/original を含める場合は、先にRAW/original ADRが必要。
 
 ## admin画面

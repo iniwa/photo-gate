@@ -27,7 +27,9 @@ import {
   serviceUnavailableResponse,
   unauthorizedResponse,
   forbiddenResponse,
+  tooManyRequestsResponse,
 } from '../middleware/auth-response.js'
+import { parseUrlEncodedForm } from '../services/url-encoded-form.js'
 
 /**
  * Fixed dummy PBKDF2 hash used as a timing decoy when no user row is found.
@@ -45,6 +47,7 @@ const DUMMY_PASSWORD_HASH =
   'pbkdf2-sha256$100000$ASNFZ4mrze8BI0VniavN7w$ABEiM0RVZneImaq7zN3u_wARIjNEVWZ3iJmqu8zd7v8'
 
 const MAX_PASSWORD_LENGTH = 1024
+const MAX_LOGIN_FORM_BYTES = 4 * 1024
 
 export interface AuthApiDeps {
   authRepo: {
@@ -67,6 +70,10 @@ export interface AuthApiDeps {
     deleteSession(tokenDigest: string): Promise<void>
     fetchValidSession(tokenDigest: string, now: string): Promise<SessionWithUser | null>
   }
+  loginRateLimit: {
+    /** Returns false when either the account or network attempt budget is exhausted. */
+    allowAttempt(accountKey: string, networkKey: string): Promise<boolean>
+  }
   clock: () => Date
 }
 
@@ -86,6 +93,22 @@ function isFormContentType(contentType: string | undefined): boolean {
   return base === 'application/x-www-form-urlencoded'
 }
 
+function loginAccountKey(userId: string): string {
+  return `account:${isValidId(userId) ? userId : 'invalid'}`
+}
+
+function loginNetworkKey(c: AuthApiContext): string {
+  const connectingIp = c.req.header('CF-Connecting-IP')
+  // Cloudflare supplies a single IPv4/IPv6 literal here. Do not let an
+  // arbitrary forwarded-header value create unbounded rate-limit keys. This is
+  // deliberately a lenient secondary guard: shared mobile/NAT networks can
+  // share an IP, while the per-account limit and D1 lockout stay primary.
+  if (connectingIp !== undefined && /^[0-9a-f:.]{1,64}$/i.test(connectingIp)) {
+    return `network:${connectingIp.toLowerCase()}`
+  }
+  return 'network:unknown'
+}
+
 export function createAuthApi(
   depsFromEnv: (env: Env) => AuthApiDeps,
 ): Hono<{ Bindings: Env; Variables: AuthVariables }> {
@@ -103,12 +126,8 @@ export function createAuthApi(
 
     // 3. Parse form body. Missing / wrong-type / oversize fields fail generically
     //    without any repo call or dummy verify.
-    let body: Record<string, string | File>
-    try {
-      body = await c.req.parseBody()
-    } catch {
-      return unauthorizedResponse(c)
-    }
+    const body = await parseUrlEncodedForm(c.req.raw, MAX_LOGIN_FORM_BYTES)
+    if (body === null) return unauthorizedResponse(c)
     const userId = body['userId']
     const password = body['password']
     if (typeof userId !== 'string' || typeof password !== 'string') {
@@ -120,10 +139,24 @@ export function createAuthApi(
 
     const deps = depsFromEnv(c.env)
 
-    // 4. Current time.
+    // 4. Cheap per-account and per-network throttling before D1 or PBKDF2.
+    // The rate binding is intentionally only an abuse-control layer; account
+    // lockout remains the authoritative credential-failure policy.
+    let attemptAllowed: boolean
+    try {
+      attemptAllowed = await deps.loginRateLimit.allowAttempt(
+        loginAccountKey(userId),
+        loginNetworkKey(c),
+      )
+    } catch {
+      return serviceUnavailableResponse(c)
+    }
+    if (!attemptAllowed) return tooManyRequestsResponse(c)
+
+    // 5. Current time.
     const now = deps.clock().toISOString()
 
-    // 5. Candidate resolution. No repo call when the ID is invalid.
+    // 6. Candidate resolution. No repo call when the ID is invalid.
     const idValid = isValidId(userId)
     let row: UserAuthRow | null
     try {
@@ -132,7 +165,7 @@ export function createAuthApi(
       return serviceUnavailableResponse(c)
     }
 
-    // 6. Lock check (fail closed on corrupt locked_until inside isAccountLocked).
+    // 7. Lock check (fail closed on corrupt locked_until inside isAccountLocked).
     let locked: boolean
     try {
       locked = row !== null && isAccountLocked(row.locked_until, now)
@@ -140,7 +173,7 @@ export function createAuthApi(
       return serviceUnavailableResponse(c)
     }
 
-    // 7. Uniform password verification: always run, against the real or dummy hash.
+    // 8. Uniform password verification: always run, against the real or dummy hash.
     let ok: boolean
     try {
       ok = await verifyPassword(
@@ -151,7 +184,7 @@ export function createAuthApi(
       return serviceUnavailableResponse(c)
     }
 
-    // 8. Failure path: dummy-hash success must never grant access.
+    // 9. Failure path: dummy-hash success must never grant access.
     if (row === null || locked || !ok) {
       if (idValid) {
         try {
@@ -175,7 +208,7 @@ export function createAuthApi(
       return c.body(null, 303)
     }
 
-    // 9. Success path.
+    // 10. Success path.
     try {
       await deps.authRepo.resetLoginFailure(userId, now)
     } catch {

@@ -2,18 +2,17 @@ import { Hono } from 'hono'
 import type { MiddlewareHandler } from 'hono'
 import type { Env } from '../types/env.js'
 import type { AuthVariables } from '../types/auth-context.js'
-import type { SessionWithUser } from '../types/session.js'
 import type { PrivateObjectReader } from '../types/private-object.js'
-import type { AuthorizedAlbumSummary } from '../types/authorized-album.js'
 import { Layout } from '../templates/layout.js'
 import { isValidId } from '../services/safe-id.js'
+import type { ViewerAlbumAccess } from '../services/viewer-album-access-repository.js'
 import {
   loadAlbumManifest,
   loadPhotoPreview,
   loadPhotoThumb,
 } from '../services/private-album-object-service.js'
-import { requireSession } from '../middleware/require-session.js'
-import { requireAlbumPermission } from '../middleware/require-album-permission.js'
+import { requireViewerAlbumAccess } from '../middleware/require-viewer-album-access.js'
+import { parseUrlEncodedForm } from '../services/url-encoded-form.js'
 import {
   buildDownloadFilename,
   buildThumbDownloadFilename,
@@ -25,18 +24,12 @@ import {
 } from '../middleware/private-object-response.js'
 
 export interface DownloadRouteDeps {
-  sessionRepo: {
-    fetchValidSession(tokenDigest: string, now: string): Promise<SessionWithUser | null>
-  }
-  permChecker: {
-    checkPermission(userId: string, albumId: string, now: string): Promise<boolean>
-  }
-  albumRepo: {
-    getAuthorizedAlbum(
-      userId: string,
+  albumAccessRepo: {
+    getAuthorizedAlbumAccess(
+      tokenDigest: string,
       albumId: string,
       now: string,
-    ): Promise<AuthorizedAlbumSummary | null>
+    ): Promise<ViewerAlbumAccess | null>
   }
   reader: PrivateObjectReader
   clock: () => Date
@@ -44,6 +37,8 @@ export interface DownloadRouteDeps {
 
 type DownloadEnv = { Bindings: Env; Variables: AuthVariables }
 type DownloadContext = Parameters<MiddlewareHandler<DownloadEnv>>[0]
+
+const MAX_SELECTION_FORM_BYTES = 32 * 1024
 
 function isSameOrigin(c: DownloadContext): boolean {
   const origin = c.req.header('Origin')
@@ -79,22 +74,21 @@ function badRequestResponse(): Response {
  *   POST /:albumId/selection        -> private HTML page of individual download links
  *
  * GET chain (both routes), in fixed order:
- *   1. requireSession            — invalid session -> 401.
- *   2. requireAlbumPermission    — denied -> 403.
- *   3. isValidId(photoId)        — invalid -> 404, no I/O.
- *   4. getAuthorizedAlbum        — null race -> 403; disabled -> 403.
+ *   1. requireViewerAlbumAccess  — invalid session -> 401; denied -> 403;
+ *      session, permission, and album summary use one D1 query.
+ *   2. isValidId(photoId)        — invalid -> 404, no I/O.
+ *   3. download_enabled          — disabled -> 403.
  *   5. loadAlbumManifest         — absent -> 404; invalid/failure -> 500.
  *   6. manifest membership       — not listed -> 404.
  *   7. loadPhotoThumb/Preview    — absent -> 404; failure -> 500.
  *   8. build filename + response -> 200 attachment.
  *
  * POST /:albumId/selection chain, in fixed order:
- *   1. requireSession            — invalid session -> 401.
- *   2. requireAlbumPermission    — denied -> 403.
+ *   1. requireViewerAlbumAccess  — invalid session -> 401; denied -> 403.
  *   3. isSameOrigin              — absent/mismatch/null -> 400.
  *   4. isFormUrlEncoded          — wrong CT -> 400.
- *   5. parseBody                 — extract variant (thumb|preview), photoIds (1..100 valid IDs) -> 400.
- *   6. getAuthorizedAlbum        — null race -> 403; download_enabled !== 1 -> 403; throw -> 500.
+ *   5. bounded form parse        — extract variant (thumb|preview), photoIds (1..100 valid IDs) -> 400.
+ *   6. download_enabled          — disabled -> 403.
  *   7. loadAlbumManifest         — absent -> 404; invalid/failure -> 500.
  *   8. manifest membership       — every selected ID must be present -> 404.
  *   9. render result HTML        — 200, private, no-store. No photo R2 objects are read.
@@ -107,57 +101,36 @@ export function createDownloadRoutes(
 ): Hono<DownloadEnv> {
   const download = new Hono<DownloadEnv>()
 
-  const lazySessionRepo = (env: Env): DownloadRouteDeps['sessionRepo'] => ({
-    fetchValidSession: (tokenDigest, now) =>
-      depsFromEnv(env).sessionRepo.fetchValidSession(tokenDigest, now),
-  })
-  const lazyPermChecker = (env: Env): DownloadRouteDeps['permChecker'] => ({
-    checkPermission: (userId, albumId, now) =>
-      depsFromEnv(env).permChecker.checkPermission(userId, albumId, now),
-  })
-  const lazyAlbumRepo = (env: Env): DownloadRouteDeps['albumRepo'] => ({
-    getAuthorizedAlbum: (userId, albumId, now) =>
-      depsFromEnv(env).albumRepo.getAuthorizedAlbum(userId, albumId, now),
+  const lazyAlbumAccessRepo = (env: Env): DownloadRouteDeps['albumAccessRepo'] => ({
+    getAuthorizedAlbumAccess: (tokenDigest, albumId, now) =>
+      depsFromEnv(env).albumAccessRepo.getAuthorizedAlbumAccess(tokenDigest, albumId, now),
   })
   const lazyReader = (env: Env): PrivateObjectReader => ({
     get: (key) => depsFromEnv(env).reader.get(key),
   })
   const lazyClock = (env: Env): (() => Date) => () => depsFromEnv(env).clock()
 
-  download.use('*', async (c, next) => {
-    const middleware = requireSession(lazySessionRepo(c.env), lazyClock(c.env)) as
-      unknown as MiddlewareHandler<DownloadEnv>
-    return middleware(c, next)
-  })
-
-  const albumPermission: MiddlewareHandler<DownloadEnv> = async (c, next) => {
-    const middleware = requireAlbumPermission(
-      lazyPermChecker(c.env),
+  const albumAccess: MiddlewareHandler<DownloadEnv> = async (c, next) => {
+    const middleware = requireViewerAlbumAccess(
+      lazyAlbumAccessRepo(c.env),
       (ctx) => ctx.req.param('albumId'),
       lazyClock(c.env),
     ) as unknown as MiddlewareHandler<DownloadEnv>
     return middleware(c, next)
   }
 
-  download.use('/:albumId/thumb/:photoId', albumPermission)
-  download.use('/:albumId/preview/:photoId', albumPermission)
-  download.use('/:albumId/selection', albumPermission)
+  download.use('/:albumId/thumb/:photoId', albumAccess)
+  download.use('/:albumId/preview/:photoId', albumAccess)
+  download.use('/:albumId/selection', albumAccess)
 
   download.get('/:albumId/thumb/:photoId', async (c) => {
     const albumId = c.req.param('albumId')
     const photoId = c.req.param('photoId')
-    const userId = c.get('userId')
-    const now = lazyClock(c.env)().toISOString()
 
     if (!isValidId(photoId)) return objectNotFoundResponse()
 
-    let albumSummary: AuthorizedAlbumSummary | null
-    try {
-      albumSummary = await lazyAlbumRepo(c.env).getAuthorizedAlbum(userId, albumId, now)
-    } catch {
-      return objectInternalErrorResponse()
-    }
-    if (albumSummary === null) return objectForbiddenResponse()
+    const albumSummary = c.get('authorizedAlbum')
+    if (albumSummary === undefined) return objectForbiddenResponse()
     if (albumSummary.download_enabled !== 1) return objectForbiddenResponse()
 
     let manifestResult
@@ -190,18 +163,11 @@ export function createDownloadRoutes(
   download.get('/:albumId/preview/:photoId', async (c) => {
     const albumId = c.req.param('albumId')
     const photoId = c.req.param('photoId')
-    const userId = c.get('userId')
-    const now = lazyClock(c.env)().toISOString()
 
     if (!isValidId(photoId)) return objectNotFoundResponse()
 
-    let albumSummary: AuthorizedAlbumSummary | null
-    try {
-      albumSummary = await lazyAlbumRepo(c.env).getAuthorizedAlbum(userId, albumId, now)
-    } catch {
-      return objectInternalErrorResponse()
-    }
-    if (albumSummary === null) return objectForbiddenResponse()
+    const albumSummary = c.get('authorizedAlbum')
+    if (albumSummary === undefined) return objectForbiddenResponse()
     if (albumSummary.download_enabled !== 1) return objectForbiddenResponse()
 
     let manifestResult
@@ -233,18 +199,12 @@ export function createDownloadRoutes(
 
   download.post('/:albumId/selection', async (c) => {
     const albumId = c.req.param('albumId')
-    const userId = c.get('userId')
-    const now = lazyClock(c.env)().toISOString()
 
     if (!isSameOrigin(c)) return badRequestResponse()
     if (!isFormUrlEncoded(c.req.header('Content-Type'))) return badRequestResponse()
 
-    let body: Record<string, string | File | (string | File)[]>
-    try {
-      body = await c.req.parseBody({ all: true })
-    } catch {
-      return badRequestResponse()
-    }
+    const body = await parseUrlEncodedForm(c.req.raw, MAX_SELECTION_FORM_BYTES)
+    if (body === null) return badRequestResponse()
     for (const key of Object.keys(body)) {
       if (key !== 'variant' && key !== 'photoId') return badRequestResponse()
     }
@@ -270,13 +230,8 @@ export function createDownloadRoutes(
     if (photoIds.length === 0 || photoIds.length > 100) return badRequestResponse()
     if (!photoIds.every(isValidId)) return badRequestResponse()
 
-    let albumSummary: AuthorizedAlbumSummary | null
-    try {
-      albumSummary = await lazyAlbumRepo(c.env).getAuthorizedAlbum(userId, albumId, now)
-    } catch {
-      return objectInternalErrorResponse()
-    }
-    if (albumSummary === null) return objectForbiddenResponse()
+    const albumSummary = c.get('authorizedAlbum')
+    if (albumSummary === undefined) return objectForbiddenResponse()
     if (albumSummary.download_enabled !== 1) return objectForbiddenResponse()
 
     let manifestResult

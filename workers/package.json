@@ -7,6 +7,7 @@
     "lint": "eslint src test",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:coverage": "vitest run --coverage",
     "build": "wrangler deploy --dry-run --outdir dist"
   },
@@ -15,6 +16,7 @@
     "jose": "6.2.3"
   },
   "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.21.1",
     "@cloudflare/workers-types": "^5.20260812.1",
     "@vitest/coverage-v8": "4.1.8",
     "eslint": "^9.17.0",

@@ -9,14 +9,20 @@ import type { AdminSyncRequest } from '../src/types/admin-sync-request.js'
 type PutCall = {
   key: string
   body: string
-  options: { httpMetadata: { contentType: string; cacheControl: string } }
+  options: {
+    httpMetadata: { contentType: string; cacheControl: string }
+    onlyIf: { etagDoesNotMatch: '*' }
+  }
 }
 
-function makeCapturingBucket(): { bucket: R2Bucket; calls: PutCall[] } {
+function makeCapturingBucket(
+  putResult: R2Object | null = {} as R2Object,
+): { bucket: R2Bucket; calls: PutCall[] } {
   const calls: PutCall[] = []
   const bucket = {
     put: async (key: string, body: unknown, options: unknown) => {
       calls.push({ key, body: body as string, options: options as PutCall['options'] })
+      return putResult
     },
   } as unknown as R2Bucket
   return { bucket, calls }
@@ -54,6 +60,12 @@ describe('AdminSyncRequestRepository - fixed key', () => {
     expect(calls).toHaveLength(1)
     expect(calls[0]!.key).toBe('ops/sync-request.json')
   })
+
+  it('uses create-only R2 precondition', async () => {
+    const { bucket, calls } = makeCapturingBucket()
+    await new AdminSyncRequestRepository(bucket).writeRequest(makeValidRequest())
+    expect(calls[0]!.options.onlyIf).toEqual({ etagDoesNotMatch: '*' })
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -61,6 +73,16 @@ describe('AdminSyncRequestRepository - fixed key', () => {
 // ---------------------------------------------------------------------------
 
 describe('AdminSyncRequestRepository - metadata', () => {
+  it('returns created after a new request is stored', async () => {
+    const { bucket } = makeCapturingBucket()
+    await expect(new AdminSyncRequestRepository(bucket).writeRequest(makeValidRequest())).resolves.toBe('created')
+  })
+
+  it('coalesces when a request is already pending', async () => {
+    const { bucket } = makeCapturingBucket(null)
+    await expect(new AdminSyncRequestRepository(bucket).writeRequest(makeValidRequest())).resolves.toBe('already-pending')
+  })
+
   it('sets contentType to application/json', async () => {
     const { bucket, calls } = makeCapturingBucket()
     await new AdminSyncRequestRepository(bucket).writeRequest(makeValidRequest())
