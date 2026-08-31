@@ -17,6 +17,13 @@ _ALLOWED_SIZES = frozenset(
     ["fit_720", "fit_1280", "fit_1920", "fit_2048", "fit_2560", "fit_3840"]
 )
 
+# Defensive ceilings for a remote API response. They prevent malformed
+# X-Count/X-Limit pagination from consuming an unbounded number of requests or
+# producing a manifest the private viewer is deliberately unable to validate.
+_MAX_LIST_PAGES = 1_000
+_MAX_PHOTOS_PER_ALBUM = 20_000
+_MAX_ALBUMS = 10_000
+
 
 def _is_valid_album_title(value: object) -> bool:
     if not isinstance(value, str) or len(value) == 0:
@@ -94,10 +101,15 @@ class PhotoPrismClient:
         Raises PhotoPrismError for HTTP errors, missing token, or missing identifiers.
         """
         photos: list[PhotoPrismPhoto] = []
+        seen_uids: set[str] = set()
         preview_token: str | None = None
         offset = 0
+        pages = 0
 
         while True:
+            if pages >= _MAX_LIST_PAGES:
+                raise PhotoPrismError("PhotoPrism photo list exceeded pagination limit")
+            pages += 1
             try:
                 response = await self._client.get(
                     "/api/v1/photos",
@@ -149,6 +161,10 @@ class PhotoPrismClient:
                     raise PhotoPrismError(
                         f"Photo uid={uid!r} has non-hex Hash (len={len(hash_val)})"
                     )
+                if uid in seen_uids:
+                    raise PhotoPrismError("PhotoPrism photo list contains duplicate UID")
+                if len(photos) >= _MAX_PHOTOS_PER_ALBUM:
+                    raise PhotoPrismError("PhotoPrism photo list exceeded photo limit")
 
                 taken_at_str: str = item.get("TakenAt") or item.get("TakenAtLocal") or ""
                 try:
@@ -174,9 +190,12 @@ class PhotoPrismClient:
                         f"Photo uid={uid!r} has malformed fields"
                     ) from exc
                 photos.append(photo)
+                seen_uids.add(uid)
 
             if x_count < x_limit:
                 break
+            if not results:
+                raise PhotoPrismError("PhotoPrism photo list pagination made no progress")
             offset += x_limit
 
         assert preview_token is not None
@@ -190,9 +209,14 @@ class PhotoPrismClient:
         Error messages are sanitized: no URL, token, raw UID, or response body.
         """
         albums: list[PhotoPrismAlbum] = []
+        seen_uids: set[str] = set()
         offset = 0
+        pages = 0
 
         while True:
+            if pages >= _MAX_LIST_PAGES:
+                raise PhotoPrismError("PhotoPrism album list exceeded pagination limit")
+            pages += 1
             try:
                 response = await self._client.get(
                     "/api/v1/albums",
@@ -233,6 +257,10 @@ class PhotoPrismClient:
                     raise PhotoPrismError("Album entry missing UID")
                 if not _SAFE_UID.match(uid):
                     raise PhotoPrismError("Album UID contains unsafe characters")
+                if uid in seen_uids:
+                    raise PhotoPrismError("PhotoPrism album list contains duplicate UID")
+                if len(albums) >= _MAX_ALBUMS:
+                    raise PhotoPrismError("PhotoPrism album list exceeded album limit")
 
                 raw_title = item.get("Title") or ""
                 if not _is_valid_album_title(raw_title):
@@ -266,9 +294,12 @@ class PhotoPrismClient:
                         updated_at=updated_at,
                     )
                 )
+                seen_uids.add(uid)
 
             if x_count < x_limit:
                 break
+            if not results:
+                raise PhotoPrismError("PhotoPrism album list pagination made no progress")
             offset += x_limit
 
         return albums

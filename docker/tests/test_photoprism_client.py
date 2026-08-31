@@ -99,6 +99,66 @@ def test_list_photos_pagination():
     asyncio.run(run())
 
 
+def test_list_photos_rejects_non_progressing_pagination():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"X-Preview-Token": "tok", "X-Count": "2", "X-Limit": "2"},
+            content=b"[]",
+        )
+
+    async def run():
+        with pytest.raises(PhotoPrismError, match="made no progress"):
+            async with _make_client(handler) as client:
+                await client.list_album_photos("albumUid001")
+
+    asyncio.run(run())
+
+
+def test_list_photos_rejects_duplicate_uid_across_pages():
+    def handler(request: httpx.Request) -> httpx.Response:
+        offset = int(request.url.params.get("offset", 0))
+        if offset == 0:
+            return httpx.Response(
+                200,
+                headers={"X-Preview-Token": "tok", "X-Count": "2", "X-Limit": "2"},
+                content=json.dumps([_photo_json("uid001abc", "a" * 40)]).encode(),
+            )
+        return httpx.Response(
+            200,
+            headers={"X-Preview-Token": "tok", "X-Count": "1", "X-Limit": "2"},
+            content=json.dumps([_photo_json("uid001abc", "a" * 40)]).encode(),
+        )
+
+    async def run():
+        with pytest.raises(PhotoPrismError, match="duplicate UID"):
+            async with _make_client(handler) as client:
+                await client.list_album_photos("albumUid001")
+
+    asyncio.run(run())
+
+
+def test_list_photos_stops_at_pagination_page_ceiling(monkeypatch):
+    monkeypatch.setattr("photo_gate.photoprism_client._MAX_LIST_PAGES", 1)
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(int(request.url.params.get("offset", 0)))
+        return httpx.Response(
+            200,
+            headers={"X-Preview-Token": "tok", "X-Count": "2", "X-Limit": "2"},
+            content=json.dumps([_photo_json("uid001abc", "a" * 40)]).encode(),
+        )
+
+    async def run():
+        with pytest.raises(PhotoPrismError, match="pagination limit"):
+            async with _make_client(handler) as client:
+                await client.list_album_photos("albumUid001")
+
+    asyncio.run(run())
+    assert calls == [0]
+
+
 def test_list_photos_requires_preview_token():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -437,6 +497,66 @@ def test_list_albums_pagination():
         assert {a.raw_uid for a in result} == {"albumUid001", "albumUid002", "albumUid003"}
 
     asyncio.run(run())
+
+
+def test_list_albums_rejects_non_progressing_pagination():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"X-Count": "2", "X-Limit": "2"},
+            content=b"[]",
+        )
+
+    async def run():
+        with pytest.raises(PhotoPrismError, match="made no progress"):
+            async with _make_client(handler) as client:
+                await client.list_albums()
+
+    asyncio.run(run())
+
+
+def test_list_albums_rejects_duplicate_uid_across_pages():
+    def handler(request: httpx.Request) -> httpx.Response:
+        offset = int(request.url.params.get("offset", 0))
+        if offset == 0:
+            return httpx.Response(
+                200,
+                headers={"X-Count": "2", "X-Limit": "2"},
+                content=json.dumps([_album_json("albumUid001")]).encode(),
+            )
+        return httpx.Response(
+            200,
+            headers={"X-Count": "1", "X-Limit": "2"},
+            content=json.dumps([_album_json("albumUid001")]).encode(),
+        )
+
+    async def run():
+        with pytest.raises(PhotoPrismError, match="duplicate UID"):
+            async with _make_client(handler) as client:
+                await client.list_albums()
+
+    asyncio.run(run())
+
+
+def test_list_albums_stops_at_pagination_page_ceiling(monkeypatch):
+    monkeypatch.setattr("photo_gate.photoprism_client._MAX_LIST_PAGES", 1)
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(int(request.url.params.get("offset", 0)))
+        return httpx.Response(
+            200,
+            headers={"X-Count": "2", "X-Limit": "2"},
+            content=json.dumps([_album_json("albumUid001")]).encode(),
+        )
+
+    async def run():
+        with pytest.raises(PhotoPrismError, match="pagination limit"):
+            async with _make_client(handler) as client:
+                await client.list_albums()
+
+    asyncio.run(run())
+    assert calls == [0]
 
 
 def test_list_albums_empty_page():

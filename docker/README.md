@@ -301,6 +301,14 @@ These bounds apply to the existing private R2 reads and writes; they do not
 change object keys, cache policy, visibility, or the all-or-nothing manifest
 publication rule.
 
+All private R2 reads are additionally bounded by key class: request objects are
+limited to 4 KiB, status/result objects to 16 KiB, targets to 256 KiB, the
+catalog to 4 MiB, and manifests to 8 MiB. A declared oversize is rejected before
+reading; otherwise the adapter reads at most the ceiling plus one byte and closes
+the response body. PhotoPrism album and photo pagination also fails closed on
+duplicate IDs, empty continuation pages, 1,000 pages, 10,000 albums, or 20,000
+photos per album.
+
 ## Album Catalog
 
 The `publish-catalog` command writes a sanitized album catalog to private R2 at the fixed key:

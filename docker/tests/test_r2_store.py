@@ -50,6 +50,30 @@ def _make_store(config: R2Config = _CONFIG):
     return store, stubber
 
 
+class _RecordingBody:
+    def __init__(self, data: bytes) -> None:
+        self._data = data
+        self.read_amounts: list[int] = []
+        self.close_calls = 0
+
+    def read(self, amount: int) -> bytes:
+        self.read_amounts.append(amount)
+        return self._data
+
+    def close(self) -> None:
+        self.close_calls += 1
+
+
+class _GetOnlyS3:
+    def __init__(self, response: dict[str, object]) -> None:
+        self._response = response
+        self.calls: list[dict[str, str]] = []
+
+    def get_object(self, **kwargs: str) -> dict[str, object]:
+        self.calls.append(kwargs)
+        return self._response
+
+
 # ---------------------------------------------------------------------------
 # R2Config — endpoint validation
 # ---------------------------------------------------------------------------
@@ -479,6 +503,31 @@ def test_request_key_get_returns_bytes():
         result = asyncio.run(store.get(_REQUEST_KEY))
     assert result == _REQUEST_DATA
     stubber.assert_no_pending_responses()
+
+
+def test_get_rejects_oversized_content_length_without_reading_body():
+    body = _RecordingBody(b"ignored")
+    s3 = _GetOnlyS3({"Body": body, "ContentLength": 4097})
+    store = R2ObjectStore(_CONFIG, _s3_client=s3)
+
+    with pytest.raises(ObjectStoreError, match="exceeds supported size"):
+        asyncio.run(store.get(_REQUEST_KEY))
+
+    assert body.read_amounts == []
+    assert body.close_calls == 1
+    assert s3.calls == [{"Bucket": _BUCKET, "Key": _REQUEST_KEY}]
+
+
+def test_get_reads_at_most_the_key_ceiling_plus_one_and_rejects_overflow():
+    body = _RecordingBody(b"x" * 4097)
+    s3 = _GetOnlyS3({"Body": body})
+    store = R2ObjectStore(_CONFIG, _s3_client=s3)
+
+    with pytest.raises(ObjectStoreError, match="exceeds supported size"):
+        asyncio.run(store.get(_REQUEST_KEY))
+
+    assert body.read_amounts == [4097]
+    assert body.close_calls == 1
 
 
 def test_request_key_get_missing_returns_none():

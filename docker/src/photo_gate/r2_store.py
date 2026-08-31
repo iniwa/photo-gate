@@ -45,6 +45,16 @@ _CATALOG_REFRESH_REQUEST_KEY = "ops/catalog-refresh-request.json"
 _SYNC_RESULT_KEY = "ops/sync-result.json"
 _STATUS_CACHE = "private, no-cache"
 
+# Every ObjectStore.get caller consumes a small control document or a validated
+# manifest. Keep the adapter bounded as well as the downstream JSON validators:
+# an invalid or unexpectedly large object must not be buffered in a Pi process.
+_SMALL_CONTROL_MAX_BYTES = 16 * 1024
+_REQUEST_MAX_BYTES = 4 * 1024
+_TARGETS_MAX_BYTES = 256 * 1024
+_CATALOG_MAX_BYTES = 4 * 1024 * 1024
+_MANIFEST_MAX_BYTES = 8 * 1024 * 1024
+_DERIVED_IMAGE_MAX_BYTES = 32 * 1024 * 1024
+
 # Explicit bounded networking behavior for Raspberry Pi deployments. Boto3's
 # standard retry mode retries safely idempotent S3 operations without adding a
 # second application-level retry loop around uploads or request consumption.
@@ -141,6 +151,32 @@ def _cache_control(key: str) -> str:
     return _IMMUTABLE_CACHE
 
 
+def _max_get_bytes(key: str) -> int:
+    """Return the bounded read ceiling for one already-validated R2 key."""
+    if key in (_REQUEST_KEY, _CATALOG_REFRESH_REQUEST_KEY):
+        return _REQUEST_MAX_BYTES
+    if key == _TARGETS_KEY:
+        return _TARGETS_MAX_BYTES
+    if key == _CATALOG_KEY:
+        return _CATALOG_MAX_BYTES
+    if key.endswith("/manifest.json"):
+        return _MANIFEST_MAX_BYTES
+    if key in (_STATUS_KEY, _SYNC_RESULT_KEY):
+        return _SMALL_CONTROL_MAX_BYTES
+    # Image reads are not currently used by the sync workflow, but ObjectStore
+    # remains a bounded capability should a future internal caller need one.
+    return _DERIVED_IMAGE_MAX_BYTES
+
+
+def _close_body_quietly(body: object) -> None:
+    close = getattr(body, "close", None)
+    if callable(close):
+        try:
+            close()
+        except Exception:
+            pass
+
+
 def _check_content_type(key: str, content_type: str) -> None:
     if not content_type:
         raise ValueError("content_type must not be empty")
@@ -213,9 +249,29 @@ class R2ObjectStore:
             ) from exc
 
     def _get_sync(self, bucket: str, key: str) -> bytes | None:
+        body: object | None = None
         try:
             resp = self._s3.get_object(Bucket=bucket, Key=key)
-            return resp["Body"].read()
+            max_bytes = _max_get_bytes(key)
+            content_length = resp.get("ContentLength")
+            if content_length is not None:
+                if (
+                    isinstance(content_length, bool)
+                    or not isinstance(content_length, int)
+                    or content_length < 0
+                    or content_length > max_bytes
+                ):
+                    body = resp.get("Body")
+                    raise ObjectStoreError("R2 get object exceeds supported size")
+
+            body = resp.get("Body")
+            read = getattr(body, "read", None)
+            if not callable(read):
+                raise ObjectStoreError("R2 get failed")
+            data = read(max_bytes + 1)
+            if not isinstance(data, (bytes, bytearray)) or len(data) > max_bytes:
+                raise ObjectStoreError("R2 get object exceeds supported size")
+            return bytes(data)
         except ClientError as exc:
             code = exc.response.get("Error", {}).get("Code", "")
             if code in ("NoSuchKey", "404", "NotFound"):
@@ -227,6 +283,15 @@ class R2ObjectStore:
             raise ObjectStoreError(
                 f"R2 get failed: bucket={bucket!r} key={key!r}"
             ) from exc
+        except ObjectStoreError:
+            raise
+        except Exception as exc:
+            raise ObjectStoreError(
+                f"R2 get failed: bucket={bucket!r} key={key!r}"
+            ) from exc
+        finally:
+            if body is not None:
+                _close_body_quietly(body)
 
     def _delete_sync(self, bucket: str, key: str) -> None:
         try:
