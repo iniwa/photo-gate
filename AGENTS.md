@@ -51,7 +51,7 @@ Apply these priorities in order: correctness, safety, and preservation of user w
 - Before implementation, classify the initial route from acceptance evidence: `small-primary` for small or transfer-negative work, `bounded` for settled multi-step work with one verifiable writer, `adaptive` when unresolved native, platform, runtime, or cross-subsystem behavior is material, or `non-implementation` for analysis, design, review, or operations. This classification does not force delegation; reclassify only after a material scope change or contract reset.
 - Prefer the smallest correct change that satisfies the approved outcome, requirements, and acceptance criteria.
 - Before creating a new implementation or adding a dependency, inspect existing code, the standard library, and platform-native capabilities; reuse a suitable capability unless that would weaken correctness, security, compatibility, or maintainability.
-- The user selects the primary model at runtime. The primary session owns task
+- Use GPT-5.6 Sol as the preferred main worker; the user's actual runtime model and reasoning choice remains authoritative. Use configured Luna roles (`bounded_explorer`/`bounded_implementer`) for bounded work and Terra roles (`adaptive_implementer`/`bounded_reviewer`) for adaptive implementation or risk-justified review; do not force delegation or pin the main reasoning level in project instructions. The primary session owns task
   interpretation, material design, approval boundaries, delegation, final
   integration, and user communication.
 - For settled, independently verifiable implementation with multiple steps,
@@ -105,9 +105,9 @@ approval gate, an unresolved material product/security/architecture choice,
 an unresolvable overlap, a permission or environment blocker, or an unmet
 acceptance criterion outside the delegated scope.
 
-For each initial delegation, record the exact mechanics, edge/fallback matrix,
-protected regressions, focused checks, any required stable-diff full-suite
-check, stale-reference/static-asset sweep, and the required per-item
+For each initial delegation, record the exact mechanics, protected regressions,
+focused checks, any required stable-diff full-suite check,
+stale-reference/static-asset sweep, and the required per-item
 passed/blocked/unmet return-evidence shape. The writer self-reviews the stable
 diff, fixes minor failures, and completes that gate before any independent
 reviewer starts. This self-gate is a dispatch barrier: a final
@@ -178,11 +178,14 @@ user-facing text unless the task changes it.
   the approved outcome and consistent with the established strategy. Report
   material changes.
 - Approval is required before protected-data access beyond task need; push,
-  merge, pull-request publication, deploy, restart, registry or hosted
-  configuration changes; production, runtime, infrastructure, or remote
-  mutation; authentication or external-exposure changes; destructive or
-  live-data operations; or an unsettled material product, compatibility,
-  persistent-data, security, deployment, or architecture decision.
+  merge, pull-request publication, registry or hosted configuration changes;
+  production, runtime, infrastructure, or remote mutation; authentication or
+  external-exposure changes; destructive or live-data operations; uploads,
+  deletion, or shared-user effects; or an unsettled material product,
+  compatibility, persistent-data, security, deployment, or architecture
+  decision. A bounded reversible implementation/fix request may apply or
+  restart the existing user-controlled target through its verified known
+  procedure, provided these protected gates are unchanged.
 - Local commits are allowed only on a dedicated task branch or worktree. Stage
   only task-owned changes and commit only after the cohesive diff is stable,
   required verification passes, and required reviews return Go.
@@ -190,6 +193,8 @@ user-facing text unless the task changes it.
   deployment, storage, network, and update flow. Do not introduce a second
   Workers configuration format or mutate bindings, registries, Portainer,
   ports, domains, tunnels, or external exposure without explicit approval.
+  Routine use of that unchanged flow does not by itself constitute a
+  configuration or Portainer change.
 - Preserve established historical or retired data unless deletion or migration
   is explicitly approved. Destructive or data-rewriting migrations,
   persistent-data deletion, R2 deletion, resource deletion, and public-access
@@ -266,3 +271,10 @@ in `docs/fable/`, operational procedures in `docs/operations/`, active work in
 `docs/handoffs/`, and completed handoffs in `docs/handoffs/archive/`. Do not
 rewrite accepted decisions, archived handoffs, or historical progress merely
 to replace old model terminology.
+
+## Personal-Use Iteration
+
+- Treat routine changes as personal-use iteration by default unless a verified project requirement or protected public-content, rights, human-approval, or data gate is stronger. Start with the smallest useful change and, when useful, a brief source or normal-path check; when it plausibly works, apply it through the known procedure to the established user-controlled target, smoke normal use, and fix errors observed there.
+- This allowance covers bounded reversible work only. Preserve gates for credentials, authentication, permissions, external exposure, live data, uploads, deletion, infrastructure or cost, publication or release, and other project-specific protected behavior. Do not require speculative edge-case matrices, defensive hardening, or a full suite merely to permit ordinary iteration.
+- If a target, check, or required approval is unavailable, distinguish source readiness from verified operation. Only important REQUIRED deferred checks belong in the existing issue or ledger, with their verification, approval, and resume conditions; optional or unnecessary checks do not create issues. Reconcile any operational checklist with the exact approval scope and conditions without weakening permanent prohibitions. For documentation-only changes, use the smallest relevant reference, fence, format, or sample check; do not invent an application runtime.
+- If a project-required safety or approval review must precede application, return the stable source or diff with applicable pre-application checks first; runtime application and smoke are not run, passed, or complete until that gate clears. Ordinary work does not acquire review solely because optional checks were omitted.
