@@ -51,12 +51,19 @@ Level 3 is complete only when:
 A task is done only when:
 
 - acceptance criteria are met;
-- affected tests, lint, typecheck/build, and audits pass;
+- a stable task-owned diff is produced while unrelated work is preserved;
+- focused verification, and the full affected suite when its blast radius
+  requires it, pass;
+- every check required by acceptance passes. If an unavailable check is not
+  itself required and equivalent evidence satisfies acceptance, its exact
+  blocker is recorded and the check is not reported as passed;
 - security and regression self-review finds no unresolved issue;
-- docs and operational state are updated;
-- the change is committed;
-- active handoff lifecycle is completed when applicable;
-- push/CI/deployment results are checked when permitted and configured.
+- docs and operational state are updated when in scope;
+- the active handoff lifecycle is completed when applicable.
 
-Blocked checks must be recorded with exact reasons and cannot be silently treated
-as passing.
+Commit, push, CI, and deployment are not universal task requirements. They are
+completion conditions only when the current task scope and the current user's
+approval explicitly require that delivery.
+
+If any acceptance criterion remains unmet, the task is incomplete. Record the
+unmet criteria, partial edits, blockers, and exact resume conditions.

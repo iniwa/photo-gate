@@ -22,10 +22,10 @@ wrangler login
 対象アカウントを確認し、必要に応じて `CLOUDFLARE_ACCOUNT_ID`
 環境変数または `--account-id` フラグで指定してください。
 
-> **責務分担**: `wrangler login` とアカウント選択は
-> `docs/fable/autonomy-contract.md` により人間のみが行います。ログイン完了後の
-> リソース作成・additive migration適用・行INSERTは、オペレーターが本書どおり
-> 実行するか、契約の範囲内で自律エージェントが実行できます。
+> **責務分担**: `wrangler login` とアカウント選択は人間のオペレーターが
+> 行います。ログイン完了後のリソース作成・remote migration 適用・行 INSERT
+> も live/remote mutation です。AGENTS.md の approval gates と現在のユーザーの
+> 明示的な承認がない限り、エージェントは実行してはいけません。
 
 ---
 

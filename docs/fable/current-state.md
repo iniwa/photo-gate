@@ -48,16 +48,15 @@ regression.
   identifiers live only in D1/Portainer, never in the repo).
 - R2 `photo-gate`, private. Current live sync covers two browser-managed album targets with 256 total published photo entries (thumb WebP + preview JPEG pairs) plus covers and schema 2 manifests, all generated derivatives intended to be metadata-free. Real album identifiers live only in D1/Portainer/R2 and are not recorded here.
 - Sync: Portainer stack `iniwa-photo-gate` on a Raspberry Pi 4 running
-  `ghcr.io/iniwa/photo-gate-sync:0.4.2` with the native sync daemon,
+  `ghcr.io/iniwa/photo-gate-sync:0.5.0` with the native sync daemon,
   healthcheck, and
   `PHOTOPRISM_PREVIEW_SIZE=fit_1920`, scheduled at the default 86400-second
   interval.
-- Sync `0.4.2` is published and deployed in Portainer from tag `sync-v0.4.2`
-  (commit `fb57196`), replacing `0.4.1`. It includes reupload suppression:
-  the first successful sync publishes manifest schema 2 with per-photo
-  `sourceHash`, and later unchanged photo thumb/preview pairs can be skipped
-  while cover and manifest continue to upload. The previous `0.4.1` catalog
-  type-filter hotfix and `0.2.1` log leak fix remain in place.
+- Sync `0.5.0` is published and deployed in Portainer from tag `sync-v0.5.0`
+  (commit `3d91d1e`), replacing `0.4.3`. It retains reupload suppression and
+  adds browser-driven catalog refresh, aggregate operation results, and album
+  share-readiness reporting. The previous catalog type-filter hotfix and log
+  leak fix remain in place.
 - PhotoPrism serves static thumbs up to 1920 px; dynamic previews stay
   disabled by operator choice (Pi load).
 
@@ -173,8 +172,8 @@ regression.
   referrer-policy: same-origin, x-content-type-options: nosniff, and
   x-frame-options: SAMEORIGIN. Authenticated browser checks passed by operator
   confirmation on 2026-07-03 (see docs/handoffs/2026-07-03-e2e-security-smoke-report.md §3).
-- Docker: sync `0.4.2` is running in production; sync `0.4.0` was superseded
-  by the catalog type-filter hotfix before completing live use. sync`r`n  `0.2.1` reports 183 tests green in the previous published baseline;
+- Docker: sync `0.5.0` is running in production; sync `0.4.0` was superseded
+  by the catalog type-filter hotfix before completing live use. Sync `0.2.1` reports 183 tests green in the previous published baseline;
   the admin sync-status handoff passed 190 tests with 34 expected libvips/pyvips
   skips plus `python -m compileall src` locally (2026-06-25). The Docker-side
   sync request consumer passed 253 tests with 34 expected libvips/pyvips skips

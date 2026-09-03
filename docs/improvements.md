@@ -20,7 +20,7 @@ deploy、本番変更、保護情報アクセス、破壊的操作の承認に�
 
 ## 1. Workers (TypeScript / Hono)
 
-- [ ] **【中】`src/routes/admin.tsx` を機能別ルーターに分割する**
+- [x] **【中】`src/routes/admin.tsx` を機能別ルーターに分割する**
   - 現状: 1800 行・route ハンドラ 27 個(GET 7 / POST 20)。ユーザー管理・
     アルバム管理・権限管理・sync 管理・ops サマリ・カタログピッカー・
     R2 cleanup レポートの 7 責務が同居。ハードデリート
@@ -32,7 +32,8 @@ deploy、本番変更、保護情報アクセス、破壊的操作の承認に�
     挙動不変の機械的分割。
   - 制約: ルート・レスポンス・認可チェーン(Access JWT + allowlist →
     same-origin → Content-Type → フィールド検証)を一切変えない。
-    既存テスト 2528 件が無修正で通ること。
+    既存の認可・レスポンス契約を維持し、全体テストで回帰がないこと。
+  - 完了: 2026-08-13。`admin.tsx` はAccess guard・合成・破壊的確認ルートに限定し、inventory、sync、通常mutation、form validationを専用モジュールへ抽出した。巨大な既存テストファイルの分割は次項として残す。
 
 - [ ] **【低】`test/admin-routes.test.ts` を admin.tsx の分割に合わせて分割する**
   - 現状: 6534 行(テスト全体 23906 行の 27%)。単一ファイルで
@@ -48,7 +49,8 @@ deploy、本番変更、保護情報アクセス、破壊的操作の承認に�
     計測済み。
   - 対応案: devDependency として `@vitest/coverage-v8` を追加し
     `npm run coverage` スクリプトを定義する(CI には組み込まない)。
-    依存追加を伴うため Codex の承認を経て handoff で実施する。
+    依存追加を伴うため、承認済みのタスク範囲と既存方針に沿って
+    依存・ビルドへの影響を明示して検証し、重要な変更として報告する。
   - 制約: CI ワークフローと本番依存(dependencies)には変更を加えない。
 
 ## 2. Docker sync (Python)

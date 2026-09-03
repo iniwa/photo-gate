@@ -4,8 +4,8 @@ Workers と Docker sync を既知の正常版へ戻す手順です。
 「どの版が正常だったか」は `deploy-log.md` で特定します。
 
 > **前提**: ロールバックは非破壊操作のみで構成されています。D1 スキーマ
-> の巻き戻し(destructive migration)はここに含まれず、実施には人間の
-> 明示的な承認が必要です(`docs/fable/autonomy-contract.md`)。
+> の巻き戻し(destructive migration)はここに含まれず、実施には AGENTS.md の
+> approval gates に従った現在のユーザーによる明示的な承認が必要です。
 
 ---
 
@@ -32,7 +32,8 @@ npx wrangler deploy        # 出力の Current Version ID を deploy-log.md に�
 git checkout main          # 作業後は必ず main に戻す
 ```
 
-> ローカルデプロイには有効な Cloudflare 認証が必要です
+> ローカルデプロイには有効な Cloudflare 認証と、現在のユーザーによる
+> 明示的な承認が必要です
 > (`wrangler login`、または有効な `CLOUDFLARE_API_TOKEN`)。
 
 ### 1.2 代替: wrangler のバージョンロールバック

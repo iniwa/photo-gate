@@ -3,6 +3,11 @@
 photo-gate の永続データのうち、失うと再構築に人手が必要なものを
 バックアップします。
 
+本番 D1/R2 や Portainer へのアクセス、remote export、restore、設定値の
+取り扱いは AGENTS.md の approval gates に従い、現在のユーザーの明示的な
+承認または依頼で定めた task scope 内でのみ行います。手順の記載自体は
+承認を意味しません。
+
 ## 1. 何をバックアップするか
 
 | データ | 場所 | バックアップ要否 |
@@ -61,8 +66,9 @@ wrangler d1 time-travel restore photo-gate --timestamp=<UNIX_TS>
 ```
 
 > **restore は破壊的操作**(指定時点以降の書き込みが消える)です。
-> `docs/fable/autonomy-contract.md` により、実行には人間の明示的な
-> 承認が必要です。エージェントが自律的に実行してはいけません。
+> D1 の Time Travel restore は破壊的な live-data 操作です。AGENTS.md の
+> approval gates に従い、現在のユーザーによる明示的な承認なしに実行しては
+> いけません。エージェントが自律的に実行する権限はありません。
 
 ## 3. 設定のバックアップ
 

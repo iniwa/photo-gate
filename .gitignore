@@ -18,6 +18,7 @@ secrets/
 .serena/
 .claude/
 .codex/
+.codex-remote-attachments/
 
 # Node.js / Cloudflare Workers
 node_modules/
