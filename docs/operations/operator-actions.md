@@ -1,7 +1,10 @@
-# オペレーター対応事項 (2026-08-03 更新)
+# オペレーター対応事項 (2026-09-07 文書統合)
 
 このドキュメントは「人間(オペレーター)が手を動かす必要がある作業」を
-まとめたものです。現在の本番状態を反映しています。
+まとめたものです。稼働版の正本は `docs/operations/deploy-log.md` です。
+このブランチには2026-08-31のDocker sync 0.5.1反映記録があるため、
+文書統合によって以前の0.5.0へ戻した説明にしません。以下の構成表は
+過去に記録した情報を含み、今回の文書確認は実機の再監査ではありません。
 
 関連ドキュメント:
 - ロールバック手順: `docs/operations/rollback.md`
@@ -44,7 +47,7 @@ push で GHCR に自動公開します。Portainer への適用は手動です�
 > `latest` タグは使用しない。immutable version タグ (`X.Y.Z`) が
 > Portainer ロールバックの基点になる。
 
-現在稼働中: `ghcr.io/iniwa/photo-gate-sync:0.4.2`
+記録上の最新稼働版 (2026-08-31): `ghcr.io/iniwa/photo-gate-sync:0.5.1`
 
 ### A-3. Worker シークレットの確認
 
@@ -236,14 +239,14 @@ npx wrangler secret put <SECRETNAME>
 
 ---
 
-## F. 現在の本番トポロジー (2026-08-03)
+## F. 記録済みの本番トポロジー（以後の差分はdeploy-log.mdを参照）
 
 | コンポーネント | 現状 |
 |---|---|
 | Workers | `https://share-photo.iniwach.com` (commit `e9b61ac`, version `db0ac0e5`) |
 | D1 `photo-gate` | APAC (`de77cb73-497a-4a41-bd1c-151fd907be3f`), 2 migrations applied |
 | R2 `photo-gate` | 非公開, 2 album targets |
-| Docker sync | `ghcr.io/iniwa/photo-gate-sync:0.4.2` (Portainer スタック `iniwa-photo-gate`) |
+| Docker sync | `ghcr.io/iniwa/photo-gate-sync:0.5.1` (2026-08-31の反映記録、Portainer スタック `iniwa-photo-gate`) |
 | Cloudflare Access | `/admin` パス限定アプリ, 5 Worker secrets 登録済み |
 | cron | 毎日 18:00 UTC (03:00 JST) に期限切れセッション削除 |
 
