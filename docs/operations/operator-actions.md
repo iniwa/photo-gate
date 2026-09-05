@@ -1,4 +1,4 @@
-# オペレーター対応事項 (2026-08-03 更新)
+# オペレーター対応事項 (2026-08-13 更新)
 
 このドキュメントは「人間(オペレーター)が手を動かす必要がある作業」を
 まとめたものです。現在の本番状態を反映しています。
@@ -49,7 +49,7 @@ push で GHCR に自動公開します。Portainer への適用は手動です�
 > `latest` タグは使用しない。immutable version タグ (`X.Y.Z`) が
 > Portainer ロールバックの基点になる。
 
-現在稼働中: `ghcr.io/iniwa/photo-gate-sync:0.4.2`
+現在稼働中: `ghcr.io/iniwa/photo-gate-sync:0.5.0`
 
 ### A-3. Worker シークレットの確認
 
@@ -241,14 +241,14 @@ npx wrangler secret put <SECRETNAME>
 
 ---
 
-## F. 現在の本番トポロジー (2026-08-03)
+## F. 現在の本番トポロジー (2026-08-13)
 
 | コンポーネント | 現状 |
 |---|---|
 | Workers | `https://share-photo.iniwach.com` (commit `e9b61ac`, version `db0ac0e5`) |
 | D1 `photo-gate` | APAC (`de77cb73-497a-4a41-bd1c-151fd907be3f`), 2 migrations applied |
 | R2 `photo-gate` | 非公開, 2 album targets |
-| Docker sync | `ghcr.io/iniwa/photo-gate-sync:0.4.2` (Portainer スタック `iniwa-photo-gate`) |
+| Docker sync | `ghcr.io/iniwa/photo-gate-sync:0.5.0` (Portainer スタック `iniwa-photo-gate`) |
 | Cloudflare Access | `/admin` パス限定アプリ, 5 Worker secrets 登録済み |
 | cron | 毎日 18:00 UTC (03:00 JST) に期限切れセッション削除 |
 
