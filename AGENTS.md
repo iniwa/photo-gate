@@ -29,14 +29,25 @@ policy, current task prohibitions/edit limits, durable project rules, the
 approved outcome, and verified facts. Task prohibitions narrow standing
 permissions; facts show what exists, not what is authorized. Resolve conflicts
 through accepted decisions and current state. Preserve unrelated work and
-retained history; keep one writer for overlapping files. Choose the smallest
-correct change. Select one route: `small-primary`, `bounded`, `adaptive`, or
-`non-implementation`. Select work by role when delegation is useful;
-configuration owns model, effort, and role-specific instructions, and the
-user's runtime choice remains authoritative. The primary owns interpretation,
-approval boundaries, integration, and communication. Delegated work does not
-redelegate. If a configured role is unavailable or unobservable, use the
-primary or an observable equivalent and record the actual route.
+retained history; keep one writer for overlapping files. Default to primary execution. The primary owns
+the smallest correct design and implementation, related discovery, verification,
+corrections, final acceptance, interpretation, approval boundaries,
+integration, and communication at any task size. Before implementation, decide whether to delegate, then choose the role and route: `small-primary` is direct primary completion of any size; `bounded` is one writer for a settled cohesive
+outcome; `adaptive` is one writer for material native/platform or cross-system
+acceptance uncertainty; `non-implementation` covers analysis, design, review,
+or operations. Classification does not force delegation. delegate autonomously within existing authority only when replacing primary work lowers expected total effort
+including handoff, communication, waiting, integration, verification, and
+corrections, or when a named material risk or mandatory independent verification
+gate warrants it. Size or uncertainty alone is insufficient; routine direct work
+needs no per-task justification. Configured roles own model and effort, the
+user's runtime choice remains authoritative, and delegated work does not
+redelegate. If a configured role is unavailable or unobservable, use the primary
+or an observable equivalent and record the actual route. The primary may reclaim
+any size before correction thresholds when remaining primary work is lower effort
+or delegation is unavailable, after confirming child writes stopped, ownership
+returned, and acceptance, protected boundaries, authority, environment, and evidence were reset. Do not research, rerun checks, or inspect
+an unstable candidate merely to fill waiting time; continue useful in-scope work
+or wait for a substantive notification.
 
 Do not edit secrets, credentials, `.env`, real local configuration, PhotoPrism
 or NAS originals, production D1/R2 data, persistent volumes, runtime state, or
@@ -80,7 +91,7 @@ handles repository operations.
 For implementation, inspect the relevant code and accepted decision, establish
 acceptance and protected behavior, make the focused change, and self-review the
 stable diff. A writer owns related discovery, implementation, verification, and
-minor corrections through that self-gate. Use conditional review only for a
+corrections through that self-gate. Use conditional review only for a
 named material correctness, security, data, compatibility, cross-system, or
 verification risk. Review starts only after the candidate is stable; any later
 candidate change invalidates that review and requires restabilization before a
@@ -132,10 +143,12 @@ FABLE text merely to normalize vocabulary. Update current state and operator
 docs when verified deployment facts change.
 
 If work is delegated, the writer owns related discovery, implementation,
-verification, and minor corrections through a stable self-gate. Return only at
+verification, and corrections through a stable self-gate. Return only at
 an approval/design gate, unsafe overlap, permission/environment blocker, or
 acceptance outside scope. Report changed files, material effects, focused
 checks and outcomes, preserved gates, blocked/unmet criteria, and exact resume
 conditions. Do not claim runtime or deployment success from documentation
 checks.
-For incomplete delegated work, report the blocker, resume condition, and next owner/action. Requested model or effort is configuration context, not execution evidence; unknown stays unknown, with no diagnostic-only agents or probes to fill observation fields. After stable-diff review, read deeper only for gaps, conflicts, or concrete risk; rerun checks only for a mandatory contract, changed target or assumption, insufficient evidence, or integration risk. Return concise results and evidence references without raw logs or unchanged inventories. While children run, continue useful work within existing ownership and parallelism rules; otherwise wait for notifications. Avoid liveness-only polling, rereads, or state rewrites; respond to errors, inconsistent state, and user steering, and follow host progress rules.
+For incomplete delegated work, report the blocker, resume condition, and next owner/action. Requested model or effort is configuration context, not execution evidence; unknown stays unknown, with no diagnostic-only agents or probes to fill observation fields. After stable-diff review, read deeper only for gaps, conflicts, or concrete risk; rerun checks only for a mandatory contract, changed target or assumption, insufficient evidence, or integration risk. Return concise results and evidence references without raw logs or unchanged inventories. While children run, continue useful work within existing ownership and parallelism rules; otherwise wait for notifications. Do not add research/checks, inspect a changing candidate, or repeat liveness polling, rereads, or state updates merely to fill the wait or observe liveness. Respond to errors, inconsistent state, and user steering, and follow host progress rules.
+
+Existing mandatory independent and multi-reviewer gates remain in force.
